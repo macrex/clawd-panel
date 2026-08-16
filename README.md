@@ -184,15 +184,7 @@ Windows é o ambiente principal (a placa enumera três dispositivos com o mesmo
 VID/PID e o script de gravação sabe disso); o servidor roda igual em macOS, e o
 runbook do slave cobre os dois.
 
-## Origem e licença
-
-O painel começou em [n1mb3/esp32-s3](https://github.com/n1mb3/esp32-s3), de
-**Nimbcorp**, e dois terços do código atual são dele. Este repositório é a
-continuação desse trabalho.
-
-Nem o projeto original nem este declaram licença: sem permissão do autor não há
-como conceder direitos sobre a parte que não é nossa. O código está aqui para
-leitura; para usar, fale com o autor do projeto original.
+## licença
 
 A arte do caranguejo vem do [clawd-tank](https://github.com/marciogranzotto/clawd-tank),
 de Marcio Granzotto Rodrigues, sob MIT. Os créditos completos, a medição de
