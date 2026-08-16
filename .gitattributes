@@ -1,0 +1,15 @@
+# Mantem LF no repositorio E no checkout, inclusive no Windows.
+#
+# Sem isto o git converte para CRLF ao extrair, e os arquivos de server/ ficam
+# byte-diferentes da copia viva em ~/.claude/metrics-api sem nenhuma mudanca
+# real de conteudo — uma divergencia falsa que atrapalha a comparacao por hash.
+* text=auto eol=lf
+
+# Binarios: nunca tocar.
+*.bin  binary
+*.jpg  binary
+*.jpeg binary
+*.png  binary
+
+# Binarios: sem conversao de fim de linha.
+*.clw binary

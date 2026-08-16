@@ -1,0 +1,1490 @@
+{
+  "version": 1,
+  "sprites": {
+    "clawd_level_001": {
+      "label": "Clawd Evolução: Nível 01",
+      "description": "Nivel 1: equipamento inicial de cobre e couro; patamar Sobrevivente.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_001.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 1,
+      "tier": "Sobrevivente"
+    },
+    "clawd_level_002": {
+      "label": "Clawd Evolução: Nível 02",
+      "description": "Nivel 2: equipamento inicial de cobre e couro; patamar Sobrevivente.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_002.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 2,
+      "tier": "Sobrevivente"
+    },
+    "clawd_level_003": {
+      "label": "Clawd Evolução: Nível 03",
+      "description": "Nivel 3: equipamento inicial de cobre e couro; patamar Sobrevivente.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_003.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 3,
+      "tier": "Sobrevivente"
+    },
+    "clawd_level_004": {
+      "label": "Clawd Evolução: Nível 04",
+      "description": "Nivel 4: equipamento inicial de cobre e couro; patamar Sobrevivente.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_004.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 4,
+      "tier": "Sobrevivente"
+    },
+    "clawd_level_005": {
+      "label": "Clawd Evolução: Nível 05",
+      "description": "Nivel 5: equipamento inicial de cobre e couro; patamar Sobrevivente.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_005.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 5,
+      "tier": "Sobrevivente"
+    },
+    "clawd_level_006": {
+      "label": "Clawd Evolução: Nível 06",
+      "description": "Nivel 6: equipamento inicial de cobre e couro; patamar Sobrevivente.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_006.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 6,
+      "tier": "Sobrevivente"
+    },
+    "clawd_level_007": {
+      "label": "Clawd Evolução: Nível 07",
+      "description": "Nivel 7: equipamento inicial de cobre e couro; patamar Sobrevivente.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_007.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 7,
+      "tier": "Sobrevivente"
+    },
+    "clawd_level_008": {
+      "label": "Clawd Evolução: Nível 08",
+      "description": "Nivel 8: equipamento inicial de cobre e couro; patamar Sobrevivente.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_008.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 8,
+      "tier": "Sobrevivente"
+    },
+    "clawd_level_009": {
+      "label": "Clawd Evolução: Nível 09",
+      "description": "Nivel 9: equipamento inicial de cobre e couro; patamar Sobrevivente.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_009.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 9,
+      "tier": "Sobrevivente"
+    },
+    "clawd_level_010": {
+      "label": "Clawd Evolução: Nível 10",
+      "description": "Nivel 10: armadura de bronze em aperfeicoamento; patamar Guardiao de bronze.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_010.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 10,
+      "tier": "Guardiao de bronze"
+    },
+    "clawd_level_011": {
+      "label": "Clawd Evolução: Nível 11",
+      "description": "Nivel 11: armadura de bronze em aperfeicoamento; patamar Guardiao de bronze.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_011.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 11,
+      "tier": "Guardiao de bronze"
+    },
+    "clawd_level_012": {
+      "label": "Clawd Evolução: Nível 12",
+      "description": "Nivel 12: armadura de bronze em aperfeicoamento; patamar Guardiao de bronze.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_012.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 12,
+      "tier": "Guardiao de bronze"
+    },
+    "clawd_level_013": {
+      "label": "Clawd Evolução: Nível 13",
+      "description": "Nivel 13: armadura de bronze em aperfeicoamento; patamar Guardiao de bronze.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_013.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 13,
+      "tier": "Guardiao de bronze"
+    },
+    "clawd_level_014": {
+      "label": "Clawd Evolução: Nível 14",
+      "description": "Nivel 14: armadura de bronze em aperfeicoamento; patamar Guardiao de bronze.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_014.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 14,
+      "tier": "Guardiao de bronze"
+    },
+    "clawd_level_015": {
+      "label": "Clawd Evolução: Nível 15",
+      "description": "Nivel 15: armadura de bronze em aperfeicoamento; patamar Guardiao de bronze.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_015.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 15,
+      "tier": "Guardiao de bronze"
+    },
+    "clawd_level_016": {
+      "label": "Clawd Evolução: Nível 16",
+      "description": "Nivel 16: armadura de bronze em aperfeicoamento; patamar Guardiao de bronze.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_016.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 16,
+      "tier": "Guardiao de bronze"
+    },
+    "clawd_level_017": {
+      "label": "Clawd Evolução: Nível 17",
+      "description": "Nivel 17: armadura de bronze em aperfeicoamento; patamar Guardiao de bronze.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_017.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 17,
+      "tier": "Guardiao de bronze"
+    },
+    "clawd_level_018": {
+      "label": "Clawd Evolução: Nível 18",
+      "description": "Nivel 18: armadura de bronze em aperfeicoamento; patamar Guardiao de bronze.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_018.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 18,
+      "tier": "Guardiao de bronze"
+    },
+    "clawd_level_019": {
+      "label": "Clawd Evolução: Nível 19",
+      "description": "Nivel 19: armadura de bronze em aperfeicoamento; patamar Guardiao de bronze.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_019.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 19,
+      "tier": "Guardiao de bronze"
+    },
+    "clawd_level_020": {
+      "label": "Clawd Evolução: Nível 20",
+      "description": "Nivel 20: aco, reforcos e defesa de energia; patamar Cavaleiro de aco.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_020.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 20,
+      "tier": "Cavaleiro de aco"
+    },
+    "clawd_level_021": {
+      "label": "Clawd Evolução: Nível 21",
+      "description": "Nivel 21: aco, reforcos e defesa de energia; patamar Cavaleiro de aco.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_021.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 21,
+      "tier": "Cavaleiro de aco"
+    },
+    "clawd_level_022": {
+      "label": "Clawd Evolução: Nível 22",
+      "description": "Nivel 22: aco, reforcos e defesa de energia; patamar Cavaleiro de aco.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_022.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 22,
+      "tier": "Cavaleiro de aco"
+    },
+    "clawd_level_023": {
+      "label": "Clawd Evolução: Nível 23",
+      "description": "Nivel 23: aco, reforcos e defesa de energia; patamar Cavaleiro de aco.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_023.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 23,
+      "tier": "Cavaleiro de aco"
+    },
+    "clawd_level_024": {
+      "label": "Clawd Evolução: Nível 24",
+      "description": "Nivel 24: aco, reforcos e defesa de energia; patamar Cavaleiro de aco.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_024.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 24,
+      "tier": "Cavaleiro de aco"
+    },
+    "clawd_level_025": {
+      "label": "Clawd Evolução: Nível 25",
+      "description": "Nivel 25: aco, reforcos e defesa de energia; patamar Cavaleiro de aco.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_025.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 25,
+      "tier": "Cavaleiro de aco"
+    },
+    "clawd_level_026": {
+      "label": "Clawd Evolução: Nível 26",
+      "description": "Nivel 26: aco, reforcos e defesa de energia; patamar Cavaleiro de aco.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_026.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 26,
+      "tier": "Cavaleiro de aco"
+    },
+    "clawd_level_027": {
+      "label": "Clawd Evolução: Nível 27",
+      "description": "Nivel 27: aco, reforcos e defesa de energia; patamar Cavaleiro de aco.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_027.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 27,
+      "tier": "Cavaleiro de aco"
+    },
+    "clawd_level_028": {
+      "label": "Clawd Evolução: Nível 28",
+      "description": "Nivel 28: aco, reforcos e defesa de energia; patamar Cavaleiro de aco.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_028.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 28,
+      "tier": "Cavaleiro de aco"
+    },
+    "clawd_level_029": {
+      "label": "Clawd Evolução: Nível 29",
+      "description": "Nivel 29: aco, reforcos e defesa de energia; patamar Cavaleiro de aco.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_029.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 29,
+      "tier": "Cavaleiro de aco"
+    },
+    "clawd_level_030": {
+      "label": "Clawd Evolução: Nível 30",
+      "description": "Nivel 30: runas ciano e controle de aura; patamar Sentinela runico.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_030.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 30,
+      "tier": "Sentinela runico"
+    },
+    "clawd_level_031": {
+      "label": "Clawd Evolução: Nível 31",
+      "description": "Nivel 31: runas ciano e controle de aura; patamar Sentinela runico.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_031.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 31,
+      "tier": "Sentinela runico"
+    },
+    "clawd_level_032": {
+      "label": "Clawd Evolução: Nível 32",
+      "description": "Nivel 32: runas ciano e controle de aura; patamar Sentinela runico.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_032.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 32,
+      "tier": "Sentinela runico"
+    },
+    "clawd_level_033": {
+      "label": "Clawd Evolução: Nível 33",
+      "description": "Nivel 33: runas ciano e controle de aura; patamar Sentinela runico.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_033.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 33,
+      "tier": "Sentinela runico"
+    },
+    "clawd_level_034": {
+      "label": "Clawd Evolução: Nível 34",
+      "description": "Nivel 34: runas ciano e controle de aura; patamar Sentinela runico.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_034.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 34,
+      "tier": "Sentinela runico"
+    },
+    "clawd_level_035": {
+      "label": "Clawd Evolução: Nível 35",
+      "description": "Nivel 35: runas ciano e controle de aura; patamar Sentinela runico.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_035.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 35,
+      "tier": "Sentinela runico"
+    },
+    "clawd_level_036": {
+      "label": "Clawd Evolução: Nível 36",
+      "description": "Nivel 36: runas ciano e controle de aura; patamar Sentinela runico.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_036.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 36,
+      "tier": "Sentinela runico"
+    },
+    "clawd_level_037": {
+      "label": "Clawd Evolução: Nível 37",
+      "description": "Nivel 37: runas ciano e controle de aura; patamar Sentinela runico.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_037.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 37,
+      "tier": "Sentinela runico"
+    },
+    "clawd_level_038": {
+      "label": "Clawd Evolução: Nível 38",
+      "description": "Nivel 38: runas ciano e controle de aura; patamar Sentinela runico.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_038.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 38,
+      "tier": "Sentinela runico"
+    },
+    "clawd_level_039": {
+      "label": "Clawd Evolução: Nível 39",
+      "description": "Nivel 39: runas ciano e controle de aura; patamar Sentinela runico.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_039.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 39,
+      "tier": "Sentinela runico"
+    },
+    "clawd_level_040": {
+      "label": "Clawd Evolução: Nível 40",
+      "description": "Nivel 40: fogo e gelo em equilibrio; patamar Vanguarda elemental.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_040.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 40,
+      "tier": "Vanguarda elemental"
+    },
+    "clawd_level_041": {
+      "label": "Clawd Evolução: Nível 41",
+      "description": "Nivel 41: fogo e gelo em equilibrio; patamar Vanguarda elemental.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_041.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 41,
+      "tier": "Vanguarda elemental"
+    },
+    "clawd_level_042": {
+      "label": "Clawd Evolução: Nível 42",
+      "description": "Nivel 42: fogo e gelo em equilibrio; patamar Vanguarda elemental.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_042.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 42,
+      "tier": "Vanguarda elemental"
+    },
+    "clawd_level_043": {
+      "label": "Clawd Evolução: Nível 43",
+      "description": "Nivel 43: fogo e gelo em equilibrio; patamar Vanguarda elemental.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_043.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 43,
+      "tier": "Vanguarda elemental"
+    },
+    "clawd_level_044": {
+      "label": "Clawd Evolução: Nível 44",
+      "description": "Nivel 44: fogo e gelo em equilibrio; patamar Vanguarda elemental.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_044.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 44,
+      "tier": "Vanguarda elemental"
+    },
+    "clawd_level_045": {
+      "label": "Clawd Evolução: Nível 45",
+      "description": "Nivel 45: fogo e gelo em equilibrio; patamar Vanguarda elemental.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_045.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 45,
+      "tier": "Vanguarda elemental"
+    },
+    "clawd_level_046": {
+      "label": "Clawd Evolução: Nível 46",
+      "description": "Nivel 46: fogo e gelo em equilibrio; patamar Vanguarda elemental.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_046.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 46,
+      "tier": "Vanguarda elemental"
+    },
+    "clawd_level_047": {
+      "label": "Clawd Evolução: Nível 47",
+      "description": "Nivel 47: fogo e gelo em equilibrio; patamar Vanguarda elemental.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_047.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 47,
+      "tier": "Vanguarda elemental"
+    },
+    "clawd_level_048": {
+      "label": "Clawd Evolução: Nível 48",
+      "description": "Nivel 48: fogo e gelo em equilibrio; patamar Vanguarda elemental.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_048.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 48,
+      "tier": "Vanguarda elemental"
+    },
+    "clawd_level_049": {
+      "label": "Clawd Evolução: Nível 49",
+      "description": "Nivel 49: fogo e gelo em equilibrio; patamar Vanguarda elemental.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_049.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 49,
+      "tier": "Vanguarda elemental"
+    },
+    "clawd_level_050": {
+      "label": "Clawd Evolução: Nível 50",
+      "description": "Nivel 50: gemas violetas, halo e orbes; patamar Guardiao arcano.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_050.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 50,
+      "tier": "Guardiao arcano"
+    },
+    "clawd_level_051": {
+      "label": "Clawd Evolução: Nível 51",
+      "description": "Nivel 51: gemas violetas, halo e orbes; patamar Guardiao arcano.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_051.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 51,
+      "tier": "Guardiao arcano"
+    },
+    "clawd_level_052": {
+      "label": "Clawd Evolução: Nível 52",
+      "description": "Nivel 52: gemas violetas, halo e orbes; patamar Guardiao arcano.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_052.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 52,
+      "tier": "Guardiao arcano"
+    },
+    "clawd_level_053": {
+      "label": "Clawd Evolução: Nível 53",
+      "description": "Nivel 53: gemas violetas, halo e orbes; patamar Guardiao arcano.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_053.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 53,
+      "tier": "Guardiao arcano"
+    },
+    "clawd_level_054": {
+      "label": "Clawd Evolução: Nível 54",
+      "description": "Nivel 54: gemas violetas, halo e orbes; patamar Guardiao arcano.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_054.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 54,
+      "tier": "Guardiao arcano"
+    },
+    "clawd_level_055": {
+      "label": "Clawd Evolução: Nível 55",
+      "description": "Nivel 55: gemas violetas, halo e orbes; patamar Guardiao arcano.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_055.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 55,
+      "tier": "Guardiao arcano"
+    },
+    "clawd_level_056": {
+      "label": "Clawd Evolução: Nível 56",
+      "description": "Nivel 56: gemas violetas, halo e orbes; patamar Guardiao arcano.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_056.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 56,
+      "tier": "Guardiao arcano"
+    },
+    "clawd_level_057": {
+      "label": "Clawd Evolução: Nível 57",
+      "description": "Nivel 57: gemas violetas, halo e orbes; patamar Guardiao arcano.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_057.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 57,
+      "tier": "Guardiao arcano"
+    },
+    "clawd_level_058": {
+      "label": "Clawd Evolução: Nível 58",
+      "description": "Nivel 58: gemas violetas, halo e orbes; patamar Guardiao arcano.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_058.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 58,
+      "tier": "Guardiao arcano"
+    },
+    "clawd_level_059": {
+      "label": "Clawd Evolução: Nível 59",
+      "description": "Nivel 59: gemas violetas, halo e orbes; patamar Guardiao arcano.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_059.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 59,
+      "tier": "Guardiao arcano"
+    },
+    "clawd_level_060": {
+      "label": "Clawd Evolução: Nível 60",
+      "description": "Nivel 60: cristais azuis e campo prismatico; patamar Bastiao cristalino.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_060.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 60,
+      "tier": "Bastiao cristalino"
+    },
+    "clawd_level_061": {
+      "label": "Clawd Evolução: Nível 61",
+      "description": "Nivel 61: cristais azuis e campo prismatico; patamar Bastiao cristalino.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_061.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 61,
+      "tier": "Bastiao cristalino"
+    },
+    "clawd_level_062": {
+      "label": "Clawd Evolução: Nível 62",
+      "description": "Nivel 62: cristais azuis e campo prismatico; patamar Bastiao cristalino.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_062.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 62,
+      "tier": "Bastiao cristalino"
+    },
+    "clawd_level_063": {
+      "label": "Clawd Evolução: Nível 63",
+      "description": "Nivel 63: cristais azuis e campo prismatico; patamar Bastiao cristalino.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_063.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 63,
+      "tier": "Bastiao cristalino"
+    },
+    "clawd_level_064": {
+      "label": "Clawd Evolução: Nível 64",
+      "description": "Nivel 64: cristais azuis e campo prismatico; patamar Bastiao cristalino.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_064.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 64,
+      "tier": "Bastiao cristalino"
+    },
+    "clawd_level_065": {
+      "label": "Clawd Evolução: Nível 65",
+      "description": "Nivel 65: cristais azuis e campo prismatico; patamar Bastiao cristalino.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_065.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 65,
+      "tier": "Bastiao cristalino"
+    },
+    "clawd_level_066": {
+      "label": "Clawd Evolução: Nível 66",
+      "description": "Nivel 66: cristais azuis e campo prismatico; patamar Bastiao cristalino.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_066.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 66,
+      "tier": "Bastiao cristalino"
+    },
+    "clawd_level_067": {
+      "label": "Clawd Evolução: Nível 67",
+      "description": "Nivel 67: cristais azuis e campo prismatico; patamar Bastiao cristalino.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_067.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 67,
+      "tier": "Bastiao cristalino"
+    },
+    "clawd_level_068": {
+      "label": "Clawd Evolução: Nível 68",
+      "description": "Nivel 68: cristais azuis e campo prismatico; patamar Bastiao cristalino.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_068.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 68,
+      "tier": "Bastiao cristalino"
+    },
+    "clawd_level_069": {
+      "label": "Clawd Evolução: Nível 69",
+      "description": "Nivel 69: cristais azuis e campo prismatico; patamar Bastiao cristalino.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_069.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 69,
+      "tier": "Bastiao cristalino"
+    },
+    "clawd_level_070": {
+      "label": "Clawd Evolução: Nível 70",
+      "description": "Nivel 70: ouro, manto e autoridade real; patamar Regente dourado.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_070.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 70,
+      "tier": "Regente dourado"
+    },
+    "clawd_level_071": {
+      "label": "Clawd Evolução: Nível 71",
+      "description": "Nivel 71: ouro, manto e autoridade real; patamar Regente dourado.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_071.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 71,
+      "tier": "Regente dourado"
+    },
+    "clawd_level_072": {
+      "label": "Clawd Evolução: Nível 72",
+      "description": "Nivel 72: ouro, manto e autoridade real; patamar Regente dourado.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_072.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 72,
+      "tier": "Regente dourado"
+    },
+    "clawd_level_073": {
+      "label": "Clawd Evolução: Nível 73",
+      "description": "Nivel 73: ouro, manto e autoridade real; patamar Regente dourado.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_073.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 73,
+      "tier": "Regente dourado"
+    },
+    "clawd_level_074": {
+      "label": "Clawd Evolução: Nível 74",
+      "description": "Nivel 74: ouro, manto e autoridade real; patamar Regente dourado.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_074.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 74,
+      "tier": "Regente dourado"
+    },
+    "clawd_level_075": {
+      "label": "Clawd Evolução: Nível 75",
+      "description": "Nivel 75: ouro, manto e autoridade real; patamar Regente dourado.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_075.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 75,
+      "tier": "Regente dourado"
+    },
+    "clawd_level_076": {
+      "label": "Clawd Evolução: Nível 76",
+      "description": "Nivel 76: ouro, manto e autoridade real; patamar Regente dourado.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_076.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 76,
+      "tier": "Regente dourado"
+    },
+    "clawd_level_077": {
+      "label": "Clawd Evolução: Nível 77",
+      "description": "Nivel 77: ouro, manto e autoridade real; patamar Regente dourado.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_077.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 77,
+      "tier": "Regente dourado"
+    },
+    "clawd_level_078": {
+      "label": "Clawd Evolução: Nível 78",
+      "description": "Nivel 78: ouro, manto e autoridade real; patamar Regente dourado.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_078.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 78,
+      "tier": "Regente dourado"
+    },
+    "clawd_level_079": {
+      "label": "Clawd Evolução: Nível 79",
+      "description": "Nivel 79: ouro, manto e autoridade real; patamar Regente dourado.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_079.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 79,
+      "tier": "Regente dourado"
+    },
+    "clawd_level_080": {
+      "label": "Clawd Evolução: Nível 80",
+      "description": "Nivel 80: placas claras, estrelas e asas de energia; patamar Protetor celestial.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_080.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 80,
+      "tier": "Protetor celestial"
+    },
+    "clawd_level_081": {
+      "label": "Clawd Evolução: Nível 81",
+      "description": "Nivel 81: placas claras, estrelas e asas de energia; patamar Protetor celestial.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_081.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 81,
+      "tier": "Protetor celestial"
+    },
+    "clawd_level_082": {
+      "label": "Clawd Evolução: Nível 82",
+      "description": "Nivel 82: placas claras, estrelas e asas de energia; patamar Protetor celestial.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_082.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 82,
+      "tier": "Protetor celestial"
+    },
+    "clawd_level_083": {
+      "label": "Clawd Evolução: Nível 83",
+      "description": "Nivel 83: placas claras, estrelas e asas de energia; patamar Protetor celestial.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_083.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 83,
+      "tier": "Protetor celestial"
+    },
+    "clawd_level_084": {
+      "label": "Clawd Evolução: Nível 84",
+      "description": "Nivel 84: placas claras, estrelas e asas de energia; patamar Protetor celestial.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_084.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 84,
+      "tier": "Protetor celestial"
+    },
+    "clawd_level_085": {
+      "label": "Clawd Evolução: Nível 85",
+      "description": "Nivel 85: placas claras, estrelas e asas de energia; patamar Protetor celestial.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_085.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 85,
+      "tier": "Protetor celestial"
+    },
+    "clawd_level_086": {
+      "label": "Clawd Evolução: Nível 86",
+      "description": "Nivel 86: placas claras, estrelas e asas de energia; patamar Protetor celestial.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_086.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 86,
+      "tier": "Protetor celestial"
+    },
+    "clawd_level_087": {
+      "label": "Clawd Evolução: Nível 87",
+      "description": "Nivel 87: placas claras, estrelas e asas de energia; patamar Protetor celestial.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_087.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 87,
+      "tier": "Protetor celestial"
+    },
+    "clawd_level_088": {
+      "label": "Clawd Evolução: Nível 88",
+      "description": "Nivel 88: placas claras, estrelas e asas de energia; patamar Protetor celestial.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_088.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 88,
+      "tier": "Protetor celestial"
+    },
+    "clawd_level_089": {
+      "label": "Clawd Evolução: Nível 89",
+      "description": "Nivel 89: placas claras, estrelas e asas de energia; patamar Protetor celestial.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_089.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 89,
+      "tier": "Protetor celestial"
+    },
+    "clawd_level_090": {
+      "label": "Clawd Evolução: Nível 90",
+      "description": "Nivel 90: obsidiana, ouro e runas orbitais; patamar Eclipse lendario.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_090.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 90,
+      "tier": "Eclipse lendario"
+    },
+    "clawd_level_091": {
+      "label": "Clawd Evolução: Nível 91",
+      "description": "Nivel 91: obsidiana, ouro e runas orbitais; patamar Eclipse lendario.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_091.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 91,
+      "tier": "Eclipse lendario"
+    },
+    "clawd_level_092": {
+      "label": "Clawd Evolução: Nível 92",
+      "description": "Nivel 92: obsidiana, ouro e runas orbitais; patamar Eclipse lendario.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_092.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 92,
+      "tier": "Eclipse lendario"
+    },
+    "clawd_level_093": {
+      "label": "Clawd Evolução: Nível 93",
+      "description": "Nivel 93: obsidiana, ouro e runas orbitais; patamar Eclipse lendario.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_093.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 93,
+      "tier": "Eclipse lendario"
+    },
+    "clawd_level_094": {
+      "label": "Clawd Evolução: Nível 94",
+      "description": "Nivel 94: obsidiana, ouro e runas orbitais; patamar Eclipse lendario.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_094.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 94,
+      "tier": "Eclipse lendario"
+    },
+    "clawd_level_095": {
+      "label": "Clawd Evolução: Nível 95",
+      "description": "Nivel 95: obsidiana, ouro e runas orbitais; patamar Eclipse lendario.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_095.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 95,
+      "tier": "Eclipse lendario"
+    },
+    "clawd_level_096": {
+      "label": "Clawd Evolução: Nível 96",
+      "description": "Nivel 96: obsidiana, ouro e runas orbitais; patamar Eclipse lendario.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_096.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 96,
+      "tier": "Eclipse lendario"
+    },
+    "clawd_level_097": {
+      "label": "Clawd Evolução: Nível 97",
+      "description": "Nivel 97: obsidiana, ouro e runas orbitais; patamar Eclipse lendario.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_097.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 97,
+      "tier": "Eclipse lendario"
+    },
+    "clawd_level_098": {
+      "label": "Clawd Evolução: Nível 98",
+      "description": "Nivel 98: obsidiana, ouro e runas orbitais; patamar Eclipse lendario.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_098.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 98,
+      "tier": "Eclipse lendario"
+    },
+    "clawd_level_099": {
+      "label": "Clawd Evolução: Nível 99",
+      "description": "Nivel 99: forma final com nucleo estelar completo; patamar Clawd ascendente.",
+      "roles": [
+        "original",
+        "progressao",
+        "nivel"
+      ],
+      "source_file": "imagegen/level_progression/levels/level_099.png",
+      "source_columns": 4,
+      "source_rows": 2,
+      "economy_enabled": false,
+      "level": 99,
+      "tier": "Clawd ascendente"
+    }
+  }
+}

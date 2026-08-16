@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "sprites": {
+    "background_theme_legendary_kingdom": {"label": "Tema: Reino lendário", "description": "Reino de aventura, ruínas antigas, castelo distante e vaga-lumes mágicos.", "roles": ["fundo", "tema"], "source_file": "imagegen/backgrounds/themed/background_theme_legendary_kingdom.png"},
+    "background_theme_energy_martial_arena": {"label": "Tema: Arena de energia", "description": "Planície alienígena para batalhas de artes marciais e grandes poderes.", "roles": ["fundo", "tema"], "source_file": "imagegen/backgrounds/themed/background_theme_energy_martial_arena.png"},
+    "background_theme_portal_dragon_cavern": {"label": "Tema: Caverna do portal", "description": "Caverna de fantasia oitentista com cristais, tochas e portal misterioso.", "roles": ["fundo", "tema"], "source_file": "imagegen/backgrounds/themed/background_theme_portal_dragon_cavern.png"},
+    "background_theme_chinese_mountain_temple": {"label": "Tema: Templo chinês", "description": "Pátio tradicional entre montanhas, lanternas e arquitetura clássica.", "roles": ["fundo", "tema"], "source_file": "imagegen/backgrounds/themed/background_theme_chinese_mountain_temple.png"},
+    "background_theme_sakura_plain": {"label": "Tema: Planície da cerejeira", "description": "Campo primaveril com uma grande cerejeira e pétalas caindo ao vento.", "roles": ["fundo", "tema"], "source_file": "imagegen/backgrounds/themed/background_theme_sakura_plain.png"}
+  }
+}

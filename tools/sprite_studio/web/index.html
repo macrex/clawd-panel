@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Clawd Sprite Studio</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='5' fill='%230b0f19'/%3E%3Crect x='5' y='12' width='5' height='8' fill='%23ef8e70'/%3E%3Crect x='12' y='12' width='5' height='8' fill='%23ef8e70'/%3E%3Crect x='19' y='12' width='5' height='8' fill='%23ef8e70'/%3E%3Crect x='26' y='12' width='2' height='8' fill='%23ef8e70'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+      <div>
+        <p class="eyebrow">ESP32-S3 · ASSET LAB</p>
+        <h1>Clawd Sprite Studio</h1>
+      </div>
+    </div>
+    <div class="top-stats" aria-live="polite">
+      <span><strong id="sprite-count">—</strong> sprites</span>
+      <span><strong id="total-size">—</strong> no SD</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow coral">PREVIEW BINÁRIO REAL</p>
+        <h2>Veja exatamente o que vai para a tela.</h2>
+        <p>A galeria decodifica RGB565 + RLE diretamente dos arquivos <code>.clw</code>. Sem GIF intermediário, sem aproximação.</p>
+      </div>
+      <div class="controls" aria-label="Controles da galeria">
+        <label class="search-field">
+          <span>Buscar</span>
+          <input id="search" type="search" placeholder="alert, trabalho, ícone…" autocomplete="off">
+        </label>
+        <label>
+          <span>Categoria</span>
+          <select id="role-filter">
+            <option value="all">Todas</option>
+            <option value="used">Em uso</option>
+            <option value="estado">Estado</option>
+            <option value="trabalho">Trabalho</option>
+            <option value="alerta">Alerta</option>
+            <option value="heroi">Heróis</option>
+            <option value="acao">Ação</option>
+            <option value="original">Clawd Original</option>
+            <option value="fundo">Fundos animados</option>
+            <option value="tema">Fundos temáticos</option>
+            <option value="clima">Clima</option>
+            <option value="progressao">Progressão 1–99</option>
+            <option value="marks">Clawd Marks</option>
+            <option value="fawkes">Clawd Fawkes</option>
+            <option value="celebracao">Celebração</option>
+            <option value="historia">História</option>
+            <option value="rodape">Rodapé</option>
+            <option value="economico">Econômico</option>
+            <option value="icone">Ícone</option>
+            <option value="transicao">Transição</option>
+            <option value="biblioteca">Biblioteca</option>
+          </select>
+        </label>
+        <label>
+          <span>Velocidade</span>
+          <select id="speed">
+            <option value="0.5">0,5×</option>
+            <option value="1" selected>1×</option>
+            <option value="2">2×</option>
+          </select>
+        </label>
+        <button id="pause" class="control-button" type="button" aria-pressed="false">Pausar tudo</button>
+      </div>
+    </section>
+
+    <section class="workspace">
+      <div class="catalog-panel">
+        <div class="section-title">
+          <div>
+            <p class="eyebrow">CATÁLOGO</p>
+            <h2>Biblioteca de animações</h2>
+          </div>
+          <span id="visible-count" class="result-count">—</span>
+        </div>
+        <div id="sprite-grid" class="sprite-grid" aria-live="polite"></div>
+        <p id="empty-state" class="empty-state" hidden>Nenhum sprite corresponde aos filtros.</p>
+      </div>
+
+      <aside class="inspector" aria-label="Inspetor do sprite selecionado">
+        <div class="device-shell">
+          <div class="device-label"><span>CLAUDIO DISPLAY</span><span>480 × 320</span></div>
+          <canvas id="device" width="480" height="320" aria-label="Simulação da tela do ESP32"></canvas>
+        </div>
+        <label class="stage-control">
+          <span>Clawd sobre o fundo</span>
+          <select id="overlay-select" aria-label="Escolher personagem para compor sobre o fundo"></select>
+        </label>
+        <div class="inspector-heading">
+          <div>
+            <p id="detail-role" class="eyebrow coral">—</p>
+            <h2 id="detail-name">Selecione um sprite</h2>
+          </div>
+          <span id="detail-status" class="status-pill">—</span>
+        </div>
+        <p id="detail-description" class="detail-description">Os metadados aparecerão aqui.</p>
+        <section id="source-review" class="source-review" aria-labelledby="source-title" hidden>
+          <div class="source-heading">
+            <div>
+              <p class="eyebrow">ARQUIVO DE ORIGEM</p>
+              <h3 id="source-title">Folha para revisão</h3>
+            </div>
+            <a id="source-open" href="#" target="_blank" rel="noopener">Abrir</a>
+          </div>
+          <code id="source-path" class="source-path"></code>
+          <div id="source-sheet" class="source-sheet">
+            <img id="source-image" alt="Arquivo que originou o sprite selecionado">
+            <div id="source-frame-grid" class="source-frame-grid" aria-label="Quadros da folha original"></div>
+          </div>
+          <p id="source-hint" class="source-hint">Selecione um quadro para identificá-lo.</p>
+        </section>
+        <dl class="metrics">
+          <div><dt>Frames</dt><dd id="metric-frames">—</dd></div>
+          <div><dt>Cadência</dt><dd id="metric-fps">—</dd></div>
+          <div><dt>Nativo</dt><dd id="metric-native">—</dd></div>
+          <div><dt>Na tela</dt><dd id="metric-screen">—</dd></div>
+          <div><dt>Arquivo</dt><dd id="metric-file">—</dd></div>
+          <div><dt>Compressão</dt><dd id="metric-compression">—</dd></div>
+          <div><dt>B/px/qd</dt><dd id="metric-bppf">—</dd></div>
+          <div><dt>Perfil</dt><dd id="metric-profile">—</dd></div>
+          <div><dt>Buffer</dt><dd id="metric-buffer">—</dd></div>
+          <div><dt>Custo pág. 3</dt><dd id="metric-cpu">—</dd></div>
+        </dl>
+        <p class="inspector-note">O custo usa o flush completo medido de 64 ms por quadro. O rodapé usa flush parcial e custa menos.</p>
+      </aside>
+    </section>
+  </main>
+
+  <template id="sprite-card-template">
+    <button class="sprite-card" type="button">
+      <span class="card-preview"><canvas width="240" height="144"></canvas></span>
+      <span class="card-heading"><strong></strong><em></em></span>
+      <span class="card-meta"></span>
+      <span class="card-tags"></span>
+    </button>
+  </template>
+
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>

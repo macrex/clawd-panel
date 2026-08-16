@@ -1,0 +1,71 @@
+.pio/
+.vscode/
+
+# Nunca versionar: carrega a senha do WiFi. Use config.example.json.
+config.json
+
+# Estado runtime da API (sessoes vivas). Nasce ao lado do script quando ela roda
+# a partir desta pasta; carrega nomes de repo e caminhos da maquina.
+server/state.json
+
+# Backup do conteudo de fabrica do cartao SD: 288 MB, com arquivos unicos de
+# ate 64 MB. Fica fora do git de proposito — passa dos limites do GitHub e nao
+# e codigo. Guardado em disco, ao lado do repositorio.
+backup-cartao-fabrica/
+
+# PID da API em runtime, gravado ao lado do script quando ela roda a partir
+# desta pasta. Serve para o tray achar o processo; nao e codigo.
+server/api.pid
+
+# Coordenadas de onde a maquina esta, descobertas pelo IP no primeiro boot.
+# Ficam de fora por serem o endereco de casa de quem roda isto, nao por serem
+# segredo tecnico. Use weather.example.json como modelo.
+server/weather.json
+
+# Cache do Python, gerado em runtime. A regra vale para qualquer pasta: a da
+# API era a unica quando isto foi escrito, e agora as ferramentas de sprite
+# tambem geram a sua.
+__pycache__/
+
+# O livro-caixa dos trabalhos. Nasce ao lado do script, como o state.json, e
+# carrega nomes de repo, branches e o que cada turno custou.
+server/works.jsonl
+
+# Toolchain de host para `pio test -e native` (w64devkit portatil, ~575 MB).
+# Fica fora do git: e ferramenta de maquina, nao codigo do projeto.
+toolchain/
+
+# As capturas da tela da placa. Nascem ao lado do script quando a API roda desta
+# pasta, e sao o retrato do painel na hora: repo, branch e o que o agente estava
+# perguntando. Diagnostico de minutos, nao codigo — as 20 ultimas ficam, o resto
+# a propria gravacao apaga.
+server/capturas/
+
+# Sprites derivados de material de terceiros (Sonic, South Park). Eles moram no
+# CARTAO, nunca no repositorio publico: o codigo que os desenha e nosso, a arte
+# nao. Um `git add -A` distraido seria o unico jeito de vazarem.
+sdcard/clawd/sonic_*.clw
+sdcard/clawd/sp_*.clw
+
+# A staging da atualizacao de arquivo via placa (tools/atualizar_sprite.py):
+# copias transitorias do que vai para o cartao — inclusive dos sprites acima.
+server/atualizacoes/
+
+# E a MATERIA-PRIMA deles pelo mesmo motivo: as folhas de pose ficam aqui para o
+# compilador (tools/build_reset_kenny.py) poder regerar o .clw sem depender de
+# um arquivo perdido na pasta de downloads, mas sao a mesma arte de terceiros.
+sprites/sources/south_park/
+
+# Worktrees criadas pelo fluxo de desenvolvimento em paralelo. Sao copias de
+# trabalho do proprio repo: versiona-las seria versionar o repo dentro dele.
+.claude/worktrees/
+
+# Backup do firmware de fabrica da placa. E software da Guition, nao deste
+# projeto: fica em disco para quem quiser restaurar a propria placa, e nunca
+# no repositorio publico.
+firmware-fabrica/
+hqdefault.jpg
+
+# Spec e plano da primeira versao. Moram no vault de documentacao; aqui ficam
+# so como referencia local, e citam a rede e as maquinas de quem os escreveu.
+docs/superpowers/

@@ -1,0 +1,6 @@
+{
+  "_comentario": "Opcional. Sem este arquivo, weather.py descobre as coordenadas pelo IP no primeiro boot e grava um weather.json ao lado. Copie para weather.json e edite se a geolocalizacao por IP errar a cidade — ela acerta a regiao e erra o bairro.",
+  "lat": -23.5505,
+  "lon": -46.6333,
+  "city": "Sao Paulo"
+}
