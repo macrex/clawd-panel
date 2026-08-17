@@ -12,6 +12,7 @@
 #include "reset_watch.h"
 #include "relogio.h"
 #include "limpeza.h"
+#include "falha.h"       // motivoDaFalha: por que o painel esta sem dado
 #include "view_model.h"     // semSessao: quem decide se o Clawd dorme
 #include "cache.h"
 #include "hora.h"
@@ -25,7 +26,6 @@ bool            haveLast   = false;
 uint32_t        lastOkMs   = 0;    // quando a API respondeu pela ultima vez
 uint32_t        lastPollMs = 0;
 int             staleSec   = 0;    // 0 = dado fresco
-bool            semWifi    = false;  // o stale e por queda de rede?
 int             page       = 0;
 bool            fatal      = false;  // sem config: nao ha o que fazer
 
@@ -785,8 +785,6 @@ void loop() {
             last.week.resets    = prazoDaTela(weekDaApi, 0);
             last.session.at     = atDaTela(sessionDaApi, 0);
             last.week.at        = atDaTela(weekDaApi, 0);
-            semWifi = false;
-            ui::marcarSemWifi(false);
             // O limite liberou (reset chegou): a tela do Token rearma sozinha.
             // O proximo estouro e um evento novo e merece a tela de novo.
             if (!ui::limiteEstourado(last)) tokenDispensado = false;
@@ -823,12 +821,14 @@ void loop() {
             // estar fresco.
             staleSec = idadeBaseSeg + (int)((now - lastOkMs) / 1000);
             redraw = true;
-            // Sem WIFI e outra coisa de "API demorando", e a diferenca muda o
-            // que fazer: uma se resolve esperando, a outra nao. Com dado velho
-            // na tela o aviso vinha sempre como "sem contato ha Ns", e uma
-            // queda de rede se disfarcava de servidor lento.
-            semWifi = (r == NetResult::NoWifi);
-            ui::marcarSemWifi(semWifi);
+            // POR QUE nao ha dado novo, e nao so "nao ha". Cada motivo pede uma
+            // acao diferente — o radio caido se resolve esperando, o processo da
+            // API morto pede um comando no PC, a maquina desligada pede alguem
+            // levantar. Com dado velho na tela o aviso vinha sempre como "SEM
+            // CONTATO HA Ns", e as tres se disfarcavam de servidor lento.
+            ui::marcarMotivo(motivoDaFalha(net::lastHttpCode(),
+                                           net::lastFetchDurMs(),
+                                           r != NetResult::NoWifi));
         } else if (r == NetResult::NoWifi) {
             ui::drawMessage("SEM WIFI", cfg.ssid.c_str());
             delay(20);
@@ -1322,13 +1322,22 @@ void loop() {
     static uint32_t voltas = 0;
     voltas++;
     if (now - ultimoPulso >= 5000) {
-        Serial.printf("pulso t=%lus voltas=%lu wifi=%d rssi=%d http=%d "
+        Serial.printf("pulso t=%lus voltas=%lu wifi=%d rssi=%d http=%d/%dms "
+                      "motivo=%s "
                       "ciclos=%lu fetch=%lums contato=%lus "
                       "spr(clima=%d nivel=%d fundo=%d) "
                       "cap=%lu/%d "
                       "heap=%u min=%u psram=%u stale=%d pg=%d\n",
                       (unsigned long)(now / 1000), (unsigned long)voltas,
                       (int)net::connected(), net::rssi(), net::lastHttpCode(),
+                      // A DURACAO ao lado do codigo: os dois juntos e que
+                      // separam "a porta esta fechada" (resposta em
+                      // milissegundos) de "a maquina nao existe" (o timeout de
+                      // conexao inteiro). E o `motivo` e a conclusao dos dois,
+                      // exatamente como ela chega ao rodape.
+                      net::lastFetchDurMs(),
+                      motivoDaFalha(net::lastHttpCode(), net::lastFetchDurMs(),
+                                    net::connected()),
                       (unsigned long)net::cycles(),
                       (unsigned long)net::sinceLastFetchMs(),
                       (unsigned long)nivelEstado.contatoS,

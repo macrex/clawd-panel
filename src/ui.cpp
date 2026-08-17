@@ -54,9 +54,13 @@ bool g_stale = false;
 
 // Ha duas fontes configuradas? Sem isso, nenhum chip de maquina e desenhado.
 bool g_duasFontes = false;
-// O stale e por queda de RADIO? Muda o texto do rodape: "sem contato" se
-// resolve esperando, "sem wifi" nao.
-bool g_semWifi = false;
+// POR QUE o dado esta velho, em ate 11 caracteres — quem escolhe o texto e
+// lib/metrics/falha.h, a partir do codigo e da duracao da ultima tentativa.
+//
+// Era um booleano ("o stale e por queda de radio?") e virou o motivo inteiro
+// quando ficou claro que "sem contato" cobria tres situacoes com tres acoes
+// diferentes: o processo da API morto, a maquina fora, a API respondendo erro.
+const char *g_motivo = "SEM CONTATO";
 
 // ---- O realce de turno concluido ----
 //
@@ -415,16 +419,13 @@ void drawFooter(Arduino_Canvas *g, const Status &s, int page, int staleSeconds) 
     // O motor de reserva vira PREFIXO do texto que ja mora aqui. Rotulo proprio
     // precisaria de espaco que o rodape nao tem.
     const char *mot = s.hooksEngine ? "HOOKS  " : "";
-    if (staleSeconds > 0 && g_semWifi) {
-        snprintf(buf, sizeof(buf), "%sSEM WIFI HA %ds", mot,
-                 staleSeconds < 3600 ? staleSeconds : staleSeconds / 3600);
-    } else if (staleSeconds > 0) {
+    if (staleSeconds > 0) {
         // Acima de uma hora vira horas. Nao e estetica: em segundos, um atraso
         // de dias empurra este texto para a esquerda ate encostar no trio.
         if (staleSeconds < 3600)
-            snprintf(buf, sizeof(buf), "%sSEM CONTATO HA %ds", mot, staleSeconds);
+            snprintf(buf, sizeof(buf), "%s%s HA %ds", mot, g_motivo, staleSeconds);
         else
-            snprintf(buf, sizeof(buf), "%sSEM CONTATO HA %dh", mot, staleSeconds / 3600);
+            snprintf(buf, sizeof(buf), "%s%s HA %dh", mot, g_motivo, staleSeconds / 3600);
     } else {
         snprintf(buf, sizeof(buf), "%s%s", mot, formatAge(s.updated_ago).c_str());
     }
@@ -2028,14 +2029,11 @@ void drawTurmaRetrato(Arduino_Canvas *g) {
 void drawStatusRetrato(Arduino_Canvas *g, const Status &s, int staleSeconds) {
     char buf[64];
     const char *mot = s.hooksEngine ? "HOOKS  " : "";
-    if (staleSeconds > 0 && g_semWifi) {
-        snprintf(buf, sizeof(buf), "%sSEM WIFI HA %ds", mot,
-                 staleSeconds < 3600 ? staleSeconds : staleSeconds / 3600);
-    } else if (staleSeconds > 0) {
+    if (staleSeconds > 0) {
         if (staleSeconds < 3600)
-            snprintf(buf, sizeof(buf), "%sSEM CONTATO HA %ds", mot, staleSeconds);
+            snprintf(buf, sizeof(buf), "%s%s HA %ds", mot, g_motivo, staleSeconds);
         else
-            snprintf(buf, sizeof(buf), "%sSEM CONTATO HA %dh", mot, staleSeconds / 3600);
+            snprintf(buf, sizeof(buf), "%s%s HA %dh", mot, g_motivo, staleSeconds / 3600);
     } else if (s.viaSlave) {
         // Em contato, mas nao com quem manda: o dado desta tela veio da
         // reserva, e ela mesma diz como se chama.
@@ -2544,7 +2542,7 @@ void drawRetrato(Arduino_Canvas *g, const Status &s, int staleSeconds,
 
 namespace ui {
 
-void marcarSemWifi(bool v) { g_semWifi = v; }
+void marcarMotivo(const char *v) { if (v) g_motivo = v; }
 
 void duasFontes(bool v) { g_duasFontes = v; }
 

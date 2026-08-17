@@ -43,9 +43,14 @@ void drawStatus(const Status &s, int page, const std::string &selectedId,
                 float xpDoDia = 0, int opcaoArmada = 0, bool telaToken = false,
                 const char *telaReset = nullptr, bool telaOffline = false);
 
-// O dado velho na tela e por queda de RADIO, e nao por servidor lento? Muda so
-// o texto do rodape — e a diferenca importa: uma das duas se resolve esperando.
-void marcarSemWifi(bool v);
+// POR QUE o dado da tela esta velho. Muda so o texto do rodape, e a diferenca
+// importa porque cada motivo pede uma acao diferente: o radio caido se resolve
+// esperando, o processo da API morto pede um comando no PC, a maquina desligada
+// pede alguem levantar. Antes as tres apareciam como "SEM CONTATO HA 40s".
+//
+// O texto sai de `motivoDaFalha` (lib/metrics/falha.h) e tem no maximo 11
+// caracteres, que e a largura util do rodape. `nullptr` nao muda nada.
+void marcarMotivo(const char *v);
 
 // Ha DUAS fontes configuradas? So entao o chip com a tag da maquina aparece:
 // com uma fonte so ele seria a mesma palavra em toda linha — o mesmo motivo

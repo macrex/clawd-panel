@@ -31,6 +31,11 @@ void begin(const AppConfig &c);
 
 bool connected();
 int  lastHttpCode();          // para diagnostico
+// Quanto durou a ultima tentativa no master, em ms. Junto com o codigo, e o que
+// separa "a porta esta fechada" (resposta em milissegundos) de "a maquina nao
+// existe" (o timeout de conexao inteiro) — os dois chegam como o mesmo -1.
+// Ver lib/metrics/falha.h.
+int  lastFetchDurMs();
 int  rssi();                  // forca do sinal, para explicar latencia alta
 
 // DIAGNOSTICO. `lastHttpCode()` nao diz se a rede esta viva AGORA: ele so e

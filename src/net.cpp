@@ -1,6 +1,7 @@
 #include "net.h"
 #include "fusao.h"
 #include "neturl.h"
+#include "falha.h"
 #include "jsonmem.h"
 #include "display.h"
 #include <Arduino.h>
@@ -13,9 +14,20 @@
 #include <freertos/task.h>
 #include <freertos/semphr.h>
 
+// Os codigos que `lib/metrics/falha.h` repete para poder ser compilado no PC,
+// amarrados aqui aos valores de verdade do core. Se o Arduino renumerar algum, a
+// build da placa quebra nesta linha — e nao o painel passa a mentir o motivo.
+static_assert(HTTP_RECUSADA == HTTPC_ERROR_CONNECTION_REFUSED, "codigo mudou");
+static_assert(HTTP_PERDIDA == HTTPC_ERROR_CONNECTION_LOST, "codigo mudou");
+static_assert(HTTP_LEITURA_LENTA == HTTPC_ERROR_READ_TIMEOUT, "codigo mudou");
+
 namespace {
 
 int g_lastCode = 0;
+// Quanto durou a ultima tentativa no master. E o que separa "a porta esta
+// fechada" de "a maquina nao existe": os dois chegam como o mesmo -1, e so o
+// tempo os distingue (ver lib/metrics/falha.h).
+volatile uint32_t g_lastDurMs = 0;
 
 // DIAGNOSTICO: quantas voltas a tarefa de rede completou, e quando terminou a
 // ultima. `lastHttpCode()` sozinho nao serve para saber se a rede esta viva —
@@ -450,6 +462,37 @@ void reassociarSePreciso() {
     WiFi.begin();          // reusa SSID e senha guardados por begin()
 }
 
+// Reassocia mesmo ASSOCIADO, quando ha muito tempo nada volta.
+//
+// `reassociarSePreciso` cobre o radio que desistiu, e ele so age quando o driver
+// admite estar desconectado. Existe um estado pior e silencioso: associada, com
+// IP valido, e o caminho para o gateway morto — AP reiniciado que manteve a
+// associacao, tabela ARP podre, DHCP renovado para uma sub-rede diferente.
+// Ali `WL_CONNECTED` e verdade e nenhuma requisicao completa NUNCA, sem nada no
+// firmware que tente sair disso.
+//
+// O gatilho e conservador de proposito. Ele custa uns segundos de radio fora, e
+// o caso comum de nada voltar — o PC do outro lado desligado — nao se resolve
+// mexendo no Wi-Fi.
+const uint32_t CICLOS_ATE_REASSOCIAR = 30;      // ~60 s no poll de 2 s
+const uint32_t ESPACO_REASSOC_MS     = 300000;  // e no maximo uma a cada 5 min
+
+void reassociarNoEscuro(uint32_t ciclosRuins) {
+    static uint32_t ultimaMs = 0;
+
+    if (ciclosRuins < CICLOS_ATE_REASSOCIAR) return;
+    if (WiFi.status() != WL_CONNECTED) return;   // o outro caminho cuida disso
+
+    const uint32_t agora = millis();
+    if (ultimaMs && (agora - ultimaMs) < ESPACO_REASSOC_MS) return;
+    ultimaMs = agora ? agora : 1;
+
+    Serial.printf("wifi: associado e mudo ha %lu ciclos, reassociando\n",
+                  (unsigned long)ciclosRuins);
+    WiFi.disconnect();
+    WiFi.begin();
+}
+
 // Uma conexao persistente POR FONTE: o keep-alive e por host, e reusar o mesmo
 // HTTPClient contra dois enderecos derrubaria e reabriria o socket a cada
 // volta — justamente o custo que o setReuse existe para evitar.
@@ -464,7 +507,16 @@ Conexao g_conSlave;
 // Faz UMA requisicao numa fonte. Roda apenas dentro da tarefa. O check de
 // radio mora em fetchCiclo: quando o WiFi caiu, nenhuma fonte merece tentativa.
 NetResult fetchFonte(Conexao &con, const std::string &url, Status &out,
-                     int &codeOut) {
+                     int &codeOut, uint32_t *durOut = nullptr) {
+    const uint32_t comecou = millis();
+    // A duracao e escrita em TODA saida, inclusive nas de erro: e justamente
+    // no erro que ela informa (ver lib/metrics/falha.h).
+    struct MedeAoSair {
+        uint32_t  inicio;
+        uint32_t *destino;
+        ~MedeAoSair() { if (destino) *destino = millis() - inicio; }
+    } medida{comecou, durOut};
+
     // Conexao PERSISTENTE. Sem isto cada poll abria um TCP novo, com aperto de
     // mao completo a cada dois segundos. A API responde HTTP/1.1 com
     // Content-Length e sem `Connection: close`, entao da para manter de pe.
@@ -512,8 +564,10 @@ NetResult fetchCiclo(Status &out) {
 
     Status s1;
     int code1 = 0;
-    const NetResult r1 = fetchFonte(g_conMaster, g_url, s1, code1);
-    g_lastCode = code1;             // o diagnostico de sempre fala do master
+    uint32_t dur1 = 0;
+    const NetResult r1 = fetchFonte(g_conMaster, g_url, s1, code1, &dur1);
+    g_lastCode  = code1;            // o diagnostico de sempre fala do master
+    g_lastDurMs = dur1;
 
     const uint32_t agora = millis();
     if (r1 == NetResult::Ok)   g_masterFalhaMs = 0;
@@ -618,6 +672,13 @@ void tarefaRede(void *) {
         // estes dois precisam ja refletir que a volta terminou.
         g_ciclos++;
         g_ultimoFimMs = millis();
+
+        // Voltas seguidas sem NENHUMA resposta boa. Zera na primeira boa —
+        // inclusive numa que veio so do PC2, porque ai o radio esta provado.
+        static uint32_t ciclosRuins = 0;
+        if (r == NetResult::Ok) ciclosRuins = 0;
+        else                    ciclosRuins++;
+        reassociarNoEscuro(ciclosRuins);
 
         // O pedido de arquivo e lido ANTES da publicacao porque `s` e MOVIDO
         // para `g_status` logo abaixo — depois disso ele nao vale mais nada. A
@@ -803,6 +864,7 @@ void begin(const AppConfig &c) {
 
 bool connected()    { return WiFi.status() == WL_CONNECTED; }
 int  lastHttpCode() { return g_lastCode; }
+int  lastFetchDurMs() { return (int)g_lastDurMs; }
 uint32_t cycles()   { return g_ciclos; }
 uint32_t sinceLastFetchMs() {
     const uint32_t fim = g_ultimoFimMs;
