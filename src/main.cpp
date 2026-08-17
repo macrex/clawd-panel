@@ -405,6 +405,29 @@ void proximoAgente() {
     selectedId = last.agents[(atual + 1) % last.agents.size()].id;
 }
 
+// ---- As fatias do laco ----
+//
+// O `loop()` tinha 858 linhas numa funcao so, e as fatias abaixo sao a leitura
+// dele em voz alta: cada uma faz uma coisa e diz qual no nome. Elas ficam neste
+// mesmo arquivo e neste mesmo namespace de proposito — TODO o estado do painel
+// mora aqui, e leva-las para outro modulo obrigaria a expor esse estado, que e
+// pior do que o problema que se quer resolver.
+//
+// As definicoes vem depois do `loop()` para que ele continue sendo a primeira
+// coisa que se le no arquivo.
+void tratarToque(uint32_t now, const TouchPoint &t, bool &redraw);
+void restaurarDoCartao(uint32_t now, bool &redraw);
+bool colherRede(uint32_t now, bool &redraw);
+void andarSemAApi(uint32_t now, bool &redraw);
+void contarConvivio(uint32_t now, bool &redraw);
+void vigiarTarefaDeRede(uint32_t now);
+void animarClawd(uint32_t now, bool dedoNaTela, bool &redraw);
+void carregarOuSoltarOffline(uint32_t now, bool &redraw);
+void desenhar(uint32_t now, bool redraw);
+void pulso(uint32_t now);
+void atenderCaptura();
+void gravarArquivoBaixado();
+
 }  // namespace
 
 void setup() {
@@ -491,9 +514,49 @@ void loop() {
     const uint32_t now = millis();
     bool redraw = false;
 
-    // --- toque: sempre responsivo, independente do ciclo de rede ---
-    TouchPoint t = touch::read();
-    Gesture g = gestos.update(t.pressed, t.x, t.y, now);
+    // Uma leitura de toque por volta, e ela atravessa as fatias: o gesto sai
+    // daqui e a animacao das paginas caras congela enquanto ha dedo na tela.
+    const TouchPoint t = touch::read();
+
+    tratarToque(now, t, redraw);
+    restaurarDoCartao(now, redraw);
+    if (!colherRede(now, redraw)) return;
+
+    andarSemAApi(now, redraw);
+
+    contarConvivio(now, redraw);
+    vigiarTarefaDeRede(now);
+
+    animarClawd(now, t.pressed, redraw);
+
+    carregarOuSoltarOffline(now, redraw);
+    desenhar(now, redraw);
+
+    atenderCaptura();
+    gravarArquivoBaixado();
+    pulso(now);
+
+    // ~50 leituras de touch por segundo. Enquanto o bicho da tela de reset
+    // dança, nao: ali cada volta E um quadro, e os 20 ms parados comeriam um
+    // terço dos 70 que o arquivo mais rapido da. A tela e curta e nao tem gesto
+    // para perder — ela morre pelo relogio, e o unico controle que sobra e o
+    // giro, que continua sendo lido a cada volta.
+    delay(telaResetAtiva(now) ? 2 : 20);
+}
+
+namespace {
+
+
+
+
+
+// O toque, sempre responsivo e independente do ciclo de rede.
+//
+// O `TouchPoint` vem de fora porque a animacao tambem o le, la embaixo: quem
+// mede o dedo tem que ser um so por volta, senao as duas leituras podem discordar
+// dentro do mesmo quadro.
+void tratarToque(uint32_t now, const TouchPoint &t, bool &redraw) {
+    const Gesture g = gestos.update(t.pressed, t.x, t.y, now);
 
     // A decisao — qual acao este gesto significa AQUI — mora em lib/gesture, com
     // teste. Ela era uma cadeia de quatorze `else if` dentro deste laco, e a
@@ -602,9 +665,10 @@ void loop() {
             redraw = true;
             break;
     }
+}
 
-    // --- o retrato do cartao, quando nao ha nada melhor ---
-    //
+// O retrato do cartao, quando nao ha nada melhor.
+void restaurarDoCartao(uint32_t now, bool &redraw) {
     // Uma placa que liga com o PC desligado nao tinha nada a dizer: `haveLast`
     // falso, tela "API FORA" e fim. O cartao guarda o ultimo retrato bom (ver
     // lib/metrics/cache.h) e ele entra aqui, uma vez, no boot.
@@ -636,8 +700,14 @@ void loop() {
             Serial.println("cache: sem retrato utilizavel no cartao");
         }
     }
+}
 
-    // --- rede: colhe o que a tarefa do outro nucleo ja trouxe ---
+// A rede: colhe o que a tarefa do outro nucleo ja trouxe.
+//
+// Devolve FALSO quando nao ha nada na tela alem da mensagem de boot — ai o
+// laco termina a volta ali mesmo, que era o `return` que esta fatia tinha
+// dentro dela quando morava no `loop()`.
+bool colherRede(uint32_t now, bool &redraw) {
     // Nao bloqueia e nao espera. A requisicao custa 170-250 ms nesta placa e
     // antes rodava aqui dentro, cegando o toque a cada dois segundos.
     NetResult r;
@@ -765,12 +835,12 @@ void loop() {
         } else if (r == NetResult::NoWifi) {
             ui::drawMessage("SEM WIFI", cfg.ssid.c_str());
             delay(20);
-            return;
+            return false;
         } else {
             // Nunca houve resposta: nao ha o que esmaecer.
             ui::drawMessage("API FORA", cfg.url.c_str());
             delay(20);
-            return;
+            return false;
         }
     }
 
@@ -792,7 +862,16 @@ void loop() {
             redraw = true;
         }
     }
-
+    return true;
+}
+// O tempo que anda SEM a API.
+//
+// Tudo o que esta funcao faz existe por causa do mesmo defeito: um numero
+// velho com cara de numero fresco. A idade do dado, o relogio do cabecalho, os
+// dois prazos, o instante da virada e o teto da limpeza — nenhum deles pode
+// congelar quando o servidor cala, porque congelado nenhum deles PARECE
+// congelado.
+void andarSemAApi(uint32_t now, bool &redraw) {
     // Sem resposta nova ha muito tempo: o numero na tela precisa envelhecer
     // sozinho, senao ele finge estar fresco enquanto a rede esta fora.
     //
@@ -909,7 +988,10 @@ void loop() {
             redraw = true;
         }
     }
-
+}
+// O nivel do Clawd: o tempo de convivio, a trava de maximo, e o que vai
+// para o cartao e para a NVS.
+void contarConvivio(uint32_t now, bool &redraw) {
     // Tempo de tela ligada EM CONTATO. Nao e uptime: com a API fora o relogio
     // para, porque e isso que "se comunicando com o servidor" quer dizer. E o
     // unico dos tres contadores do nivel que so a placa sabe — turnos e custo
@@ -1016,7 +1098,10 @@ void loop() {
         hora::guardarPiso();
         pisoSalvoMs = now ? now : 1;
     }
+}
 
+// A tarefa de rede travou? A placa reinicia.
+void vigiarTarefaDeRede(uint32_t now) {
     // Tarefa de rede travada: reinicia a placa. Ela e quem faz a requisicao,
     // entao nao ha como destrava-la daqui — sem isto o painel fica horas com
     // dado velho, que foi o estado em que ele foi encontrado.
@@ -1045,157 +1130,163 @@ void loop() {
         delay(50);
         ESP.restart();
     }
-
-    // --- animacao do Clawd ---
-    // Dois custos bem diferentes, e por isso dois caminhos:
-    //
-    //   pagina 3   o Clawd grande ocupa x~150..330, FORA da faixa esquerda que
-    //              o flush de prefixo alcanca. Cada quadro custa um redesenho
-    //              de tela inteira, ~64 ms.
-    //   rodape     a turma mora em x=14..200, dentro da faixa. Cada quadro
-    //              custa ~21 ms (ver display::flushPrefix), e clawd::tick
-    //              limita a no maximo um envio a cada 100 ms.
-    //
-    // O DEDO TEM PRIORIDADE, mas so onde o quadro e caro. Durante um redesenho
-    // de 64 ms o toque nao e lido, e um swipe precisa de varias amostras
-    // seguidas para ser classificado — gestos rapidos se perdiam inteiros
-    // dentro de um quadro. Por isso a pagina 3 congela enquanto ha dedo na
-    // tela. O rodape nao precisa disso: a 9 ms o gesto atravessa sem sentir, e
-    // congelar o selo durante o swipe seria visivel a toa.
+}
+// A animacao do Clawd, com dois custos bem diferentes e por isso dois caminhos:
+//
+//   paginas 3 e 4  o bicho grande ocupa x~150..330, FORA da faixa esquerda que
+//                  o flush de prefixo alcanca. Cada quadro custa um redesenho
+//                  de tela inteira, ~64 ms.
+//   rodape         a turma mora em x=14..200, dentro da faixa. Cada quadro
+//                  custa ~21 ms (ver display::flushPrefix), e clawd::tick
+//                  limita a no maximo um envio a cada 100 ms.
+//
+// O DEDO TEM PRIORIDADE, mas so onde o quadro e caro. Durante um redesenho de
+// 64 ms o toque nao e lido, e um swipe precisa de varias amostras seguidas para
+// ser classificado — gestos rapidos se perdiam inteiros dentro de um quadro. Por
+// isso as paginas caras congelam enquanto ha dedo na tela. O rodape nao precisa
+// disso: a 9 ms o gesto atravessa sem sentir, e congelar o selo durante o swipe
+// seria visivel a toa.
+void animarClawd(uint32_t now, bool dedoNaTela, bool &redraw) {
     static uint32_t ultimoToqueMs = 0;
-    if (t.pressed) ultimoToqueMs = now;
+    if (dedoNaTela) ultimoToqueMs = now;
     const bool mexendo = ultimoToqueMs && (now - ultimoToqueMs) < 600;
 
     // `!modoTerminal`: la a tela e do agente, e um quadro de animacao do rodape
-    // escreveria o selo por cima do texto. Os contadores param junto, e isso
-    // nao se ve — voltar do terminal cai no quadro em que a animacao estava.
-    if (!redraw && haveLast && !modoTerminal) {
-        // Nas paginas 3 e 4 o bicho ocupa a tela e o quadro custa um redesenho
-        // inteiro (~64 ms), que cega o toque — por isso a animacao para
-        // enquanto ha dedo na tela. No rodape um quadro custa ~21 ms com o
-        // flush de prefixo, no maximo 10 vezes por segundo: parar seria visivel
-        // e nao compraria responsividade nenhuma.
-        // O bicho do cabecalho troca a cada dez minutos, e a troca LE DO CARTAO.
-        // Nunca com o dedo na tela: o engasgo da leitura engoliria o gesto, e
-        // dez minutos de espera nao tem pressa nenhuma para insistir agora.
-        if (clawd::tickIconeCabecalho(now, !mexendo)) redraw = true;
+    // escreveria o selo por cima do texto. Os contadores param junto, e isso nao
+    // se ve — voltar do terminal cai no quadro em que a animacao estava.
+    if (redraw || !haveLast || modoTerminal) return;
 
-        const bool caro = (page == 2 || page == 3);
-        if (!(caro && mexendo)) {
-            // `clawd::tick` avanca o selo, o trio e o bicho do cabecalho. Roda
-            // em TODA pagina, inclusive onde eles nao aparecem: congelar o que
-            // esta escondido faria a animacao saltar ao trocar de pagina.
-            const bool avancouFaixa = clawd::tick(now);
+    // Nas paginas 3 e 4 o bicho ocupa a tela e o quadro custa um redesenho
+    // inteiro (~64 ms), que cega o toque — por isso a animacao para
+    // enquanto ha dedo na tela. No rodape um quadro custa ~21 ms com o
+    // flush de prefixo, no maximo 10 vezes por segundo: parar seria visivel
+    // e nao compraria responsividade nenhuma.
+    // O bicho do cabecalho troca a cada dez minutos, e a troca LE DO CARTAO.
+    // Nunca com o dedo na tela: o engasgo da leitura engoliria o gesto, e
+    // dez minutos de espera nao tem pressa nenhuma para insistir agora.
+    if (clawd::tickIconeCabecalho(now, !mexendo)) redraw = true;
 
-            if (page == 3) {
-                // A QUARTA PAGINA anima SO o bicho do nivel e o fundo.
-                //
-                // O mago e o bicho do clima ficam parados aqui de proposito.
-                // Cada quadro deles custaria um flush de tela INTEIRA para
-                // mexer um enfeite de canto — e esta pagina ja paga duas
-                // animacoes grandes, que sao as que a pagina existe para
-                // mostrar. O resultado de `tick` e ignorado pelo mesmo motivo:
-                // nada do que ele avanca aparece aqui.
-                //
-                // O fundo tem cadencia propria (4 fps contra 6 do bicho), mas
-                // os dois pedem o MESMO redesenho inteiro — entao pedir junto e
-                // de graca.
-                if (clawd::tickNivel(now)) redraw = true;
-                if (clawd::tickFundo(now)) redraw = true;
-            } else {
-                // A saida da tela do Cartman pede a tela inteira de volta, e
-                // pede ANTES de qualquer redesenho parcial deste ciclo.
-                if (resetAcabouAgora(now)) redraw = true;
+    const bool caro = (page == 2 || page == 3);
+    if (!(caro && mexendo)) {
+        // `clawd::tick` avanca o selo, o trio e o bicho do cabecalho. Roda
+        // em TODA pagina, inclusive onde eles nao aparecem: congelar o que
+        // esta escondido faria a animacao saltar ao trocar de pagina.
+        const bool avancouFaixa = clawd::tick(now);
 
-                if (avancouFaixa && !redraw) {
-                    if (caro) {
-                        redraw = true;
-                    } else if (!telaResetAtiva(now)) {
-                        // Em pe a turma esta SEMPRE no topo nas paginas
-                        // baratas — a inicial e a de contexto usam o mesmo
-                        // lugar (ver ui.cpp, R1_C1_Y) —, e a faixa barata do
-                        // flush a alcanca nas duas: ~11 ms por quadro.
-                        // A tela do Token e a excecao: la o topo e da cabeca
-                        // do bicho, e sem isto o redrawBadge pintava a turma
-                        // por cima dela.
-                        //
-                        // Na tela do RESET este caminho nao roda: os 50 mil
-                        // pixels que ele enviaria ja vao dentro do prefixo do
-                        // `redrawReset`, e o bicho do cabecalho e desenhado la
-                        // — pagar um envio proprio seria tirar 6 ms de um
-                        // orcamento de 70.
-                        ui::redrawBadge(last, staleSec,
-                                        telaTokenAtiva() || clawdDorme(now));
-                    }
+        if (page == 3) {
+            // A QUARTA PAGINA anima SO o bicho do nivel e o fundo.
+            //
+            // O mago e o bicho do clima ficam parados aqui de proposito.
+            // Cada quadro deles custaria um flush de tela INTEIRA para
+            // mexer um enfeite de canto — e esta pagina ja paga duas
+            // animacoes grandes, que sao as que a pagina existe para
+            // mostrar. O resultado de `tick` e ignorado pelo mesmo motivo:
+            // nada do que ele avanca aparece aqui.
+            //
+            // O fundo tem cadencia propria (4 fps contra 6 do bicho), mas
+            // os dois pedem o MESMO redesenho inteiro — entao pedir junto e
+            // de graca.
+            if (clawd::tickNivel(now)) redraw = true;
+            if (clawd::tickFundo(now)) redraw = true;
+        } else {
+            // A saida da tela do Cartman pede a tela inteira de volta, e
+            // pede ANTES de qualquer redesenho parcial deste ciclo.
+            if (resetAcabouAgora(now)) redraw = true;
+
+            if (avancouFaixa && !redraw) {
+                if (caro) {
+                    redraw = true;
+                } else if (!telaResetAtiva(now)) {
+                    // Em pe a turma esta SEMPRE no topo nas paginas
+                    // baratas — a inicial e a de contexto usam o mesmo
+                    // lugar (ver ui.cpp, R1_C1_Y) —, e a faixa barata do
+                    // flush a alcanca nas duas: ~11 ms por quadro.
+                    // A tela do Token e a excecao: la o topo e da cabeca
+                    // do bicho, e sem isto o redrawBadge pintava a turma
+                    // por cima dela.
+                    //
+                    // Na tela do RESET este caminho nao roda: os 50 mil
+                    // pixels que ele enviaria ja vao dentro do prefixo do
+                    // `redrawReset`, e o bicho do cabecalho e desenhado la
+                    // — pagar um envio proprio seria tirar 6 ms de um
+                    // orcamento de 70.
+                    ui::redrawBadge(last, staleSec,
+                                    telaTokenAtiva() || clawdDorme(now));
                 }
-                // O bicho do CLIMA e caso a parte, e caro. Ele vive no
-                // cabecalho, fora da faixa do flush de prefixo, entao
-                // `redrawBadge` nao o alcanca: so um redesenho INTEIRO o
-                // mostra.
-                //
-                // Em pe ele nao esta na tela (o cabecalho la e so o bicho e a
-                // hora), e um quadro de algo invisivel custaria os mesmos 48 ms
-                // do flush inteiro — pagos por nada, seis vezes por segundo.
-                // Em pe o clima so aparece na P2 — que e cara e ja redesenha
-                // por conta do bicho grande, entao o tick so precisa avancar o
-                // quadro.
-                if ((!display::retrato() || page == 2) && clawd::tickClima(now))
-                    redraw = true;
-                // O Token da tela de limite: 900 ms por pose, e cada pose e um
-                // flush inteiro — ~48 ms a cada 900, so enquanto a tela dele
-                // esta no ar.
-                // O ensaio da morte acaba sozinho, sem esperar poll: com o
-                // painel parado o Kenny ficaria caido ate a proxima resposta.
-                if (kennyEnsaioAteMs && now >= kennyEnsaioAteMs) {
-                    kennyEnsaioAteMs = 0;
-                    clawd::matarKenny(haveLast && algumaSessaoCaida(last));
-                    redraw = true;
-                }
-                if (telaTokenAtiva() && clawd::tickToken(now)) redraw = true;
-                // O bicho da tela de servidor fora anima na mesma cadencia: e o
-                // mesmo arquivo, com outra camisa. Sem isto ele ficaria parado
-                // na tela, o que se le como painel travado — justamente o que
-                // esta tela existe para desmentir.
-                if (clawdDorme(now) && clawd::tickOffline(now))
-                    redraw = true;
-                // A tela de reset e curta, mas o bicho dela dança: 12 quadros a
-                // 150 ms no Cartman, 10 a 165 no Kenny. Cada quadro repinta SO
-                // a caixa dele e envia um prefixo — o desenho completo gastaria
-                // quase metade do intervalo so em limpar e enviar a tela
-                // inteira (ver ui::redrawReset).
-                //
-                // `!redraw` por ultimo de proposito: o tick precisa avancar o
-                // quadro mesmo quando a volta ja vai redesenhar tudo, senao a
-                // danca engasga justamente quando chega status novo.
-                if (telaResetAtiva(now) && clawd::tickReset(now) && !redraw)
-                    ui::redrawReset();
             }
+            // O bicho do CLIMA e caso a parte, e caro. Ele vive no
+            // cabecalho, fora da faixa do flush de prefixo, entao
+            // `redrawBadge` nao o alcanca: so um redesenho INTEIRO o
+            // mostra.
+            //
+            // Em pe ele nao esta na tela (o cabecalho la e so o bicho e a
+            // hora), e um quadro de algo invisivel custaria os mesmos 48 ms
+            // do flush inteiro — pagos por nada, seis vezes por segundo.
+            // Em pe o clima so aparece na P2 — que e cara e ja redesenha
+            // por conta do bicho grande, entao o tick so precisa avancar o
+            // quadro.
+            if ((!display::retrato() || page == 2) && clawd::tickClima(now))
+                redraw = true;
+            // O Token da tela de limite: 900 ms por pose, e cada pose e um
+            // flush inteiro — ~48 ms a cada 900, so enquanto a tela dele
+            // esta no ar.
+            // O ensaio da morte acaba sozinho, sem esperar poll: com o
+            // painel parado o Kenny ficaria caido ate a proxima resposta.
+            if (kennyEnsaioAteMs && now >= kennyEnsaioAteMs) {
+                kennyEnsaioAteMs = 0;
+                clawd::matarKenny(haveLast && algumaSessaoCaida(last));
+                redraw = true;
+            }
+            if (telaTokenAtiva() && clawd::tickToken(now)) redraw = true;
+            // O bicho da tela de servidor fora anima na mesma cadencia: e o
+            // mesmo arquivo, com outra camisa. Sem isto ele ficaria parado
+            // na tela, o que se le como painel travado — justamente o que
+            // esta tela existe para desmentir.
+            if (clawdDorme(now) && clawd::tickOffline(now))
+                redraw = true;
+            // A tela de reset e curta, mas o bicho dela dança: 12 quadros a
+            // 150 ms no Cartman, 10 a 165 no Kenny. Cada quadro repinta SO
+            // a caixa dele e envia um prefixo — o desenho completo gastaria
+            // quase metade do intervalo so em limpar e enviar a tela
+            // inteira (ver ui::redrawReset).
+            //
+            // `!redraw` por ultimo de proposito: o tick precisa avancar o
+            // quadro mesmo quando a volta ja vai redesenhar tudo, senao a
+            // danca engasga justamente quando chega status novo.
+            if (telaResetAtiva(now) && clawd::tickReset(now) && !redraw)
+                ui::redrawReset();
         }
     }
+}
+// O sprite do Clawd dormindo entra e sai com o estado.
+//
+// Ele nao mora na PSRAM o dia inteiro (ver clawd.h): tanto a queda da API quanto
+// o intervalo sem sessao sao eventos de ESPERA, e a leitura do cartao cabe
+// dentro deles. Voltar a ter contato (ou sessao) devolve a memoria e rearma
+// tudo — inclusive a tentativa de leitura, para um arquivo que chegou pelo ar
+// depois do boot entrar na proxima vez sem reboot.
+void carregarOuSoltarOffline(uint32_t now, bool &redraw) {
+    const bool dorme = servidorFora(now) || semSessao(last);
 
-    // --- o sprite do Clawd dormindo entra e sai com o estado ---
-    //
-    // Ele nao mora na PSRAM o dia inteiro (ver clawd.h): tanto a queda da API
-    // quanto o intervalo sem sessao sao eventos de ESPERA, e a leitura do
-    // cartao cabe dentro deles. Voltar a ter contato (ou sessao) devolve a
-    // memoria e rearma tudo — inclusive a tentativa de leitura, para um arquivo
-    // que chegou pelo ar depois do boot entrar na proxima vez sem reboot.
-    {
-        const bool dorme = servidorFora(now) || semSessao(last);
-        if (dorme && haveLast && display::retrato() && !offlineDispensado) {
-            if (!offlineCarregado && !offlineFalhou) {
-                offlineCarregado = clawd::carregarOffline();
-                offlineFalhou    = !offlineCarregado;
-                if (offlineCarregado) redraw = true;
-            }
-        } else if (!dorme) {
-            if (offlineCarregado) { clawd::soltarOffline(); redraw = true; }
-            offlineCarregado  = false;
-            offlineFalhou     = false;
-            offlineDispensado = false;
+    if (dorme && haveLast && display::retrato() && !offlineDispensado) {
+        if (!offlineCarregado && !offlineFalhou) {
+            offlineCarregado = clawd::carregarOffline();
+            offlineFalhou    = !offlineCarregado;
+            if (offlineCarregado) redraw = true;
         }
+        return;
     }
 
+    if (!dorme) {
+        if (offlineCarregado) { clawd::soltarOffline(); redraw = true; }
+        offlineCarregado  = false;
+        offlineFalhou     = false;
+        offlineDispensado = false;
+    }
+}
+
+// A tela, quando ha o que redesenhar.
+void desenhar(uint32_t now, bool redraw) {
     // A tela do terminal chega pela mesma tarefa de rede, em outra requisicao.
     if (modoTerminal) {
         TerminalTela nova;
@@ -1206,80 +1297,40 @@ void loop() {
         if (redraw)
             ui::drawTerminal(termTela.linhas, termTitulo.c_str(),
                              termTela.travado);
-    } else if (redraw && haveLast)
+        return;
+    }
+
+    if (redraw && haveLast)
         ui::drawStatus(last, page, selectedId, staleSec, armadoMs != 0,
                        nivelEstado, xpDoDia, opcaoArmada, telaTokenAtiva(),
                        telaResetAtiva(now) ? resetQual : nullptr,
                        clawdDorme(now));
+}
 
-    // --- a foto da tela, quando alguem pede ---
-    //
-    // Aqui, e nao na tarefa de rede: o framebuffer pertence ao laco. Copiado do
-    // outro nucleo, ele viria pela metade num redesenho em andamento — fundo ja
-    // limpo, texto ainda nao escrito — e a foto mostraria uma tela que nunca
-    // existiu. Neste ponto o quadro esta inteiro por construcao, sem trava.
-    //
-    // O que ESTA no quadro e o instante em que ele foi tirado, inclusive um
-    // bicho no meio do pulo. Isso e desejado: e justamente o que uma descricao
-    // em texto nao consegue transmitir.
-    {
-        long capId = 0;
-        int  capOrigem = 0;
-        if (net::capturaPedida(capId, capOrigem)) {
-            size_t bytes = 0;
-            uint8_t *buf = net::capturaBuffer(bytes);
-            if (buf) {
-                if (display::copiarQuadro(buf, bytes))
-                    net::enviarCaptura(capId, capOrigem, display::retrato());
-                else
-                    net::falhaCaptura();
-            }
-        }
-    }
-
-    // Arquivo novo baixado para o cartao? Quem grava e o LACO, e nao a tarefa
-    // de rede: o SD e deste nucleo — os sprites saem dele no meio do desenho —
-    // e duas tarefas dentro do mesmo FatFS e uma aposta que ninguem cobre. A
-    // gravacao segura o desenho por ~1-2 s, o que num fluxo de manutencao e
-    // preco justo; quem confirma e reinicia e a rede, DEPOIS de avisar a API.
-    {
-        std::string caminho;
-        const uint8_t *buf = nullptr;
-        size_t bytes = 0;
-        bool reiniciar = false;
-        if (net::atualizacaoPronta(caminho, buf, bytes, reiniciar)) {
-            const bool ok = storage::writeBufferAtomic(caminho.c_str(), buf,
-                                                       bytes);
-            Serial.printf("upd: %s %s (%u bytes)\n",
-                          ok ? "gravado" : "FALHOU",
-                          caminho.c_str(), (unsigned)bytes);
-            net::confirmarAtualizacao(ok);
-        }
-    }
-
-    // O PULSO — contrato de diagnostico desta placa, e nao codigo temporario.
-    //
-    // A skill `esp32-flash` grava e depois LE esta linha para separar "gravou"
-    // de "gravou e esta funcionando": `wifi=1 http=200` na ultima linha da
-    // janela e o veredito dela. Apagar este printf faz a skill reprovar placa
-    // saudavel, e o defeito aparece longe daqui.
-    //
-    // Ele nasceu temporario, cacando um congelamento com "SEM CONTATO HA 6s", e
-    // ficou porque provou seu valor na primeira hora de vida.
-    //
-    // Este pulso ja derrubou a primeira teoria, que estava escrita aqui: que
-    // contador parado significava LACO parado. Medido na placa no estado morto,
-    // com 2h39 de uptime, o laco rodava a ~170 voltas por 5 s e a serial
-    // falava. O contador parava por um `staleSec == 0` na condicao que o
-    // envelhecia (ja corrigido acima), e nao por travamento nenhum.
-    //
-    // O que sobra e a tarefa de rede parar de entregar resultado. `ciclos` e
-    // `fetch` existem para dizer se ela esta bloqueada na requisicao ou viva e
-    // falhando — `http` sozinho nao serve, porque so e escrito dentro dela.
-    //
-    // Serial.printf nao bloqueia (setTxTimeoutMs(0) no setup), entao imprimir
-    // com o monitor fechado e seguro — foi essa exata armadilha que causou um
-    // travamento de 4 s numa investigacao anterior.
+// O PULSO — contrato de diagnostico desta placa, e nao codigo temporario.
+//
+// A skill `esp32-flash` grava e depois LE esta linha para separar "gravou" de
+// "gravou e esta funcionando": `wifi=1 http=200` na ultima linha da janela e o
+// veredito dela. Apagar este printf faz a skill reprovar placa saudavel, e o
+// defeito aparece longe daqui.
+//
+// Ele nasceu temporario, cacando um congelamento com "SEM CONTATO HA 6s", e
+// ficou porque provou seu valor na primeira hora de vida.
+//
+// Este pulso ja derrubou a primeira teoria, que estava escrita aqui: que
+// contador parado significava LACO parado. Medido na placa no estado morto, com
+// 2h39 de uptime, o laco rodava a ~170 voltas por 5 s e a serial falava. O
+// contador parava por um `staleSec == 0` na condicao que o envelhecia (ja
+// corrigido), e nao por travamento nenhum.
+//
+// O que sobra e a tarefa de rede parar de entregar resultado. `ciclos` e `fetch`
+// existem para dizer se ela esta bloqueada na requisicao ou viva e falhando —
+// `http` sozinho nao serve, porque so e escrito dentro dela.
+//
+// Serial.printf nao bloqueia (setTxTimeoutMs(0) no setup), entao imprimir com o
+// monitor fechado e seguro — foi essa exata armadilha que causou um travamento
+// de 4 s numa investigacao anterior.
+void pulso(uint32_t now) {
     static uint32_t ultimoPulso = 0;
     static uint32_t voltas = 0;
     voltas++;
@@ -1321,11 +1372,50 @@ void loop() {
         ultimoPulso = now;
         voltas = 0;
     }
-
-    // ~50 leituras de touch por segundo. Enquanto o bicho da tela de reset
-    // dança, nao: ali cada volta E um quadro, e os 20 ms parados comeriam um
-    // terço dos 70 que o arquivo mais rapido da. A tela e curta e nao tem gesto
-    // para perder — ela morre pelo relogio, e o unico controle que sobra e o
-    // giro, que continua sendo lido a cada volta.
-    delay(telaResetAtiva(now) ? 2 : 20);
 }
+
+// A foto da tela, quando alguem pede.
+//
+// Aqui, e nao na tarefa de rede: o framebuffer pertence ao laco. Copiado do
+// outro nucleo, ele viria pela metade num redesenho em andamento — fundo ja
+// limpo, texto ainda nao escrito — e a foto mostraria uma tela que nunca
+// existiu. No ponto em que esta funcao e chamada o quadro esta inteiro por
+// construcao, sem trava.
+//
+// O que ESTA no quadro e o instante em que ele foi tirado, inclusive um bicho
+// no meio do pulo. Isso e desejado: e justamente o que uma descricao em texto
+// nao consegue transmitir.
+void atenderCaptura() {
+    long capId = 0;
+    int  capOrigem = 0;
+    if (!net::capturaPedida(capId, capOrigem)) return;
+
+    size_t bytes = 0;
+    uint8_t *buf = net::capturaBuffer(bytes);
+    if (!buf) return;
+
+    if (display::copiarQuadro(buf, bytes))
+        net::enviarCaptura(capId, capOrigem, display::retrato());
+    else
+        net::falhaCaptura();
+}
+
+// Arquivo novo baixado para o cartao? Quem grava e o LACO, e nao a tarefa de
+// rede: o SD e deste nucleo — os sprites saem dele no meio do desenho — e duas
+// tarefas dentro do mesmo FatFS e uma aposta que ninguem cobre. A gravacao
+// segura o desenho por ~1-2 s, o que num fluxo de manutencao e preco justo;
+// quem confirma e reinicia e a rede, DEPOIS de avisar a API.
+void gravarArquivoBaixado() {
+    std::string caminho;
+    const uint8_t *buf = nullptr;
+    size_t bytes = 0;
+    bool reiniciar = false;
+    if (!net::atualizacaoPronta(caminho, buf, bytes, reiniciar)) return;
+
+    const bool ok = storage::writeBufferAtomic(caminho.c_str(), buf, bytes);
+    Serial.printf("upd: %s %s (%u bytes)\n", ok ? "gravado" : "FALHOU",
+                  caminho.c_str(), (unsigned)bytes);
+    net::confirmarAtualizacao(ok);
+}
+
+}  // namespace
