@@ -56,3 +56,20 @@ long prazoRestante(const Metric &m, long idadeSeg);
 // devolve: "a janela venceu" e "nunca houve prazo" sao a mesma conta e recados
 // opostos. Sem prazo nenhum a tela mostra o travessao que ela ja mostrava.
 std::string prazoDaTela(const Metric &m, long idadeSeg);
+
+// O INSTANTE da virada, escondido depois que ele passou.
+//
+// `at` e um carimbo absoluto — "7:20pm", "01/08/2026 (Sabado)" — e por isso NAO
+// envelhece sozinho: ele continua afirmando a mesma coisa depois de a hora
+// chegar, com a mesma cara de dado fresco. O prazo ao lado ja aprendeu a andar
+// (prazoDaTela); o instante ficou parado no tempo da API.
+//
+// No retrato do cartao e pior, e foi de la que o defeito veio: um retrato lido
+// dias depois traz `resetsIn` recalculado para zero e o texto do instante
+// intacto, entao a tela mostra "vira as 7:20pm" sobre uma janela que virou
+// ontem.
+//
+// Vazio quando a janela venceu ou quando nunca houve prazo. As tres telas que
+// desenham o instante ja escondem a linha com `at` vazio — elas faziam isso
+// para a API antiga, que nao mandava o campo.
+std::string atDaTela(const Metric &m, long idadeSeg);

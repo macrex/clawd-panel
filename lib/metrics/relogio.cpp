@@ -64,3 +64,10 @@ std::string prazoDaTela(const Metric &m, long idadeSeg) {
     if (!m.known || m.resetsIn <= 0) return "-";
     return prazoTexto(prazoRestante(m, idadeSeg));
 }
+
+std::string atDaTela(const Metric &m, long idadeSeg) {
+    // O travessao e o "nao sei" que a propria API manda; ele nao e um instante.
+    if (!m.known || m.at.empty() || m.at == "-") return "";
+    if (prazoRestante(m, idadeSeg) <= 0) return "";
+    return m.at;
+}

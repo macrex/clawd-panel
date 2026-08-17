@@ -156,6 +156,56 @@ void test_relogio_sem_sincronia_se_cala(void) {
     TEST_ASSERT_FALSE(relogioDe(3600).known);
 }
 
+// ---- O instante da virada, que nao envelhecia ----
+
+void test_at_vale_enquanto_a_janela_nao_virou(void) {
+    Metric m;
+    m.known    = true;
+    m.resetsIn = 2 * 3600;
+    m.at       = "7:20pm";
+    TEST_ASSERT_EQUAL_STRING("7:20pm", atDaTela(m, 0).c_str());
+    // Meia hora de dado velho ainda deixa uma hora e meia de janela.
+    TEST_ASSERT_EQUAL_STRING("7:20pm", atDaTela(m, 1800).c_str());
+}
+
+void test_at_some_quando_a_janela_vence(void) {
+    Metric m;
+    m.known    = true;
+    m.resetsIn = 600;
+    m.at       = "7:20pm";
+    TEST_ASSERT_EQUAL_STRING("", atDaTela(m, 600).c_str());
+    TEST_ASSERT_EQUAL_STRING("", atDaTela(m, 99999).c_str());
+}
+
+void test_at_do_retrato_velho_nao_afirma_horario(void) {
+    // O caso que motivou tudo: `lerCache` recalcula `resetsIn` para zero num
+    // retrato lido depois da virada, mas o texto do instante vem intacto do
+    // cartao. Sem isto a tela diz "vira as 6:00am" sobre uma janela de ontem.
+    Metric doCartao;
+    doCartao.known    = true;
+    doCartao.resetsIn = 0;
+    doCartao.at       = "01/08/2026 (Sabado)";
+    TEST_ASSERT_EQUAL_STRING("", atDaTela(doCartao, 0).c_str());
+}
+
+void test_at_ausente_ou_travessao_continua_vazio(void) {
+    Metric semCampo;
+    semCampo.known    = true;
+    semCampo.resetsIn = 3600;
+    TEST_ASSERT_EQUAL_STRING("", atDaTela(semCampo, 0).c_str());
+
+    // O travessao e o "nao sei" da propria API, e nao um instante.
+    Metric travessao = semCampo;
+    travessao.at = "-";
+    TEST_ASSERT_EQUAL_STRING("", atDaTela(travessao, 0).c_str());
+
+    Metric desconhecida;
+    desconhecida.known    = false;
+    desconhecida.resetsIn = 3600;
+    desconhecida.at       = "7:20pm";
+    TEST_ASSERT_EQUAL_STRING("", atDaTela(desconhecida, 0).c_str());
+}
+
 int main(int, char **) {
     UNITY_BEGIN();
     RUN_TEST(test_prazo_dias_bate_com_a_api);
@@ -171,5 +221,9 @@ int main(int, char **) {
     RUN_TEST(test_relogio_dia_e_semana);
     RUN_TEST(test_relogio_domingo_fecha_a_semana);
     RUN_TEST(test_relogio_sem_sincronia_se_cala);
+    RUN_TEST(test_at_vale_enquanto_a_janela_nao_virou);
+    RUN_TEST(test_at_some_quando_a_janela_vence);
+    RUN_TEST(test_at_do_retrato_velho_nao_afirma_horario);
+    RUN_TEST(test_at_ausente_ou_travessao_continua_vazio);
     return UNITY_END();
 }

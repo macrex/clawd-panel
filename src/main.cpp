@@ -11,6 +11,7 @@
 #include "nivel.h"
 #include "reset_watch.h"
 #include "relogio.h"
+#include "limpeza.h"
 #include "view_model.h"     // semSessao: quem decide se o Clawd dorme
 #include "cache.h"
 #include "hora.h"
@@ -41,6 +42,12 @@ uint32_t        ultimoRelogioMs = 0;
 // reescritos a cada segundo, e a conta tem que partir sempre do valor original
 // menos a idade — nunca do valor ja envelhecido.
 Metric          sessionDaApi, weekDaApi;
+
+// A limpeza dita pela API, guardada crua pela mesma razao: `last.cleaning` e o
+// que a TELA ve, e ele pode ser apagado pelo teto local (ver limpeza.h) sem que
+// isso apague a lembranca de que a API continua dizendo que limpa.
+bool            cleaningDaApi = false;
+LimpezaWatch    limpezaWatch;
 
 // O retrato do ultimo status bom, para o boot com o servidor fora.
 const char     *CACHE_ARQ    = "/clawd/ultimo_status.json";
@@ -758,9 +765,10 @@ void loop() {
             // esvazia `s`, e ler dele depois seria ler lixo. Um `Status` cheio
             // e uma lista de agentes mais vinte strings, e ele era copiado
             // inteiro aqui a cada dois segundos.
-            clockDaApi   = s.clock;
-            sessionDaApi = s.session;
-            weekDaApi    = s.week;
+            clockDaApi    = s.clock;
+            sessionDaApi  = s.session;
+            weekDaApi     = s.week;
+            cleaningDaApi = s.cleaning;
             // Numa rede sem saida para a internet o SNTP nunca chega e o
             // servidor local responde. O carimbo dele acerta o relogio, e e o
             // que destrava o cache: sem hora a placa nao sabe de quando e o
@@ -775,6 +783,8 @@ void loop() {
             last.clock = hora::daTela(clockDaApi);
             last.session.resets = prazoDaTela(sessionDaApi, 0);
             last.week.resets    = prazoDaTela(weekDaApi, 0);
+            last.session.at     = atDaTela(sessionDaApi, 0);
+            last.week.at        = atDaTela(weekDaApi, 0);
             semWifi = false;
             ui::marcarSemWifi(false);
             // O limite liberou (reset chegou): a tela do Token rearma sozinha.
@@ -911,6 +921,31 @@ void loop() {
         // a barra ficaria dizendo que a janela parou de correr.
         last.session.resetsIn = (int)prazoRestante(sessionDaApi, staleSec);
         last.week.resetsIn    = (int)prazoRestante(weekDaApi, staleSec);
+        // E o INSTANTE da virada some quando ela chega. Ele e o unico campo de
+        // tempo que nao andava sozinho: um carimbo absoluto continua afirmando
+        // "7:20pm" depois das sete e vinte (ver atDaTela em relogio.h).
+        const std::string atSess = atDaTela(sessionDaApi, staleSec);
+        const std::string atSem  = atDaTela(weekDaApi, staleSec);
+        if (atSess != last.session.at || atSem != last.week.at) {
+            last.session.at = atSess;
+            last.week.at    = atSem;
+            redraw = true;
+        }
+    }
+
+    // A limpeza tem prazo TAMBEM aqui, e por isso a conta roda a cada volta e
+    // nao so quando chega poll novo: o caso que ela resolve e o poll que parou
+    // de chegar com o `cleaning` aceso, deixando a turma varrendo para sempre.
+    if (haveLast) {
+        const bool varre = varrendo(limpezaWatch, cleaningDaApi, now);
+        if (varre != last.cleaning) {
+            last.cleaning = varre;
+            // `clawd::select` so roda quando chega poll novo — e o caso que este
+            // teto resolve e justamente o poll que PAROU de chegar. Sem esta
+            // chamada a turma seguiria varrendo com o `cleaning` ja apagado.
+            clawd::select(last, true);
+            redraw = true;
+        }
     }
 
     // Tempo de tela ligada EM CONTATO. Nao e uptime: com a API fora o relogio
