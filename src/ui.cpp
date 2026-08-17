@@ -2108,12 +2108,22 @@ void drawTelaReset(Arduino_Canvas *g, const Status &s, int staleSeconds,
 // servidor fora apareceu. As duas sao a MESMA tela com outro recado na camisa,
 // e reconhecer a forma vale mais do que variar: quem ja aprendeu que o duplo
 // toque devolve o painel nao precisa aprender de novo.
+// O chao do bicho: onde comeca o recado da tela de servidor fora. Serve de
+// limite para centrar quem e menor que a area — sem isso o Clawd dormindo
+// (169 px) ficava colado no cabecalho, com 139 px de vazio ate o texto.
+const int R_BICHO_TETO = 64;
+const int R_BICHO_CHAO = PANEL_H - 108;
+
 void drawTelaBicho(Arduino_Canvas *g, const Status &s, int staleSeconds,
-                   int larg, bool (*desenhar)(Arduino_Canvas *, int, int)) {
+                   int larg, int alt,
+                   bool (*desenhar)(Arduino_Canvas *, int, int)) {
     g->fillScreen(BG);
     drawHeaderRetrato(g, s, staleSeconds);
 
-    desenhar(g, (PANEL_W - larg) / 2, 64);
+    // Centrado na faixa, com piso no teto: o Token tem 336 px de altura e nao
+    // cabe nela, entao para ele a conta da negativo e vale o 64 de sempre.
+    const int folga = (R_BICHO_CHAO - R_BICHO_TETO - alt) / 2;
+    desenhar(g, (PANEL_W - larg) / 2, R_BICHO_TETO + (folga > 0 ? folga : 0));
 
     // Os dois prazos no rodape, MIUDOS de proposito: a tela e do bicho, e os
     // numeros so precisam estar la para quem procurar. Rotulo no corpo 1 da
@@ -2138,7 +2148,8 @@ void drawTelaBicho(Arduino_Canvas *g, const Status &s, int staleSeconds,
 }
 
 void drawTelaToken(Arduino_Canvas *g, const Status &s, int staleSeconds) {
-    drawTelaBicho(g, s, staleSeconds, clawd::tokenW(), clawd::drawTokenInto);
+    drawTelaBicho(g, s, staleSeconds, clawd::tokenW(), clawd::tokenH(),
+                  clawd::drawTokenInto);
 }
 
 // A tela de SERVIDOR FORA. Os prazos do rodape continuam la e continuam certos:
@@ -2146,7 +2157,8 @@ void drawTelaToken(Arduino_Canvas *g, const Status &s, int staleSeconds) {
 // bom (ver lib/metrics/relogio.h). O cabecalho ja diz ha quanto tempo o dado e
 // velho, entao a tela nao repete o numero — quem quer a idade tem ela em cima.
 void drawTelaOffline(Arduino_Canvas *g, const Status &s, int staleSeconds) {
-    drawTelaBicho(g, s, staleSeconds, clawd::offlineW(), clawd::drawOfflineInto);
+    drawTelaBicho(g, s, staleSeconds, clawd::offlineW(), clawd::offlineH(),
+                  clawd::drawOfflineInto);
 
     // O recado, que ate aqui vinha PINTADO na camisa do bicho (ver
     // tools/build_token_offline.py). O sprite novo e o Clawd DORMINDO, e quem
@@ -2161,10 +2173,15 @@ void drawTelaOffline(Arduino_Canvas *g, const Status &s, int staleSeconds) {
     g->setCursor((PANEL_W - (int)strlen(frase) * 18) / 2, PANEL_H - 108);
     g->print(frase);
 
+    // O bicho e o mesmo nos dois motivos de dormir; o que muda e a linha
+    // miuda. Sem ela, "sem contato com o servidor" e "nenhuma sessao ativa"
+    // virariam a mesma tela — e sao problemas diferentes, um de rede e outro
+    // de ninguem estar trabalhando.
     g->setFont(&DejaVuSans7pt7b);
     g->setTextSize(1);
     g->setTextColor(MUTED);
-    const char *sub = "nenhuma sessao ativa";
+    const char *sub = semSessao(s) ? "nenhuma sessao ativa"
+                                   : "sem contato com o servidor";
     int16_t x1, y1; uint16_t sw, sh;
     g->getTextBounds(sub, 0, 0, &x1, &y1, &sw, &sh);
     g->setCursor((PANEL_W - (int)sw) / 2, PANEL_H - 68);
@@ -2479,6 +2496,14 @@ void drawRetrato(Arduino_Canvas *g, const Status &s, int staleSeconds,
     }
     if (telaToken && clawd::tokenW()) {
         drawTelaToken(g, s, staleSeconds);
+        return;
+    }
+    // O Clawd dorme tambem quando o servidor RESPONDE e nao ha sessao nenhuma.
+    // E o motivo mais comum dos dois, e ate aqui ele caia no aviso de texto la
+    // embaixo — a tela do bicho existia e nunca aparecia no caso que o usuario
+    // testa. `offlineW()` porque sem o sprite em cena o texto ainda e o recado.
+    if (semSessao(s) && clawd::offlineW()) {
+        drawTelaOffline(g, s, staleSeconds);
         return;
     }
 

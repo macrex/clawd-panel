@@ -10,6 +10,7 @@
 #include "nivel.h"
 #include "reset_watch.h"
 #include "relogio.h"
+#include "view_model.h"     // semSessao: quem decide se o Clawd dorme
 #include "cache.h"
 #include "hora.h"
 
@@ -355,13 +356,20 @@ bool offlineDispensado = false;
 bool offlineCarregado = false;
 bool offlineFalhou    = false;
 
-bool telaOfflineAtiva(uint32_t now) {
+// O Clawd dorme por DOIS motivos, e a tela e a mesma porque o recado e o mesmo:
+// nada esta acontecendo. Ou o servidor calou (acima), ou ele responde e nao ha
+// sessao nenhuma publicando (`semSessao`).
+//
+// O segundo e o comum — fechar o Claude Code —, e era justamente o que nao
+// acionava a tela: ele caia num aviso de texto na P0, e o bicho so aparecia na
+// queda de rede, que quase nunca acontece.
+bool clawdDorme(uint32_t now) {
     // `haveLast` como na tela do Token: esta tela e a porta para o ultimo
     // retrato bom, e sem retrato nenhum ela nao guarda nada — ali quem fala e a
     // mensagem de boot, que diz o que esta faltando em vez de mostrar um bicho
     // na frente de uma tela vazia.
     if (!display::retrato() || !haveLast || offlineDispensado) return false;
-    if (!servidorFora(now)) return false;
+    if (!servidorFora(now) && !semSessao(last)) return false;
     return clawd::offlineW() > 0;
 }
 
@@ -533,7 +541,7 @@ void loop() {
                 // exigir dois seria cerimonia para fechar um cartaz.
                 resetAteMs = 0;
                 redraw = true;
-            } else if (telaOfflineAtiva(now)) {
+            } else if (clawdDorme(now)) {
                 // Aqui em cima, e nao ao lado da tela do Token: com esta no ar,
                 // QUALQUER duplo toque abaixo do cabecalho e "ja vi, devolve o
                 // painel". Os alvos de ensaio logo abaixo pertencem ao layout da
@@ -1099,7 +1107,7 @@ void loop() {
                         // — pagar um envio proprio seria tirar 6 ms de um
                         // orcamento de 70.
                         ui::redrawBadge(last, staleSec,
-                                        telaTokenAtiva() || telaOfflineAtiva(now));
+                                        telaTokenAtiva() || clawdDorme(now));
                     }
                 }
                 // O bicho do CLIMA e caso a parte, e caro. Ele vive no
@@ -1130,7 +1138,7 @@ void loop() {
                 // mesmo arquivo, com outra camisa. Sem isto ele ficaria parado
                 // na tela, o que se le como painel travado — justamente o que
                 // esta tela existe para desmentir.
-                if (telaOfflineAtiva(now) && clawd::tickOffline(now))
+                if (clawdDorme(now) && clawd::tickOffline(now))
                     redraw = true;
                 // A tela de reset e curta, mas o bicho dela dança: 12 quadros a
                 // 150 ms no Cartman, 10 a 165 no Kenny. Cada quadro repinta SO
@@ -1147,22 +1155,22 @@ void loop() {
         }
     }
 
-    // --- o sprite da tela de servidor fora entra e sai com o estado ---
+    // --- o sprite do Clawd dormindo entra e sai com o estado ---
     //
-    // Ele nao mora na PSRAM o dia inteiro (ver clawd.h): a queda da API e um
-    // evento de espera, e a leitura do cartao cabe dentro dela. A volta do
-    // servidor devolve a memoria e rearma tudo — inclusive a tentativa de
-    // leitura, para um arquivo que chegou pelo ar depois do boot entrar na
-    // proxima queda sem precisar de reboot.
+    // Ele nao mora na PSRAM o dia inteiro (ver clawd.h): tanto a queda da API
+    // quanto o intervalo sem sessao sao eventos de ESPERA, e a leitura do
+    // cartao cabe dentro deles. Voltar a ter contato (ou sessao) devolve a
+    // memoria e rearma tudo — inclusive a tentativa de leitura, para um arquivo
+    // que chegou pelo ar depois do boot entrar na proxima vez sem reboot.
     {
-        const bool fora = servidorFora(now);
-        if (fora && haveLast && display::retrato() && !offlineDispensado) {
+        const bool dorme = servidorFora(now) || semSessao(last);
+        if (dorme && haveLast && display::retrato() && !offlineDispensado) {
             if (!offlineCarregado && !offlineFalhou) {
                 offlineCarregado = clawd::carregarOffline();
                 offlineFalhou    = !offlineCarregado;
                 if (offlineCarregado) redraw = true;
             }
-        } else if (!fora) {
+        } else if (!dorme) {
             if (offlineCarregado) { clawd::soltarOffline(); redraw = true; }
             offlineCarregado  = false;
             offlineFalhou     = false;
@@ -1184,7 +1192,7 @@ void loop() {
         ui::drawStatus(last, page, selectedId, staleSec, armadoMs != 0,
                        nivelEstado, xpDoDia, opcaoArmada, telaTokenAtiva(),
                        telaResetAtiva(now) ? resetQual : nullptr,
-                       telaOfflineAtiva(now));
+                       clawdDorme(now));
 
     // --- a foto da tela, quando alguem pede ---
     //

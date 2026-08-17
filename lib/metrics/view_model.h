@@ -14,6 +14,19 @@ int         barWidth(int pct, int fullWidth);
 // olhando se a lista esta vazia.
 AgentState  overallState(const Status &s);
 
+// Ninguem trabalhando: nenhuma sessao do Claude Code publicando E nenhum agente
+// na lista. E a pergunta que liga a tela do Clawd DORMINDO.
+//
+// As tres condicoes importam, e cada uma ja custou um bug:
+//   `!online`      — quem define ausencia e o servidor, e nao a placa;
+//   lista vazia    — `online: false` COM agentes quer dizer ocioso ou
+//                    bloqueado, e esconder esses agentes foi exatamente o bug
+//                    que a marcacao veio corrigir;
+//   `!doCache`     — um retrato restaurado do cartao nao guarda lista de
+//                    agentes, entao ele nao tem como AFIRMAR que nao ha
+//                    ninguem; ele so tem os limites que acabou de trazer.
+bool        semSessao(const Status &s);
+
 // Qual agente esta puxando o estado agregado. Vazio quando nao ha nenhum, ou
 // quando o estado nao vem de um agente especifico.
 std::string overallAgent(const Status &s);

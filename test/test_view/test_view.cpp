@@ -126,8 +126,47 @@ void test_minuto_do_tempo_de_api_tem_dois_digitos(void) {
     TEST_ASSERT_EQUAL_STRING("9h09", formatApiTime(32985351u).c_str());
 }
 
+// --- O Clawd dormindo: ninguem trabalhando ---
+// A tela cheia do bicho dormindo depende desta pergunta, e ela e a mesma que
+// desenhava o aviso de texto antes: sem sessao publicando E sem agente nenhum.
+
+void test_sem_sessao_quando_ninguem_publica(void) {
+    Status s;
+    s.online = false;
+    TEST_ASSERT_TRUE(semSessao(s));
+}
+
+void test_agente_vivo_nao_e_sem_sessao(void) {
+    // `online: false` com agente na lista quer dizer ocioso ou bloqueado, e
+    // nao ausente — esconder esse agente foi um bug que ja aconteceu.
+    Status s;
+    s.online = false;
+    Agent a; a.id = "817d452c"; a.repo = "meu-repo";
+    s.agents.push_back(a);
+    TEST_ASSERT_FALSE(semSessao(s));
+}
+
+void test_online_nao_e_sem_sessao(void) {
+    Status s;
+    s.online = true;
+    TEST_ASSERT_FALSE(semSessao(s));
+}
+
+void test_retrato_do_cartao_nao_afirma_ausencia(void) {
+    // O cache nem guarda lista de agentes: ele nao tem como dizer que nao ha
+    // sessao, e por isso nunca dispara a tela.
+    Status s;
+    s.online = false;
+    s.doCache = true;
+    TEST_ASSERT_FALSE(semSessao(s));
+}
+
 int main(int, char **) {
     UNITY_BEGIN();
+    RUN_TEST(test_sem_sessao_quando_ninguem_publica);
+    RUN_TEST(test_agente_vivo_nao_e_sem_sessao);
+    RUN_TEST(test_online_nao_e_sem_sessao);
+    RUN_TEST(test_retrato_do_cartao_nao_afirma_ausencia);
     RUN_TEST(test_indice_do_agente_agregado_aponta_para_o_mesmo_nome);
     RUN_TEST(test_sem_agentes_o_indice_e_invalido);
     RUN_TEST(test_tempo_de_api_em_segundos_minutos_e_horas);

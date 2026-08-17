@@ -40,6 +40,10 @@ AgentState overallState(const Status &s) {
     return pior;
 }
 
+bool semSessao(const Status &s) {
+    return !s.online && s.agents.empty() && !s.doCache;
+}
+
 int overallIndex(const Status &s) {
     const AgentState alvo = overallState(s);
     if (alvo == AgentState::Unknown) return -1;
