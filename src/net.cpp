@@ -1,6 +1,7 @@
 #include "net.h"
 #include "fusao.h"
 #include "neturl.h"
+#include "protocolo.h"
 #include "falha.h"
 #include "jsonmem.h"
 #include "display.h"
@@ -114,10 +115,9 @@ long     g_capId      = 0;
 int      g_capOrigem  = 0;
 bool     g_capRetrato = true;
 int      g_capCode    = 0;
-// O ultimo pedido atendido, POR FONTE (0 = master, 1 = PC2). Ver `Captura` em
-// status.h para por que a comparacao e por desigualdade e nao por ordem.
-long     g_capUltimo[2] = {0, 0};
-bool     g_capVisto[2]  = {false, false};
+// O ultimo pedido atendido, POR FONTE. As regras (e o porque de cada uma) moram
+// em lib/protocolo.
+IdsPorFonte g_capIds;
 uint32_t g_capTentativas = 0;    // quantas fotos ja foram pedidas a esta placa
 
 // Codigos que nao vem do HTTP, para o pulso poder nomear a falha em vez de
@@ -141,31 +141,21 @@ int         g_updOrigem  = 0;
 bool        g_updAvisar  = false;   // ha um POST /arquivo/ok para mandar
 bool        g_updGravou  = false;   // o que o POST vai dizer
 int         g_updCode    = 0;
-long        g_updUltimo[2] = {0, 0};
-bool        g_updVisto[2]  = {false, false};
+IdsPorFonte g_updIds;
 
 const int UPD_SEM_PSRAM = -2100;
 const int UPD_TRUNCADO  = -2101;
 const int UPD_CRC       = -2102;
 const int UPD_GRAVACAO  = -2103;
 
-// CRC-32 (IEEE, o mesmo do zlib do outro lado), sem tabela: a folga de tempo
-// aqui e enorme — o download leva segundos — e a tabela custaria 1 KB de RAM
-// para um fluxo que roda uma vez por atualizacao.
-uint32_t crc32Passo(uint32_t crc, const uint8_t *dados, size_t n) {
-    crc = ~crc;
-    for (size_t i = 0; i < n; i++) {
-        crc ^= dados[i];
-        for (int b = 0; b < 8; b++)
-            crc = (crc >> 1) ^ (0xEDB88320u & (-(int32_t)(crc & 1)));
-    }
-    return ~crc;
-}
-
 // `urlIrma` mudou de casa: mora em lib/neturl, com teste. A conta e a mesma —
 // a URL do comando sai da URL do status trocando o ULTIMO segmento, porque a
 // config tem um endereco so e pedir dois seria pedir para eles sairem de
 // sincronia num cartao gravado a mao.
+//
+// `crc32Passo`, `jsonEscapado` e o id-por-fonte seguiram o mesmo caminho, para
+// lib/protocolo. Nenhum deles precisava de Wi-Fi, HTTPClient ou FreeRTOS — so
+// estavam aqui.
 
 // A base da URL de uma acao e a da MAQUINA do agente: responder na maquina
 // errada nao acha o pane — ou, pior, acha um pane homonimo de outro agente.
@@ -203,36 +193,6 @@ void enviarComando(const std::string &sid, const std::string &nome, int origem) 
     client.stop();
 }
 
-// Escapa uma string para dentro de JSON.
-//
-// O comando nao precisava disto — sao um id hexadecimal e um nome de lista
-// branca. O ROTULO da opcao precisa: ele e texto que veio da tela de um
-// terminal, e "Yes, and don't ask again for \"rm\" commands" quebraria o corpo
-// da requisicao no meio. Um corpo quebrado aqui nao vira erro visivel: vira um
-// 400 silencioso e uma aprovacao que nunca aconteceu.
-String jsonEscapado(const std::string &s) {
-    String out;
-    out.reserve(s.size() + 8);
-    for (unsigned char c : s) {
-        switch (c) {
-            case '"':  out += "\\\""; break;
-            case '\\': out += "\\\\"; break;
-            case '\n': out += "\\n";  break;
-            case '\r': out += "\\r";  break;
-            case '\t': out += "\\t";  break;
-            default:
-                if (c < 0x20) {
-                    char buf[7];
-                    snprintf(buf, sizeof(buf), "\\u%04x", c);
-                    out += buf;
-                } else {
-                    out += (char)c;
-                }
-        }
-    }
-    return out;
-}
-
 // Responde o prompt de aprovacao. Roda DENTRO da tarefa de rede.
 //
 // Manda o rotulo junto com o numero: a API confere os dois contra a tela do
@@ -249,11 +209,11 @@ void enviarResposta(const std::string &pane, int n, const std::string &rotulo,
     if (!http.begin(client, url.c_str())) { g_respCode = -1000; return; }
 
     String corpo = "{\"pane_id\":\"";
-    corpo += jsonEscapado(pane);
+    corpo += jsonEscapado(pane).c_str();
     corpo += "\",\"n\":";
     corpo += n;
     corpo += ",\"rotulo\":\"";
-    corpo += jsonEscapado(rotulo);
+    corpo += jsonEscapado(rotulo).c_str();
     corpo += "\"}";
 
     http.addHeader("Content-Type", "application/json");
@@ -700,10 +660,11 @@ void tarefaRede(void *) {
             const int fonte = (a.origem == 1) ? 1 : 0;
             bool novoPedido = false;
             if (xSemaphoreTake(g_mtx, portMAX_DELAY) == pdTRUE) {
+                // `pedidoNovo` MARCA ao devolver true, entao ele so pode ser
+                // chamado depois das outras condicoes: um pedido descartado por
+                // tamanho nao pode sair da lista como se tivesse sido atendido.
                 if (!g_updOcupado && a.bytes > 0 && a.bytes <= 2 * 1024 * 1024 &&
-                    (!g_updVisto[fonte] || g_updUltimo[fonte] != a.id)) {
-                    g_updVisto[fonte]  = true;
-                    g_updUltimo[fonte] = a.id;   // atendido AQUI: falha nao repete
+                    pedidoNovo(g_updIds, a.origem, a.id)) {
                     g_updOcupado = true;
                     novoPedido = true;
                 }
@@ -914,15 +875,9 @@ bool capturaPedida(long &id, int &origem) {
     const Captura &c = g_status.captura;
     if (c.known && !g_capOcupado) {
         const int fonte = (c.origem == 1) ? 1 : 0;
-        // Primeira vez que se ve esta fonte tambem conta como pedido novo: a
-        // API so publica o campo quando alguem pediu, entao nao ha caso em que
-        // ignorar o primeiro seja o certo.
-        if (!g_capVisto[fonte] || g_capUltimo[fonte] != c.id) {
-            g_capVisto[fonte]  = true;
-            g_capUltimo[fonte] = c.id;
-            // Marcado como atendido AQUI, antes de o quadro sair. Um envio que
-            // falhe nao volta a ser tentado: a API deixa o pedido expirar, e
-            // uma foto atrasada descreveria uma tela que ja mudou.
+        // As regras (primeira vez conta, comparacao por desigualdade, marcar
+        // antes de o trabalho dar certo) moram em lib/protocolo.
+        if (pedidoNovo(g_capIds, c.origem, c.id)) {
             id = c.id;
             origem = fonte;
             g_capOcupado = true;
