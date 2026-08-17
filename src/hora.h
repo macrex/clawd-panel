@@ -53,6 +53,32 @@ void semear(long epochUtc);
 // `relogioDe()` espera (ver lib/metrics/relogio.h).
 long agoraLocal();
 
+// ---- O piso guardado na NVS ----
+//
+// O ultimo instante que esta placa viu, gravado na memoria interna do chip. Ele
+// sobrevive a queda de energia E ao cartao que nao monta — que nesta placa nao e
+// hipotese: o `0x107` ja travou o SD duas vezes, e com ele vai embora o retrato
+// do cache junto com tudo o mais que mora la.
+//
+// O que ele NAO e: uma fonte de hora. A placa nao tem relogio de bateria, entao
+// o piso mais o uptime nao dizem que horas sao — dizem que horas eram quando ela
+// desligou. Acender o cabecalho com isso seria o defeito que este modulo inteiro
+// existe para evitar: um numero velho com cara de numero fresco. Por isso
+// `sincronizada()` continua falsa e o cache continua fora ate o SNTP ou a API
+// falarem.
+//
+// O que ele E: o limite inferior do que a placa aceita como "agora". Um carimbo
+// anterior a ele e erro de quem mandou, e passava sem discussao.
+
+// Le o piso da NVS. Zero quando nunca houve gravacao (placa nova, NVS apagada).
+long piso();
+
+// Grava o instante atual como piso novo. Nao faz nada sem hora sincronizada —
+// gravar 1970 apagaria o piso bom com um valor pior.
+//
+// Chame ESPACADO: a NVS tem vida finita de escrita, e o laco roda a 50 Hz.
+void guardarPiso();
+
 // O cabecalho pronto: o relogio da placa quando ele existe, e o da API quando
 // nao. A ordem e essa de proposito — o da placa e o unico que anda quando o
 // outro lado cala, e e por isso que ele existe.

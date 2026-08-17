@@ -10,6 +10,12 @@ const char *DIAS[] = {"DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SAB"};
 
 }  // namespace
 
+bool epochAceitavel(long candidato, long piso) {
+    if (candidato < EPOCH_MINIMO) return false;
+    if (piso > 0 && candidato < piso) return false;
+    return true;
+}
+
 Clock relogioDe(long epochLocal) {
     Clock c;
     if (epochLocal < EPOCH_MINIMO) return c;

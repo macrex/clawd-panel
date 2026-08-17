@@ -2,10 +2,19 @@
 #include "relogio.h"
 
 #include <Arduino.h>
+#include <Preferences.h>
 #include <ctime>
 #include <sys/time.h>
 
 namespace {
+
+// A gaveta da NVS. Nome curto porque o namespace da NVS cabe em 15 caracteres.
+const char *NVS_AREA = "clawd";
+const char *NVS_PISO = "piso";
+
+// Lido uma vez no primeiro uso e guardado: abrir a NVS custa, e a resposta so
+// muda quando esta placa mesma grava um piso novo.
+long g_piso = -1;   // -1 = ainda nao lido
 
 // Quantos segundos o relogio local esta a frente do UTC. Descoberto uma vez,
 // na primeira leitura boa, e guardado: `localtime_r` faz a conta a cada
@@ -71,8 +80,42 @@ bool sincronizada() {
     return g_ok;
 }
 
+long piso() {
+    if (g_piso < 0) {
+        Preferences p;
+        // Somente leitura: a NVS nao ganha uma area por causa de uma consulta
+        // numa placa que nunca gravou.
+        if (p.begin(NVS_AREA, true)) {
+            g_piso = (long)p.getLong64(NVS_PISO, 0);
+            p.end();
+        } else {
+            g_piso = 0;
+        }
+        if (g_piso) Serial.printf("hora: piso da NVS = %ld\n", g_piso);
+    }
+    return g_piso;
+}
+
+void guardarPiso() {
+    if (!sincronizada()) return;
+
+    const long agora = (long)time(nullptr);
+    // O piso so sobe. Gravar um valor menor destruiria justamente a informacao
+    // que ele carrega, e ainda gastaria um ciclo de escrita da NVS para isso.
+    if (agora < EPOCH_MINIMO || agora <= piso()) return;
+
+    Preferences p;
+    if (!p.begin(NVS_AREA, false)) return;
+    p.putLong64(NVS_PISO, (int64_t)agora);
+    p.end();
+    g_piso = agora;
+}
+
 void semear(long epochUtc) {
-    if (epochUtc < EPOCH_MINIMO) return;   // API antiga, sem o campo
+    // O carimbo da API passa pelo mesmo crivo do resto: acima de 2020 e nao
+    // anterior ao ultimo instante que esta placa ja viu. Um servidor com o
+    // relogio atrasado acertava a placa para tras sem ninguem notar.
+    if (!epochAceitavel(epochUtc, piso())) return;
     if (sincronizada()) return;            // o SNTP chegou primeiro, e manda
 
     struct timeval tv { (time_t)epochUtc, 0 };

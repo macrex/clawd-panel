@@ -23,6 +23,21 @@
 // boot.
 const long EPOCH_MINIMO = 1577836800L;
 
+// Um carimbo de tempo vindo de fora merece ser obedecido?
+//
+// Duas perguntas numa. A primeira e a de sempre: um epoch anterior a
+// EPOCH_MINIMO e uma placa (ou uma API) que nao sabe que dia e.
+//
+// A segunda so passou a existir com o piso guardado na NVS. O tempo nao anda
+// para tras, entao um carimbo ANTERIOR ao ultimo instante que esta placa ja viu
+// e um erro de quem mandou — o servidor com relogio desacertado, o payload
+// corrompido, o SNTP respondido por um cache mentiroso. Antes disso, qualquer
+// numero acima de 2020 era aceito sem discussao.
+//
+// `piso <= 0` significa que nao ha piso (primeiro boot, NVS limpa), e ai so a
+// primeira pergunta vale.
+bool epochAceitavel(long candidato, long piso);
+
 // Epoch LOCAL (fuso ja aplicado) -> os tres textos do cabecalho.
 //
 // `known` falso quando o epoch e anterior a EPOCH_MINIMO, e ai os campos ficam

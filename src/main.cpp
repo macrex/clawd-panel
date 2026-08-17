@@ -1041,6 +1041,20 @@ void loop() {
             cacheSalvoMs = now ? now : 1;
     }
 
+    // O piso do relogio, na NVS. Irmao do cache acima e diferente dele em duas
+    // coisas: nao depende do cartao (que ja travou duas vezes nesta placa) nem
+    // de haver status bom — basta a placa saber que horas sao.
+    //
+    // Meia hora, e nao cinco minutos: a NVS tem vida finita de escrita e o piso
+    // e um limite de sanidade, nao um relogio. Trinta minutos de defasagem nele
+    // nao mudam nenhuma decisao (ver hora.h).
+    static uint32_t pisoSalvoMs = 0;
+    if (hora::sincronizada()
+        && (!pisoSalvoMs || (now - pisoSalvoMs) > 30UL * 60UL * 1000UL)) {
+        hora::guardarPiso();
+        pisoSalvoMs = now ? now : 1;
+    }
+
     // Tarefa de rede travada: reinicia a placa. Ela e quem faz a requisicao,
     // entao nao ha como destrava-la daqui — sem isto o painel fica horas com
     // dado velho, que foi o estado em que ele foi encontrado.

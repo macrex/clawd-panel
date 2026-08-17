@@ -206,6 +206,32 @@ void test_at_ausente_ou_travessao_continua_vazio(void) {
     TEST_ASSERT_EQUAL_STRING("", atDaTela(desconhecida, 0).c_str());
 }
 
+// ---- O piso que a NVS guarda entre um boot e o proximo ----
+
+void test_epoch_abaixo_do_minimo_e_recusado(void) {
+    // Uma placa sem sincronia liga em 1970, e uma API antiga manda zero.
+    TEST_ASSERT_FALSE(epochAceitavel(0, 0));
+    TEST_ASSERT_FALSE(epochAceitavel(3600, 0));
+    TEST_ASSERT_FALSE(epochAceitavel(EPOCH_MINIMO - 1, 0));
+    TEST_ASSERT_TRUE(epochAceitavel(EPOCH_MINIMO, 0));
+}
+
+void test_sem_piso_qualquer_hora_plausivel_serve(void) {
+    // Primeiro boot da placa, NVS limpa: nao ha com o que comparar.
+    TEST_ASSERT_TRUE(epochAceitavel(SABADO_10H59, 0));
+    TEST_ASSERT_TRUE(epochAceitavel(SABADO_10H59, -1));
+}
+
+void test_o_tempo_nao_anda_para_tras(void) {
+    // O servidor com o relogio desacertado, o payload corrompido, o SNTP
+    // respondido por um cache mentiroso: todos chegam como um epoch plausivel e
+    // ANTERIOR ao ultimo instante que esta placa ja viu.
+    TEST_ASSERT_FALSE(epochAceitavel(SABADO_00H00, SABADO_10H59));
+    TEST_ASSERT_TRUE(epochAceitavel(SABADO_10H59, SABADO_00H00));
+    // O mesmo instante passa: a placa que reinicia em segundos ve o proprio piso.
+    TEST_ASSERT_TRUE(epochAceitavel(SABADO_10H59, SABADO_10H59));
+}
+
 int main(int, char **) {
     UNITY_BEGIN();
     RUN_TEST(test_prazo_dias_bate_com_a_api);
@@ -225,5 +251,8 @@ int main(int, char **) {
     RUN_TEST(test_at_some_quando_a_janela_vence);
     RUN_TEST(test_at_do_retrato_velho_nao_afirma_horario);
     RUN_TEST(test_at_ausente_ou_travessao_continua_vazio);
+    RUN_TEST(test_epoch_abaixo_do_minimo_e_recusado);
+    RUN_TEST(test_sem_piso_qualquer_hora_plausivel_serve);
+    RUN_TEST(test_o_tempo_nao_anda_para_tras);
     return UNITY_END();
 }
