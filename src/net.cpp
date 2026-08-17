@@ -1,9 +1,11 @@
 #include "net.h"
 #include "fusao.h"
 #include "neturl.h"
+#include "jsonmem.h"
 #include "display.h"
 #include <Arduino.h>
 #include <algorithm>
+#include <utility>
 #include <ArduinoJson.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
@@ -404,8 +406,9 @@ bool buscarTerminal(const std::string &pane, int cols, int rows, int rolagem,
     client.stop();
 
     // Documento generoso: 34 linhas de ate 78 caracteres mais as chaves. O
-    // parser falha limpo se nao couber, e o painel mantem a tela anterior.
-    JsonDocument doc;
+    // parser falha limpo se nao couber, e o painel mantem a tela anterior. E o
+    // maior JSON do firmware — com mais razao ainda ele nasce na PSRAM.
+    JsonDocument doc(alocadorJson());
     if (deserializeJson(doc, corpo)) return false;
 
     out.linhas.clear();
@@ -492,7 +495,11 @@ NetResult fetchFonte(Conexao &con, const std::string &url, Status &out,
 
     Status s = parseStatus(body.c_str());
     if (!s.valid) return NetResult::BadPayload;
-    out = s;
+    // MOVE, e nao copia. Um `Status` cheio carrega a lista de agentes e umas
+    // vinte strings, e ele era copiado inteiro quatro vezes por poll no caminho
+    // parse -> fonte -> ciclo -> tarefa -> laco. `s` morre nesta linha; nao ha
+    // nada a preservar nele.
+    out = std::move(s);
     return NetResult::Ok;
 }
 
@@ -514,7 +521,7 @@ NetResult fetchCiclo(Status &out) {
 
     // Sem segunda fonte, o ciclo e o de sempre.
     if (g_url2.empty()) {
-        if (r1 == NetResult::Ok) out = s1;
+        if (r1 == NetResult::Ok) out = std::move(s1);
         return r1;
     }
 
@@ -531,14 +538,15 @@ NetResult fetchCiclo(Status &out) {
     }
 
     if (r1 == NetResult::Ok) {
-        out = s1;
+        out = std::move(s1);
+        // `s2` NAO e movido: a fusao le a lista dele e o descarte vem depois.
         if (r2 == NetResult::Ok) fundirAgentes(out, s2);
         return NetResult::Ok;
     }
     if (r2 == NetResult::Ok) {
         // Fallback: o /status inteiro e o do PC2. Mesma conta, entao os
         // limites continuam verdadeiros; o selo VIA e o rodape contam o resto.
-        out = s2;
+        out = std::move(s2);
         marcarOrigem(out, 1);
         out.viaSlave = true;
         out.masterSemContatoS =
@@ -611,9 +619,14 @@ void tarefaRede(void *) {
         g_ciclos++;
         g_ultimoFimMs = millis();
 
+        // O pedido de arquivo e lido ANTES da publicacao porque `s` e MOVIDO
+        // para `g_status` logo abaixo — depois disso ele nao vale mais nada. A
+        // copia e barata: um id, um nome de ate 64 bytes e tres numeros.
+        const Atualizacao pedidoArquivo = s.atualizacao;
+
         if (xSemaphoreTake(g_mtx, portMAX_DELAY) == pdTRUE) {
             g_result = r;
-            if (r == NetResult::Ok) g_status = s;
+            if (r == NetResult::Ok) g_status = std::move(s);
             g_novo = true;
             xSemaphoreGive(g_mtx);
         }
@@ -621,8 +634,8 @@ void tarefaRede(void *) {
         // Pedido de arquivo novo? O download roda AQUI, na tarefa: e uma
         // requisicao como as outras, e o laco so entra quando ha algo pronto
         // para o cartao. O id por fonte segue a regra da captura.
-        if (r == NetResult::Ok && s.atualizacao.known) {
-            const Atualizacao &a = s.atualizacao;
+        if (r == NetResult::Ok && pedidoArquivo.known) {
+            const Atualizacao &a = pedidoArquivo;
             const int fonte = (a.origem == 1) ? 1 : 0;
             bool novoPedido = false;
             if (xSemaphoreTake(g_mtx, portMAX_DELAY) == pdTRUE) {

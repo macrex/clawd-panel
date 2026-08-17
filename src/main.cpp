@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <utility>
 #include "display.h"
 #include "storage.h"
 #include "touch_axs.h"
@@ -748,24 +749,30 @@ void loop() {
                 clawd::matarKenny(algumaSessaoCaida(s));
             }
 
-            // A resposta boa zera a idade de base: o que veio do cartao deixou
-            // de ser a fonte no instante em que a rede voltou a falar.
-            last = s; haveLast = true; lastOkMs = now; staleSec = 0;
-            idadeBaseSeg = 0;
             // A hora da API vira reserva. Sem isto o proximo poll devolveria o
             // relogio congelado da API para dentro de `last`, desfazendo o que
-            // o contador da placa acabou de escrever.
-            clockDaApi = s.clock;
+            // o contador da placa acabou de escrever. O mesmo para os prazos:
+            // a partir daqui quem conta e a placa.
+            //
+            // As tres copias sobem para ANTES do `last = std::move(s)`: o move
+            // esvazia `s`, e ler dele depois seria ler lixo. Um `Status` cheio
+            // e uma lista de agentes mais vinte strings, e ele era copiado
+            // inteiro aqui a cada dois segundos.
+            clockDaApi   = s.clock;
+            sessionDaApi = s.session;
+            weekDaApi    = s.week;
             // Numa rede sem saida para a internet o SNTP nunca chega e o
             // servidor local responde. O carimbo dele acerta o relogio, e e o
             // que destrava o cache: sem hora a placa nao sabe de quando e o
             // retrato do cartao, e um retrato sem idade nao entra na tela.
             // Nao faz nada quando o SNTP ja acertou.
             hora::semear(s.clock.epoch);
+
+            // A resposta boa zera a idade de base: o que veio do cartao deixou
+            // de ser a fonte no instante em que a rede voltou a falar.
+            last = std::move(s); haveLast = true; lastOkMs = now; staleSec = 0;
+            idadeBaseSeg = 0;
             last.clock = hora::daTela(clockDaApi);
-            // O mesmo para os prazos: a partir daqui quem conta e a placa.
-            sessionDaApi = s.session;
-            weekDaApi    = s.week;
             last.session.resets = prazoDaTela(sessionDaApi, 0);
             last.week.resets    = prazoDaTela(weekDaApi, 0);
             semWifi = false;

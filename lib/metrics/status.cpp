@@ -1,6 +1,7 @@
 #include "status.h"
 #include <ArduinoJson.h>
 #include <cstring>
+#include "jsonmem.h"
 
 static Level levelFromColor(const char *c) {
     if (!c) return Level::Green;
@@ -53,7 +54,9 @@ static std::string umaLinha(const std::string &txt) {
 
 Status parseStatus(const char *json) {
     Status s;
-    JsonDocument doc;
+    // O documento do poll e o maior JSON que passa por esta placa, e ele nasce
+    // na PSRAM: ver jsonmem.h para o porque.
+    JsonDocument doc(alocadorJson());
     if (deserializeJson(doc, json)) return s;   // s.valid continua false
     s.valid = true;
 
