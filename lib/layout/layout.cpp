@@ -55,3 +55,46 @@ int breakAt(const char *txt, int cols) {
         if (txt[i] == ' ') return i;
     return cols;
 }
+
+// ---- Os alvos de toque da tela em pe ----
+//
+// As MESMAS constantes que o desenho usa (ver as R_* em src/ui.cpp). Elas foram
+// repetidas aqui em vez de importadas porque `board_pins.h` e do firmware e nao
+// compila no PC — e um alvo que so existe no lugar certo quando ninguem mexe nas
+// duas copias nao valeria o teste. Por isso `test_alvos` confere os numeros
+// contra uma FOTO da tela real: se o desenho mudar e o alvo nao, a medida
+// denuncia.
+namespace {
+
+const int PAINEL_W  = 320;   // largura nativa do painel (retrato)
+const int MARG      = 14;
+const int CARD_W    = PAINEL_W - MARG * 2;   // 292
+const int LIM_Y     = 114;   // teto da faixa SESSAO
+const int LIM_H     = 70;
+const int LIM_GAP   = 6;
+const int FAIXA_ALT = 40;    // altura util do alvo dentro da faixa
+const int GIRO_W    = 76;
+const int GIRO_H    = 46;
+
+int topoDaSemana() { return LIM_Y + LIM_H + LIM_GAP; }   // 190
+
+}   // namespace
+
+bool dentro(const Alvo &a, int x, int y) {
+    return x >= a.x && x < a.x + a.w && y >= a.y && y < a.y + a.h;
+}
+
+Alvo alvoIconeCabecalho() { return Alvo{0, 0, GIRO_W, GIRO_H}; }
+
+Alvo alvoPctSessao() {
+    return Alvo{MARG + CARD_W / 2, LIM_Y, CARD_W - CARD_W / 2, FAIXA_ALT};
+}
+
+Alvo alvoRotuloSemana() {
+    return Alvo{MARG, topoDaSemana(), CARD_W / 2, FAIXA_ALT};
+}
+
+Alvo alvoPctSemana() {
+    return Alvo{MARG + CARD_W / 2, topoDaSemana(), CARD_W - CARD_W / 2,
+                FAIXA_ALT};
+}

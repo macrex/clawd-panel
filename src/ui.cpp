@@ -1747,13 +1747,8 @@ const int R_STATUS_Y   = 462;
 // O alvo do gesto de girar: o canto do bicho, com folga larga. Vale nas duas
 // orientacoes e em todas as paginas — o cabecalho e o mesmo em todas.
 //
-// 76 e nao 50: o bicho do cabecalho muda de LARGURA conforme o nivel e o
-// sorteio do rodizio (o alvo e a altura, 36 px; a largura sai do recorte).
-// Medidos na placa: 33x32, 51x30, 64x35 — um alvo do tamanho do desenho
-// encolheria junto com ele. Se um sorteio trouxer um bicho mais largo que 76, o
-// excesso simplesmente nao gira, e o dedo continua tendo alvo de sobra.
-const int R_GIRO_W = 76;
-const int R_GIRO_H = 46;
+// O tamanho dele mora em lib/layout (`alvoIconeCabecalho`), com o porque das
+// medidas e um teste que as confere contra uma foto da tela real.
 
 // Cabecalho em pe: SO o bicho e a hora, na mesma linha.
 //
@@ -2965,7 +2960,7 @@ int opcaoAt(const Status &s, const std::string &selectedId, int x, int y) {
 // Nao ha guarda de pagina: quem chama e que decide quando perguntar, e o
 // cabecalho e o mesmo em todas as paginas.
 bool iconeCabecalhoAt(int x, int y) {
-    return x >= 0 && x < R_GIRO_W && y >= 0 && y < R_GIRO_H;
+    return dentro(alvoIconeCabecalho(), x, y);
 }
 
 // A fileira de bichos — o botao de trocar o ELENCO.
@@ -3003,20 +2998,18 @@ bool turmaAt(int x, int y, int page) {
 // O alvo e a metade direita da faixa da semana: o numero e o unico conteudo
 // daquele canto, e um alvo do tamanho exato do texto exigiria pontaria que um
 // atalho nao pode exigir.
+// Os retangulos moram em lib/layout, conferidos contra uma foto da tela real
+// (ver test/test_alvos). O que fica aqui e a pergunta que so o firmware sabe
+// responder: estamos em pe?
 bool pctSemanaAt(int x, int y) {
-    if (!display::retrato()) return false;
-    const int y0 = R_LIM_Y + R_LIM_H + R_LIM_GAP;      // teto da faixa SEMANA
-    return x >= R_MARG + R_CARD_W / 2 && x < R_MARG + R_CARD_W &&
-           y >= y0 && y < y0 + 40;
+    return display::retrato() && dentro(alvoPctSemana(), x, y);
 }
 
 // O gemeo do de cima, na faixa da SESSAO: ele ensaia a tela de RESET. Os dois
 // atalhos vivem no mesmo canto de faixas vizinhas de proposito — quem aprendeu
 // um acha o outro.
 bool pctSessaoAt(int x, int y) {
-    if (!display::retrato()) return false;
-    return x >= R_MARG + R_CARD_W / 2 && x < R_MARG + R_CARD_W &&
-           y >= R_LIM_Y && y < R_LIM_Y + 40;
+    return display::retrato() && dentro(alvoPctSessao(), x, y);
 }
 
 // A metade ESQUERDA da faixa da SEMANA — onde mora o rotulo. E o terceiro
@@ -3026,10 +3019,7 @@ bool pctSessaoAt(int x, int y) {
 // meia janela para conferir um sprite nao e teste, e paciencia. Os tres ensaios
 // ficam nas duas faixas: percentuais a direita, rotulos a esquerda.
 bool rotuloSemanaAt(int x, int y) {
-    if (!display::retrato()) return false;
-    const int y0 = R_LIM_Y + R_LIM_H + R_LIM_GAP;
-    return x >= R_MARG && x < R_MARG + R_CARD_W / 2 &&
-           y >= y0 && y < y0 + 40;
+    return display::retrato() && dentro(alvoRotuloSemana(), x, y);
 }
 
 // Versao da P0: sem selecao, mede pela geometria da pergunta em tela cheia.

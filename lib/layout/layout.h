@@ -57,3 +57,42 @@ int centerIn(int slotX, int slotW, int w);
 // Sem espaco aproveitavel a palavra e cortada seco em `cols`: uma linha cortada
 // e ruim, escrever para fora do card e pior.
 int breakAt(const char *txt, int cols);
+
+// ---- Os alvos de toque da tela EM PE ----
+//
+// Um alvo errado nao da erro: ele so nao responde, ou responde no lugar do
+// vizinho. E quando o painel esta na parede, a unica forma de descobrir e
+// tocando — que e exatamente o que nao da para fazer quando o cartao trava e a
+// placa nao sobe.
+//
+// Por isso os retangulos moram aqui, longe do canvas: assim eles sao conferidos
+// no PC, contra as posicoes MEDIDAS numa foto da tela real (ver
+// test/test_alvos). O `ui.cpp` continua dono do desenho e da pergunta "estamos
+// em pe?"; o que saiu foi so a aritmetica dos cantos.
+struct Alvo {
+    int x = 0, y = 0, w = 0, h = 0;
+};
+
+bool dentro(const Alvo &a, int x, int y);
+
+// O bicho do cabecalho, que gira a tela. Canto superior esquerdo, e o alvo mais
+// forte de todos (ver lib/gesture/acao.h) porque em pe ele e a unica saida.
+//
+// 76x46 e nao o tamanho do desenho: o bicho muda de LARGURA conforme o nivel e o
+// sorteio do rodizio. Medidos na placa: 33x32, 51x30, 64x35 — um alvo do tamanho
+// do desenho encolheria junto com ele, e acertar 33 px de largura com o dedo num
+// painel de parede nao acontece. Se um sorteio trouxer um bicho mais largo que
+// 76, o excesso simplesmente nao gira, e o dedo continua tendo alvo de sobra.
+Alvo alvoIconeCabecalho();
+
+// O percentual da janela de 5h: metade DIREITA da primeira faixa. Duplo toque
+// ali ensaia a tela de reset.
+Alvo alvoPctSessao();
+
+// O rotulo da janela de 7 dias: metade ESQUERDA da segunda faixa. Duplo toque
+// ali ensaia a morte do Kenny.
+Alvo alvoRotuloSemana();
+
+// O percentual da janela de 7 dias: metade DIREITA da segunda faixa. Duplo
+// toque ali abre a tela do Token sem esperar o limite estourar.
+Alvo alvoPctSemana();
