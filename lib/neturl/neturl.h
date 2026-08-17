@@ -22,3 +22,13 @@ std::string urlIrma(const std::string &base, const char *segmento);
 // `http://host:8787/status?x=1`, e concatenar `?` ali produziria uma URL que o
 // servidor recusa. Base vazia devolve vazia — sem endereco nao ha o que pedir.
 std::string urlDoStatus(const std::string &base);
+
+// A MESMA URL, dizendo qual resumo de blocos frios esta placa ja tem.
+//
+// `works`, `uso` e `vitalicio` mudam quando um turno termina, e nao a cada dois
+// segundos. Devolvendo o resumo que veio no poll anterior, a placa autoriza o
+// servidor a omiti-los enquanto nada mudar (ver server/painel.py).
+//
+// Resumo vazio devolve a URL de sempre: no primeiro poll depois do boot a placa
+// nao tem o que reaproveitar, e pedir tudo e o certo.
+std::string urlDoStatusComFrio(const std::string &base, const std::string &resumo);

@@ -325,6 +325,11 @@ struct Status {
     Works       works;
     Uso         uso;
     Vitalicio   vitalicio;
+    // O resumo dos tres blocos acima, como o servidor o publica. Enquanto ele
+    // nao muda, eles nao viajam — a placa reaproveita os que ja tem (ver
+    // lib/metrics/frio.h). Vazio contra uma API que nao manda o campo, e ai o
+    // mecanismo inteiro fica desligado.
+    std::string frio;
     Bloqueio    bloqueio;
     Captura     captura;
     Atualizacao atualizacao;

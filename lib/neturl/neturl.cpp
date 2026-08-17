@@ -25,3 +25,14 @@ std::string urlDoStatus(const std::string &base) {
     const char separador = (base.find('?') == std::string::npos) ? '?' : '&';
     return base + separador + CAMPOS_PAINEL;
 }
+
+std::string urlDoStatusComFrio(const std::string &base,
+                               const std::string &resumo) {
+    const std::string url = urlDoStatus(base);
+    if (url.empty() || resumo.empty()) return url;
+    // Sem checar duplicata como o `campos=painel` faz, e de proposito: esta
+    // funcao e chamada A CADA POLL, com um resumo que muda, entao a base que ela
+    // recebe nunca pode ser a saida da chamada anterior. Quem a chama monta
+    // sempre a partir da URL do cartao.
+    return url + "&frio=" + resumo;
+}

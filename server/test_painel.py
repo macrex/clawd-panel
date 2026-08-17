@@ -192,5 +192,80 @@ class TestPedido(unittest.TestCase):
         self.assertFalse(painel.pedido_do_painel("/status?campos=painel2"))
 
 
+class TestFrio(unittest.TestCase):
+    """Os blocos que mudam devagar e nao precisam viajar a cada dois segundos."""
+
+    def test_o_resumo_publicado_sempre(self):
+        # Sem `?frio=` o documento sai inteiro, COM o resumo junto: e como a
+        # placa aprende o valor da primeira vez.
+        saida = painel.aplicar_frio(status_cheio(), "/status?campos=painel")
+        self.assertIn("frio", saida)
+        self.assertIn("works", saida)
+        self.assertIn("uso", saida)
+        self.assertIn("vitalicio", saida)
+
+    def test_resumo_igual_omite_os_blocos(self):
+        cheio = status_cheio()
+        resumo = painel.resumo_frio(cheio)
+        saida = painel.aplicar_frio(cheio, f"/status?campos=painel&frio={resumo}")
+        self.assertEqual(saida["frio"], resumo)
+        for bloco in painel.FRIOS:
+            self.assertNotIn(bloco, saida)
+        # O resto do documento continua inteiro: o corte e de UMA parte, e nao
+        # da resposta — 87% dela muda a cada poll.
+        self.assertEqual(saida["session_pct"], cheio["session_pct"])
+        self.assertEqual(saida["labels"], cheio["labels"])
+
+    def test_resumo_velho_traz_os_blocos_de_volta(self):
+        saida = painel.aplicar_frio(status_cheio(), "/status?frio=aaaaaaaaaaaa")
+        self.assertIn("works", saida)
+        self.assertIn("vitalicio", saida)
+
+    def test_conteudo_que_muda_muda_o_resumo(self):
+        # A invalidacao e automatica e e o coracao disto: um turno novo muda
+        # `works`, muda o resumo, e o bloco volta a viajar sem ninguem lembrar de
+        # expirar nada. A virada do dia entra por esta mesma porta.
+        antes = status_cheio()
+        depois = copy.deepcopy(antes)
+        depois["works"]["trabalhos"] += 1
+        self.assertNotEqual(painel.resumo_frio(antes), painel.resumo_frio(depois))
+
+        # E o mesmo conteudo da o mesmo resumo, senao o bloco viajaria sempre.
+        self.assertEqual(painel.resumo_frio(antes),
+                         painel.resumo_frio(copy.deepcopy(antes)))
+
+    def test_o_resumo_nao_depende_da_ordem_das_chaves(self):
+        # A ordem de um dicionario Python nao e contrato. Sem `sort_keys`, duas
+        # versoes do servidor dariam resumos diferentes para o mesmo conteudo.
+        antes = status_cheio()
+        depois = copy.deepcopy(antes)
+        depois["works"] = dict(reversed(list(depois["works"].items())))
+        self.assertEqual(painel.resumo_frio(antes), painel.resumo_frio(depois))
+
+    def test_bloco_ausente_tem_resumo_proprio(self):
+        # Uma API sem livro-caixa (primeiro dia, arquivo vazio) tambem tem um
+        # resumo estavel — e ele e DIFERENTE do de um dia com dados, senao a
+        # placa guardaria o bloco de ontem achando que nada mudou.
+        vazio = {k: v for k, v in status_cheio().items() if k not in painel.FRIOS}
+        self.assertTrue(painel.resumo_frio(vazio))
+        self.assertNotEqual(painel.resumo_frio(vazio),
+                            painel.resumo_frio(status_cheio()))
+
+    def test_nao_altera_o_original(self):
+        cheio = status_cheio()
+        copia = copy.deepcopy(cheio)
+        painel.aplicar_frio(cheio, f"/status?frio={painel.resumo_frio(cheio)}")
+        self.assertEqual(cheio, copia)
+
+    def test_convive_com_o_enxugar(self):
+        # A ordem importa: `enxugar` tira campos de dentro de `works` e `uso`,
+        # entao o resumo tem que sair do documento JA enxuto. Calculado antes, a
+        # placa guardaria um resumo que nunca mais bateria.
+        magro = painel.enxugar(status_cheio())
+        resumo = painel.resumo_frio(magro)
+        saida = painel.aplicar_frio(magro, f"/status?campos=painel&frio={resumo}")
+        self.assertNotIn("works", saida)
+
+
 if __name__ == "__main__":
     unittest.main()

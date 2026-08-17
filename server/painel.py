@@ -29,6 +29,9 @@ Manutencao: ao ensinar o firmware a ler um campo, tire-o da lista aqui.
 
 from __future__ import annotations
 
+import hashlib
+import json
+
 # Topo do documento.
 #
 #   sessions_active  a placa conta pela lista de agentes (ver fusao.cpp)
@@ -130,10 +133,73 @@ def pedido_do_painel(caminho: str) -> bool:
     Comparacao por igualdade e nao por presenca: um valor desconhecido de um
     cliente futuro nao pode ativar um corte que ele nao entende.
     """
+    return _param(caminho, "campos") == "painel"
+
+
+def _param(caminho: str, chave: str) -> str:
+    """O valor de um parametro da URL crua, ou "" quando ele nao veio."""
     if "?" not in caminho:
-        return False
+        return ""
     for par in caminho.split("?", 1)[1].split("&"):
-        chave, _, valor = par.partition("=")
-        if chave == "campos" and valor == "painel":
-            return True
-    return False
+        k, _, v = par.partition("=")
+        if k == chave:
+            return v
+    return ""
+
+
+# ---- Os blocos frios ----
+#
+# `works`, `uso` e `vitalicio` sao o dia e a vida inteira: eles mudam quando um
+# turno termina, e nao a cada dois segundos. Somados dao ~200 dos 1459 bytes do
+# payload enxuto (13%) e atravessam a rede 1800 vezes por hora sem ter mudado.
+#
+# O acordo e o mais simples que funciona: o servidor SEMPRE publica `frio`, um
+# resumo do conteudo dos tres. A placa devolve no pedido seguinte o que recebeu
+# (`?frio=<resumo>`), e quando os dois batem os blocos nao viajam.
+#
+# Nao e um ETag de HTTP de proposito. O 304 vale para a resposta INTEIRA, e aqui
+# 87% dela muda a cada poll — o que se quer e omitir uma parte e mandar o resto.
+#
+# O resumo cobre o CONTEUDO, entao a invalidacao e automatica: um turno novo
+# muda `works`, muda o resumo, e o bloco volta a viajar sem ninguem ter que
+# lembrar de expirar nada. E a virada do dia entra por essa mesma porta.
+
+FRIOS = ("works", "uso", "vitalicio")
+
+
+def resumo_frio(status: dict) -> str:
+    """O resumo dos blocos frios, em hex.
+
+    Doze digitos (48 bits): a chance de dois conteudos diferentes colidirem e
+    desprezivel, e o custo sao doze bytes num payload de 1400. Truncar mais
+    economizaria nada que se note e aproximaria um bug que se manifesta como
+    "o painel mostra os turnos de ontem".
+
+    `sort_keys` porque a ordem de um dicionario Python nao e contrato: sem isso
+    o mesmo conteudo daria resumos diferentes entre duas versoes do servidor, e
+    o bloco voltaria a viajar sempre.
+    """
+    material = json.dumps(
+        {k: status.get(k) for k in FRIOS}, sort_keys=True, separators=(",", ":")
+    )
+    return hashlib.sha1(material.encode("utf-8")).hexdigest()[:12]
+
+
+def aplicar_frio(status: dict, caminho: str) -> dict:
+    """Publica `frio` e, quando o pedido trouxe o mesmo resumo, omite os blocos.
+
+    NAO altera o original, pela mesma razao de `enxugar`.
+
+    Sem `?frio=` na URL o documento sai inteiro — com o campo `frio` junto, que
+    e como a placa aprende o resumo da primeira vez. Uma placa gravada antes
+    desta versao simplesmente ignora um campo a mais.
+    """
+    resumo = resumo_frio(status)
+    saida = dict(status)
+    saida["frio"] = resumo
+
+    if _param(caminho, "frio") == resumo:
+        for k in FRIOS:
+            saida.pop(k, None)
+
+    return saida

@@ -72,6 +72,9 @@ Status parseStatus(const char *json) {
     // Quem esta falando. Quem se identifica e o SERVICO — a placa nao guarda
     // nome de maquina nenhuma, entao instalar uma terceira nao pede cartao.
     s.tag         = strOr(doc["tag"], "");
+    // O resumo dos blocos frios. Ausente numa API antiga, e ai fica vazio e o
+    // reaproveitamento nao acontece — a placa recebe tudo, como sempre recebeu.
+    s.frio        = strOr(doc["frio"], "");
     s.model       = strOr(doc["model"], "");
     s.repo        = strOr(doc["context_repo"], "");
     s.branch      = strOr(doc["context_branch"], "");

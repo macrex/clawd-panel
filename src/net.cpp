@@ -3,6 +3,7 @@
 #include "neturl.h"
 #include "protocolo.h"
 #include "falha.h"
+#include "frio.h"
 #include "jsonmem.h"
 #include "display.h"
 #include <Arduino.h>
@@ -464,10 +465,23 @@ struct Conexao {
 Conexao g_conMaster;
 Conexao g_conSlave;
 
+// Os blocos frios guardados, POR FONTE: cada API tem o seu livro-caixa e o seu
+// resumo (ver lib/metrics/frio.h). Um so faria a placa mandar para uma fonte o
+// resumo que aprendeu da outra.
+//
+// Sem mutex de proposito: eles nascem, vivem e morrem dentro da tarefa de rede.
+BlocosFrios g_frioMaster;
+BlocosFrios g_frioSlave;
+
 // Faz UMA requisicao numa fonte. Roda apenas dentro da tarefa. O check de
 // radio mora em fetchCiclo: quando o WiFi caiu, nenhuma fonte merece tentativa.
-NetResult fetchFonte(Conexao &con, const std::string &url, Status &out,
-                     int &codeOut, uint32_t *durOut = nullptr) {
+NetResult fetchFonte(Conexao &con, const std::string &urlBase, BlocosFrios &frio,
+                     Status &out, int &codeOut, uint32_t *durOut = nullptr) {
+    // A URL e montada A CADA POLL porque o resumo dos blocos frios muda. Ela
+    // parte sempre da base guardada no begin, e nunca da saida da volta
+    // anterior — senao os parametros se acumulariam.
+    const std::string url = urlDoStatusComFrio(urlBase, frio.resumo);
+
     const uint32_t comecou = millis();
     // A duracao e escrita em TODA saida, inclusive nas de erro: e justamente
     // no erro que ela informa (ver lib/metrics/falha.h).
@@ -507,6 +521,9 @@ NetResult fetchFonte(Conexao &con, const std::string &url, Status &out,
 
     Status s = parseStatus(body.c_str());
     if (!s.valid) return NetResult::BadPayload;
+    // O servidor omitiu os blocos frios porque o resumo bateu? Entao eles vem
+    // daqui. Antes de qualquer outro uso de `s` (ver lib/metrics/frio.h).
+    aplicarFrios(frio, s);
     // MOVE, e nao copia. Um `Status` cheio carrega a lista de agentes e umas
     // vinte strings, e ele era copiado inteiro quatro vezes por poll no caminho
     // parse -> fonte -> ciclo -> tarefa -> laco. `s` morre nesta linha; nao ha
@@ -525,7 +542,8 @@ NetResult fetchCiclo(Status &out) {
     Status s1;
     int code1 = 0;
     uint32_t dur1 = 0;
-    const NetResult r1 = fetchFonte(g_conMaster, g_url, s1, code1, &dur1);
+    const NetResult r1 =
+        fetchFonte(g_conMaster, g_url, g_frioMaster, s1, code1, &dur1);
     g_lastCode  = code1;            // o diagnostico de sempre fala do master
     g_lastDurMs = dur1;
 
@@ -547,7 +565,7 @@ NetResult fetchCiclo(Status &out) {
     NetResult r2 = NetResult::HttpError;
     if (r1 != NetResult::Ok || backoffVenceu) {
         int code2 = 0;
-        r2 = fetchFonte(g_conSlave, g_url2, s2, code2);
+        r2 = fetchFonte(g_conSlave, g_url2, g_frioSlave, s2, code2);
         g_slaveProximaMs = (r2 == NetResult::Ok) ? 0 : agora + SLAVE_RETRY_MS;
     }
 

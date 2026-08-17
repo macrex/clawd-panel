@@ -1546,6 +1546,10 @@ class Handler(BaseHTTPRequestHandler):
             corpo = build_status()
             if painel.pedido_do_painel(self.path):
                 corpo = painel.enxugar(corpo)
+                # `works`, `uso` e `vitalicio` mudam quando um turno termina, e
+                # nao a cada dois segundos. O resumo sai do documento JA enxuto:
+                # calculado antes, ele nunca bateria com o que a placa recebeu.
+                corpo = painel.aplicar_frio(corpo, self.path)
             self._send(200, corpo)
         elif path == "/health":
             self._send(200, build_health())
