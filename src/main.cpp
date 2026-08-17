@@ -7,6 +7,7 @@
 #include "ui.h"
 #include "app_config.h"
 #include "gesture.h"
+#include "acao.h"        // decidirGesto: o que cada gesto significa AQUI
 #include "clawd.h"
 #include "nivel.h"
 #include "reset_watch.h"
@@ -491,183 +492,112 @@ void loop() {
     TouchPoint t = touch::read();
     Gesture g = gestos.update(t.pressed, t.x, t.y, now);
 
-    // O modo terminal consome o gesto ANTES do resto e devolve: la os swipes
-    // horizontais nao trocam de pagina (nao ha para onde ir) e os verticais,
-    // que fora daqui nao significam nada, rolam o texto.
-    if (modoTerminal) {
+    // A decisao — qual acao este gesto significa AQUI — mora em lib/gesture, com
+    // teste. Ela era uma cadeia de quatorze `else if` dentro deste laco, e a
+    // ORDEM dela carrega as regras: foi trocando duas de lugar que o botao de
+    // limpeza quebrou quando nasceu. O que fica aqui e so o efeito de cada
+    // acao, que e o que precisa de placa.
+    //
+    // Os hit-tests sao resolvidos ANTES e passam prontos: a geometria pede
+    // canvas e fonte, e leva-la para lib/ traria o Arduino junto. Eles deixam de
+    // ter curto-circuito, e isso custa umas contas por gesto — que acontece no
+    // instante em que o dedo levanta, e nao a 50 Hz.
+    Contexto ctx;
+    ctx.modoTerminal = modoTerminal;
+    ctx.page         = page;
+    ctx.paginas      = ui::PAGES;
+    ctx.retrato      = display::retrato();
+    ctx.haveLast     = haveLast;
+    ctx.temBloqueio  = haveLast && last.bloqueio.known;
+    ctx.telaReset    = telaResetAtiva(now);
+    ctx.clawdDorme   = clawdDorme(now);
+    ctx.telaToken    = telaTokenAtiva();
+
+    if (g.kind != GestureKind::None) {
+        ctx.noIconeCabecalho = ui::iconeCabecalhoAt(g.x, g.y);
+        ctx.noSairTerminal   = ui::terminalSairAt(g.x, g.y);
+        ctx.noRotuloSemana   = ui::rotuloSemanaAt(g.x, g.y);
+        ctx.noPctSessao      = ui::pctSessaoAt(g.x, g.y);
+        ctx.noPctSemana      = ui::pctSemanaAt(g.x, g.y);
+        ctx.naTurma          = ui::turmaAt(g.x, g.y, page);
+        if (haveLast) {
+            ctx.opcaoP0         = ui::perguntaP0At(last, g.x, g.y);
+            ctx.opcaoP1         = ui::opcaoAt(last, selectedId, g.x, g.y);
+            ctx.noBotaoTerminal = ui::terminalButtonAt(last, selectedId, g.x, g.y);
+            ctx.noBotaoLimpeza  = ui::cleanButtonAt(last, selectedId, g.x, g.y);
+            ctx.agenteIndex     = ui::agentIndexAt(last, g.x, g.y);
+        }
+    }
+
+    const Decisao d = decidirGesto(g.kind, ctx);
+    switch (d.acao) {
+        case Acao::Nada: break;
+
+        case Acao::TerminalFechar: fecharTerminal(); redraw = true; break;
         // Meia tela por gesto. Uma tela inteira nao deixa referencia nenhuma
         // entre um arrasto e o outro, e ler texto corrido assim e desconfortavel.
-        const int passo = ui::termRows() / 2;
-        switch (g.kind) {
-            case GestureKind::Tap:
-            case GestureKind::DoubleTap:
-                if (ui::terminalSairAt(g.x, g.y)) { fecharTerminal(); redraw = true; }
-                break;
-            // Arrastar para CIMA leva o texto para cima, ou seja, mostra o que
-            // esta ABAIXO — e abaixo esta o mais recente. E a mesma direcao de
-            // qualquer lista rolavel; inverter aqui brigaria com o dedo.
-            case GestureKind::SwipeUp:   net::terminalRolar(+passo); break;
-            case GestureKind::SwipeDown: net::terminalRolar(-passo); break;
-            // Swipe horizontal tambem sai: e o gesto que a mao ja aprendeu
-            // neste painel, e nao ter saida nenhuma alem de um botao pequeno
-            // seria uma armadilha.
-            case GestureKind::SwipeRight:
-                fecharTerminal(); redraw = true;
-                break;
-            default: break;
-        }
-    } else
-    switch (g.kind) {
-        case GestureKind::SwipeLeft:
-            // As quatro paginas existem nas DUAS orientacoes: cada uma tem a
-            // geometria da sua, entao o swipe voltou a valer em pe.
-            if (page < ui::PAGES - 1) { page++; redraw = true; }
-            break;
-        case GestureKind::SwipeRight:
-            if (page > 0) { page--; redraw = true; }
-            break;
-        case GestureKind::DoubleTap:
-            // Duplo toque avanca para o proximo agente. So faz sentido na
-            // pagina de contexto — e nao vale DENTRO do botao, onde o segundo
-            // toque e a confirmacao da limpeza.
-            // A confirmacao de um botao e, para o detector de gestos, um duplo
-            // toque — e na pagina 1 o duplo toque ja significava "proximo
-            // agente". Sem esta ordem, confirmar uma aprovacao trocaria de
-            // agente em vez de aprovar. Foi assim que o botao de limpeza
-            // quebrou quando nasceu.
+        case Acao::TerminalRolarCima:  net::terminalRolar(+ui::termRows() / 2); break;
+        case Acao::TerminalRolarBaixo: net::terminalRolar(-ui::termRows() / 2); break;
+
+        case Acao::PaginaProxima:  page++; redraw = true; break;
+        case Acao::PaginaAnterior: page--; redraw = true; break;
+
+        case Acao::GirarTela: girarTela(); redraw = true; break;
+
+        case Acao::DispensarReset: resetAteMs = 0; redraw = true; break;
+
+        case Acao::DispensarOffline:
+            // O painel que aparece atras e o ultimo retrato bom: dado velho, com
+            // a idade dita no cabecalho.
             //
-            // O BICHO DO CABECALHO vem PRIMEIRO de todos, e vale em qualquer
-            // pagina: em pe ele e a unica saida da tela, e uma saida que perde
-            // para outro alvo em alguma pagina e uma saida que nao existe. Na
-            // pagina do Clawd isso tira dele o canto superior esquerdo (la o
-            // duplo toque troca o trabalhador e vale a tela inteira) — 64x46 px
-            // de 480x320, e o unico lugar onde os dois gestos se encontram.
-            if (ui::iconeCabecalhoAt(g.x, g.y)) {
-                girarTela(); redraw = true;
-            } else if (telaResetAtiva(now)) {
-                // Um toque ja dispensa: a tela nao pede decisao nenhuma, e
-                // exigir dois seria cerimonia para fechar um cartaz.
-                resetAteMs = 0;
-                redraw = true;
-            } else if (clawdDorme(now)) {
-                // Aqui em cima, e nao ao lado da tela do Token: com esta no ar,
-                // QUALQUER duplo toque abaixo do cabecalho e "ja vi, devolve o
-                // painel". Os alvos de ensaio logo abaixo pertencem ao layout da
-                // P0, que neste momento nao esta na tela — deixa-los na frente
-                // faria um toque no lugar errado matar o Kenny em vez de sair.
-                //
-                // O painel que aparece atras e o ultimo retrato bom: dado velho,
-                // com a idade dita no cabecalho.
-                //
-                // A PSRAM volta na hora. Quem dispensou nao vai reabrir a tela
-                // desta queda, e 150 KB parados esperando isso nao se justificam.
-                offlineDispensado = true;
-                if (offlineCarregado) {
-                    clawd::soltarOffline();
-                    offlineCarregado = false;
-                }
-                redraw = true;
-            } else if (haveLast && !last.bloqueio.known
-                       && ui::rotuloSemanaAt(g.x, g.y)) {
-                // Ensaio da morte do Kenny. Sem efeito no tema padrao, que nao
-                // tem Kenny nenhum — e por isso a troca de tema fica a um
-                // duplo toque de distancia, nos proprios bichos.
-                kennyEnsaioAteMs = (now ? now : 1) + KENNY_ENSAIO_MS;
-                clawd::matarKenny(true);
-                redraw = true;
-            } else if (haveLast && !last.bloqueio.known
-                       && ui::pctSessaoAt(g.x, g.y)) {
-                // O ENSAIO da tela de reset: os mesmos segundos da de verdade
-                // (RESET_MS), para dar para ver sem esperar a janela virar.
-                // Espelha o atalho do Token, que mora na faixa de baixo.
-                //
-                // E o mesmo rodizio da de verdade: cada ensaio traz o proximo
-                // personagem. E este o jeito de ver os quatro sem esperar
-                // quatro janelas virarem.
-                resetQual  = "SESSAO";
-                resetAteMs = clawd::proximoReset() ? (now ? now : 1) + RESET_MS : 0;
-                redraw = true;
-            } else if (telaTokenAtiva()) {
-                // Com o Token na tela, qualquer duplo toque abaixo do
-                // cabecalho e "ja vi, devolve o painel". Nao ha outro alvo
-                // para disputar: a tela e dele.
-                tokenManual     = false;
-                tokenDispensado = true;
-                redraw = true;
-            } else if (haveLast && !last.bloqueio.known
-                       && ui::pctSemanaAt(g.x, g.y)) {
-                // O atalho: duplo toque no percentual da SEMANA abre a tela do
-                // Token sem esperar o estouro. Com bloqueio na tela o alvo nao
-                // existe — la quem mora naquele canto e a pergunta.
-                tokenManual = true;
-                redraw = true;
-            } else if (ui::turmaAt(g.x, g.y, page)) {
-                // A fileira troca o ELENCO. Fica ANTES dos alvos de pagina
-                // porque ela e o unico controle daquela faixa: deitado o rodape
-                // so tem os bichos e as bolinhas de pagina, e em pe a turma
-                // mora sozinha entre as duas divisorias.
-                //
-                // A troca le o cartao e leva ~300 ms. Acontece aqui, no gesto, e
-                // nunca dentro de um desenho.
-                if (clawd::trocarTema()) redraw = true;
-            } else if ((page == 0 || display::retrato()) && haveLast
-                       && ui::perguntaP0At(last, g.x, g.y)) {
-                // Pergunta em tela cheia da P0: o segundo toque confirma, do
-                // mesmo jeito que na aba de contexto.
-                tocarOpcao(ui::perguntaP0At(last, g.x, g.y), now);
-                redraw = true;
-            } else if (page == 1 && haveLast && ui::opcaoAt(last, selectedId, g.x, g.y)) {
-                tocarOpcao(ui::opcaoAt(last, selectedId, g.x, g.y), now);
-                redraw = true;
-            } else if (page == 1 && haveLast
-                       && ui::terminalButtonAt(last, selectedId, g.x, g.y)) {
-                // O duplo toque cai aqui tambem: dois toques rapidos no botao
-                // de terminal sao um duplo toque para o detector, e sem esta
-                // linha eles trocariam de agente em vez de abrir a tela.
-                abrirTerminal(); redraw = true;
-            } else if (page == 1 && haveLast && ui::cleanButtonAt(last, selectedId, g.x, g.y)) {
-                tocarBotaoLimpeza(now); redraw = true;
-            } else if (page == 1 && !display::retrato()) {
-                // Deitado, o duplo toque em qualquer lugar da pagina avanca o
-                // agente. Em pe NAO: la a lista mostra os quatro e o toque
-                // simples seleciona, entao o duplo toque fica livre para os
-                // alvos proprios — a fileira de bichos, que troca o tema.
-                proximoAgente(); redraw = true;
-            } else if (page == 2) {
-                // Duplo toque na pagina do Clawd troca o trabalhador em cena.
-                // Vale a pagina inteira e nao so o retangulo do sprite: nao ha
-                // mais nada para tocar aqui, e a moldura varia de 152 a 440 px
-                // de largura — exigir o alvo certo faria o gesto falhar
-                // justamente com os bichos menores.
-                if (clawd::trocarTrabalho()) redraw = true;
+            // A PSRAM volta na hora. Quem dispensou nao vai reabrir a tela desta
+            // queda, e 150 KB parados esperando isso nao se justificam.
+            offlineDispensado = true;
+            if (offlineCarregado) {
+                clawd::soltarOffline();
+                offlineCarregado = false;
             }
+            redraw = true;
             break;
-        case GestureKind::Tap: {
-            if ((page == 0 || display::retrato()) && haveLast
-                && last.bloqueio.known) {
-                // Pergunta em tela cheia: na P0 das duas orientacoes, e em pe
-                // em QUALQUER pagina — la o bloqueio toma a tela inteira.
-                const int op = ui::perguntaP0At(last, g.x, g.y);
-                if (op) { tocarOpcao(op, now); redraw = true; }
-            } else if (page == 1 && haveLast) {
-                // Toque simples no menu da direita seleciona aquele repo.
-                const int i = ui::agentIndexAt(last, g.x, g.y);
-                const int op = ui::opcaoAt(last, selectedId, g.x, g.y);
-                if (i >= 0) { selectedId = last.agents[i].id; redraw = true; }
-                else if (op) { tocarOpcao(op, now); redraw = true; }
-                else if (ui::terminalButtonAt(last, selectedId, g.x, g.y)) {
-                    // Um toque so, sem armar. Abrir uma tela de LEITURA nao
-                    // muda nada no agente — a confirmacao existe onde o toque
-                    // age, e aqui ele nao age.
-                    abrirTerminal(); redraw = true;
-                }
-                else if (ui::cleanButtonAt(last, selectedId, g.x, g.y)) {
-                    tocarBotaoLimpeza(now); redraw = true;
-                }
-            }
+
+        case Acao::EnsaiarKenny:
+            kennyEnsaioAteMs = (now ? now : 1) + KENNY_ENSAIO_MS;
+            clawd::matarKenny(true);
+            redraw = true;
             break;
-        }
-        default: break;
+
+        case Acao::EnsaiarReset:
+            // Os mesmos segundos da tela de verdade (RESET_MS), e o mesmo
+            // rodizio: cada ensaio traz o proximo personagem. E este o jeito de
+            // ver os quatro sem esperar quatro janelas virarem.
+            resetQual  = "SESSAO";
+            resetAteMs = clawd::proximoReset() ? (now ? now : 1) + RESET_MS : 0;
+            redraw = true;
+            break;
+
+        case Acao::DispensarToken:
+            tokenManual     = false;
+            tokenDispensado = true;
+            redraw = true;
+            break;
+
+        case Acao::AbrirToken: tokenManual = true; redraw = true; break;
+
+        // A troca de tema le o cartao e leva ~300 ms. Acontece aqui, no gesto, e
+        // nunca dentro de um desenho.
+        case Acao::TrocarTema:     if (clawd::trocarTema()) redraw = true; break;
+        case Acao::TrocarTrabalho: if (clawd::trocarTrabalho()) redraw = true; break;
+
+        case Acao::AbrirTerminal: abrirTerminal(); redraw = true; break;
+        case Acao::BotaoLimpeza:  tocarBotaoLimpeza(now); redraw = true; break;
+        case Acao::ProximoAgente: proximoAgente(); redraw = true; break;
+
+        case Acao::TocarOpcao: tocarOpcao(d.n, now); redraw = true; break;
+
+        case Acao::SelecionarAgente:
+            selectedId = last.agents[d.n].id;
+            redraw = true;
+            break;
     }
 
     // --- o retrato do cartao, quando nao ha nada melhor ---
