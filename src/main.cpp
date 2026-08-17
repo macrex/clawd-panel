@@ -2,6 +2,7 @@
 #include <utility>
 #include "display.h"
 #include "storage.h"
+#include "configstore.h"   // a config guardada na NVS, para o cartao que falha
 #include "touch_axs.h"
 #include "net.h"
 #include "ui.h"
@@ -450,20 +451,47 @@ void setup() {
     touch::begin();
     ui::drawMessage("INICIANDO", "");
 
-    if (!storage::begin()) {
-        bootFatal("SEM CONFIG", "cartao SD nao montou");
-        return;
-    }
+    // A config vem do cartao; a NVS e a RESERVA.
+    //
+    // O painel morria quando o cartao nao montava: parava em SEM CONFIG e ficava
+    // ali ate alguem desligar a bateria. O `0x107` desta placa ja fez isso
+    // quatro vezes, e a quarta foi o suficiente — o cartao deixa de ser uma
+    // dependencia para SUBIR e volta a ser o que sempre deveria ter sido, uma
+    // dependencia para os SPRITES.
+    //
+    // Sem cartao o painel sobe sem a turma e sem o Clawd, exatamente como ele ja
+    // sobe quando um arquivo de sprite falta. O que se ganha e hora, limites e
+    // agentes na tela, em vez de um cartaz parado.
+    const bool temCartao = storage::begin();
+    if (!temCartao) Serial.println("sd: nao montou — tentando a reserva da NVS");
 
     std::string raw;
-    if (!storage::readFile("/config.json", raw)) {
-        bootFatal("SEM CONFIG", "config.json nao encontrado");
-        return;
+    bool doCartao = false;
+    if (temCartao && storage::readFile("/config.json", raw)) {
+        cfg = parseConfig(raw.c_str());
+        doCartao = cfg.valid;
+        if (!doCartao) Serial.printf("config: cartao invalido (%s)\n",
+                                     cfg.error.c_str());
     }
 
-    cfg = parseConfig(raw.c_str());
+    if (doCartao) {
+        // O cartao MANDA, e a reserva o segue: assim editar o config.json
+        // continua sendo o jeito de mudar qualquer coisa, e a NVS nunca fica
+        // com uma verdade mais velha do que a que acabou de ser lida.
+        configstore::guardar(cfg);
+    } else {
+        cfg = configstore::ler();
+        if (cfg.valid)
+            Serial.println("config: subindo pela reserva da NVS, sem cartao");
+    }
+
     if (!cfg.valid) {
-        bootFatal("SEM CONFIG", cfg.error);
+        // Agora sim nao ha o que fazer: nem cartao, nem reserva. E a mensagem
+        // diz QUAL das duas faltou, porque as acoes sao diferentes — uma pede o
+        // cartao de volta, a outra pede um boot com ele funcionando.
+        bootFatal("SEM CONFIG",
+                  temCartao ? cfg.error
+                            : "cartao fora e a NVS nunca guardou uma reserva");
         return;
     }
 

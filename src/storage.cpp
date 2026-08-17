@@ -44,12 +44,19 @@ const uint32_t SD_DRENO_MS   = 200;
 // Levando os tres a LOW por um tempo, o cartao perde essa fonte e tem chance de
 // resetar sem ninguem chegar perto da placa.
 //
-// MEDIDO, e o numero e honesto: em tres boots com o cartao travado em 0x107, o
-// dreno resolveu UM. Ele nao substitui o corte de energia de verdade — a
-// alimentacao parasita e uma das causas, nao a unica. Fica porque custa zero no
-// caso normal (a primeira tentativa monta sem dreno nenhum) e porque um boot
-// salvo em tres e a diferenca entre o painel voltar sozinho e alguem ter que
-// desligar a bateria.
+// MEDIDO, e o resultado nao e o que se esperava: num episodio de 0x107 houve UM
+// boot bom logo depois de uma gravacao, e depois QUATORZE resets seguidos que
+// falharam — inclusive com drenos de ate 10 s, encadeados entre boots por um
+// contador na NVS. Aquele boot bom provavelmente foi coincidencia, e o contador
+// foi removido: um mecanismo que nao entrega e complexidade, nao seguro.
+//
+// O que fica e so o dreno curto, e ele fica por dois motivos: a alimentacao
+// parasita por diodo de protecao e real e documentada em SD, e ele custa ZERO no
+// caso normal — a primeira tentativa monta sem dreno nenhum.
+//
+// O que ele NAO e: solucao para o 0x107. Este cartao, neste estado, so volta com
+// corte fisico de energia. O que resolve o PAINEL e outra coisa, e esta em
+// src/configstore.h: subir sem o cartao.
 void drenarCartao(uint32_t ms) {
     const int pinos[] = {SD_CLK, SD_CMD, SD_D0};
     for (int p : pinos) { pinMode(p, OUTPUT); digitalWrite(p, LOW); }
