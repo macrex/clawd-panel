@@ -130,10 +130,11 @@ class TestEnxugar(unittest.TestCase):
         self.assertEqual(magro["clock"]["epoch"], 1786848698)
         self.assertEqual(magro["clock"]["time"], "00:04")
 
-        # Os prazos prontos ficam: o firmware ainda os indexa em Metric::resets,
-        # e uma placa gravada antes desta versao depende deles para a tela.
-        self.assertEqual(magro["session_resets_hm"], "2h25m")
-        self.assertEqual(magro["week_resets_dh"], "6d22h")
+        # Os prazos em SEGUNDOS ficam: e deles que a placa deriva tudo o mais.
+        # O texto pronto ("2h25m", "1:59am") saiu quando ela aprendeu a contar
+        # sozinha — ver TestTempo.
+        self.assertEqual(magro["session_resets_in"], 8700)
+        self.assertEqual(magro["week_resets_in"], 599000)
 
         # E o livro-caixa, que alimenta o card HOJE e o nivel do Clawd.
         self.assertEqual(magro["works"]["trabalhos"], 12)
@@ -173,6 +174,29 @@ class TestEnxugar(unittest.TestCase):
         # sumiria em silencio, que e o defeito caro.
         magro = painel.enxugar({"campo_que_ainda_nao_existe": 42, "labels": []})
         self.assertEqual(magro["campo_que_ainda_nao_existe"], 42)
+
+
+class TestTempo(unittest.TestCase):
+    """O texto de tempo sai; os segundos ficam."""
+
+    def test_os_quatro_textos_derivados_saem(self):
+        magro = painel.enxugar(status_cheio())
+        for morto in ("session_resets_hm", "session_resets_clock",
+                      "week_resets_dh", "week_resets_date"):
+            self.assertNotIn(morto, magro)
+
+    def test_os_segundos_ficam(self):
+        # E deles que a placa deriva tudo — cortar os dois deixaria o painel sem
+        # prazo nenhum.
+        magro = painel.enxugar(status_cheio())
+        self.assertEqual(magro["session_resets_in"], 8700)
+        self.assertEqual(magro["week_resets_in"], 599000)
+
+    def test_o_relogio_do_cabecalho_fica(self):
+        # `clock` e outra coisa: e a hora AGORA, e a placa a usa como reserva
+        # ate o SNTP chegar.
+        magro = painel.enxugar(status_cheio())
+        self.assertIn("clock", magro)
 
 
 class TestPedido(unittest.TestCase):

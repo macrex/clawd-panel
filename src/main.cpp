@@ -716,8 +716,8 @@ void loop() {
             last.clock = hora::daTela(clockDaApi);
             last.session.resets = prazoDaTela(sessionDaApi, 0);
             last.week.resets    = prazoDaTela(weekDaApi, 0);
-            last.session.at     = atDaTela(sessionDaApi, 0);
-            last.week.at        = atDaTela(weekDaApi, 0);
+            last.session.at     = horaDaVirada(sessionDaApi, 0, hora::agoraLocal());
+            last.week.at        = dataDaVirada(weekDaApi, 0, hora::agoraLocal());
             // O limite liberou (reset chegou): a tela do Token rearma sozinha.
             // O proximo estouro e um evento novo e merece a tela de novo.
             if (!ui::limiteEstourado(last)) tokenDispensado = false;
@@ -854,11 +854,13 @@ void loop() {
         // a barra ficaria dizendo que a janela parou de correr.
         last.session.resetsIn = (int)prazoRestante(sessionDaApi, staleSec);
         last.week.resetsIn    = (int)prazoRestante(weekDaApi, staleSec);
-        // E o INSTANTE da virada some quando ela chega. Ele e o unico campo de
-        // tempo que nao andava sozinho: um carimbo absoluto continua afirmando
-        // "7:20pm" depois das sete e vinte (ver atDaTela em relogio.h).
-        const std::string atSess = atDaTela(sessionDaApi, staleSec);
-        const std::string atSem  = atDaTela(weekDaApi, staleSec);
+        // E o INSTANTE da virada, que agora e DERIVADO aqui em vez de vir pronto
+        // da API. Ele era o unico campo de tempo que nao andava sozinho: um
+        // carimbo absoluto continua afirmando "7:20pm" depois das sete e vinte
+        // (ver horaDaVirada em relogio.h).
+        const long agoraL = hora::agoraLocal();
+        const std::string atSess = horaDaVirada(sessionDaApi, staleSec, agoraL);
+        const std::string atSem  = dataDaVirada(weekDaApi, staleSec, agoraL);
         if (atSess != last.session.at || atSem != last.week.at) {
             last.session.at = atSess;
             last.week.at    = atSem;

@@ -39,12 +39,29 @@ import json
 #   session_label    frase pronta ("Session 47% - reseta 2:30am"); o painel monta
 #   week_label       a sua a partir dos numeros, com a fonte e a largura dele
 #   herdr_online     estado do sensor, que a placa nao mostra em lugar nenhum
+#
+# Os quatro de tempo sairam quando a placa aprendeu a contar sozinha. Eles sao
+# TEXTO derivado de `session_resets_in`/`week_resets_in`, que continuam no fio:
+#
+#   session_resets_hm     "1h32m"                a placa reescreve a cada segundo
+#   week_resets_dh        "5d22h"                (prazoTexto, em lib/metrics)
+#   session_resets_clock  "1:59am"               agora derivados do relogio da
+#   week_resets_date      "22/08/2026 (Sabado)"  placa (horaDaVirada/dataDaVirada)
+#
+# Os dois primeiros ja eram mortos desde a leva do relogio: chegavam e eram
+# sobrescritos no mesmo laco. Os dois ultimos so puderam sair quando a placa
+# passou a ter fuso — o comentario do `fmt_clock` dizia "a conversao acontece
+# aqui porque a placa nao tem relogio nem fuso", e ela tem os dois desde o SNTP.
 TOPO = frozenset({
     "sessions_active",
     "blocked",
     "session_label",
     "week_label",
     "herdr_online",
+    "session_resets_hm",
+    "session_resets_clock",
+    "week_resets_dh",
+    "week_resets_date",
 })
 
 # Cada entrada de `labels[]`. E o corte que mais rende, porque multiplica pelo

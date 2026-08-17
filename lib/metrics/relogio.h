@@ -72,19 +72,46 @@ long prazoRestante(const Metric &m, long idadeSeg);
 // opostos. Sem prazo nenhum a tela mostra o travessao que ela ja mostrava.
 std::string prazoDaTela(const Metric &m, long idadeSeg);
 
-// O INSTANTE da virada, escondido depois que ele passou.
+// ---- O INSTANTE da virada, derivado aqui ----
 //
-// `at` e um carimbo absoluto — "7:20pm", "01/08/2026 (Sabado)" — e por isso NAO
-// envelhece sozinho: ele continua afirmando a mesma coisa depois de a hora
-// chegar, com a mesma cara de dado fresco. O prazo ao lado ja aprendeu a andar
-// (prazoDaTela); o instante ficou parado no tempo da API.
+// Ele vinha pronto da API ("7:20pm", "01/08/2026 (Sabado)") pelo motivo que o
+// proprio servidor escrevia no codigo: "a conversao acontece aqui porque a placa
+// nao tem relogio nem fuso". Ela tem os dois desde a leva do relogio — SNTP no
+// boot e o fuso do config.json.
 //
-// No retrato do cartao e pior, e foi de la que o defeito veio: um retrato lido
-// dias depois traz `resetsIn` recalculado para zero e o texto do instante
-// intacto, entao a tela mostra "vira as 7:20pm" sobre uma janela que virou
-// ontem.
+// Vir pronto tinha um preco que so aparecia com o servidor fora: um carimbo
+// absoluto NAO envelhece sozinho. Ele continuava afirmando "7:20pm" depois das
+// sete e vinte, com a mesma cara de dado fresco, enquanto o prazo ao lado ja
+// tinha aprendido a andar. No retrato do cartao era pior — lido dias depois, com
+// o prazo recalculado para zero e o texto intacto.
 //
-// Vazio quando a janela venceu ou quando nunca houve prazo. As tres telas que
-// desenham o instante ja escondem a linha com `at` vazio — elas faziam isso
-// para a API antiga, que nao mandava o campo.
-std::string atDaTela(const Metric &m, long idadeSeg);
+// Derivado, ele acompanha: some quando a janela vira, volta quando a janela
+// nova e carimbada, e nao depende de a API estar respondendo.
+//
+// As tres devolvem VAZIO quando nao ha o que afirmar — janela vencida, prazo
+// nenhum, ou placa sem hora. As telas que desenham o instante ja escondem a
+// linha nesse caso: elas faziam isso para a API antiga, que nao mandava o campo.
+
+// Epoch LOCAL -> "7:20pm".
+//
+// O -1s NAO e ajuste de fuso nem arredondamento: o que se mostra e o ULTIMO
+// MINUTO EM QUE A JANELA AINDA VALE, que e a convencao do `/cost`. Os carimbos
+// chegam redondos (15:10:00), entao a janela que vira as 15:10 em ponto vale ate
+// 15:09:59 — o terminal escreve "Resets 3:09pm", e o painel escrevendo "3:10pm"
+// ao lado dele le como conta errada. Carimbo quebrado formata igual com ou sem.
+std::string instanteDe(long epochLocal);
+
+// Epoch LOCAL -> "01/08/2026 (Sabado)".
+//
+// O dia da semana vai junto de proposito: "01/08" sozinho obriga a consultar um
+// calendario para saber se o limite volta antes ou depois do fim de semana.
+std::string dataDe(long epochLocal);
+
+// A HORA em que a janela de 5h vira, pronta para a tela.
+//
+// `agoraLocal` e o relogio da placa com o fuso ja aplicado (hora::agoraLocal()),
+// e zero quando ela ainda nao sabe que horas sao.
+std::string horaDaVirada(const Metric &m, long idadeSeg, long agoraLocal);
+
+// A DATA em que a janela de 7 dias vira. Mesma regra da hora.
+std::string dataDaVirada(const Metric &m, long idadeSeg, long agoraLocal);

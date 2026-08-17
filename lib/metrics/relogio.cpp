@@ -8,6 +8,28 @@ namespace {
 // nada mais, e o cabecalho reserva a largura de tres caracteres.
 const char *DIAS[] = {"DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SAB"};
 
+// Por extenso, e em ASCII pelo mesmo motivo: "Sabado" com acento sairia com
+// lixo no lugar dele.
+const char *DIAS_EXTENSO[] = {"Domingo", "Segunda", "Terca", "Quarta",
+                              "Quinta",  "Sexta",   "Sabado"};
+
+// Epoch LOCAL -> calendario. Falso quando a placa nao sabe que dia e.
+//
+// gmtime e nao localtime: o fuso JA foi aplicado por quem chamou. Passar por
+// localtime aqui aplicaria o TZ do processo uma segunda vez, e o resultado seria
+// certo na placa (que roda em UTC) e errado no teste nativo (que roda no fuso da
+// maquina).
+bool calendarioDe(long epochLocal, struct tm &tm) {
+    if (epochLocal < EPOCH_MINIMO) return false;
+    const time_t t = (time_t)epochLocal;
+#if defined(_WIN32)
+    gmtime_s(&tm, &t);
+#else
+    gmtime_r(&t, &tm);
+#endif
+    return true;
+}
+
 }  // namespace
 
 bool epochAceitavel(long candidato, long piso) {
@@ -18,19 +40,8 @@ bool epochAceitavel(long candidato, long piso) {
 
 Clock relogioDe(long epochLocal) {
     Clock c;
-    if (epochLocal < EPOCH_MINIMO) return c;
-
-    // gmtime e nao localtime: o fuso JA foi aplicado por quem chamou. Passar
-    // por localtime aqui aplicaria o TZ do processo uma segunda vez, e o
-    // resultado seria certo na placa (que roda em UTC) e errado no teste
-    // nativo (que roda no fuso da maquina).
-    const time_t t = (time_t)epochLocal;
     struct tm tm {};
-#if defined(_WIN32)
-    gmtime_s(&tm, &t);
-#else
-    gmtime_r(&t, &tm);
-#endif
+    if (!calendarioDe(epochLocal, tm)) return c;
 
     char buf[8];
     snprintf(buf, sizeof(buf), "%02d:%02d", tm.tm_hour, tm.tm_min);
@@ -71,9 +82,45 @@ std::string prazoDaTela(const Metric &m, long idadeSeg) {
     return prazoTexto(prazoRestante(m, idadeSeg));
 }
 
-std::string atDaTela(const Metric &m, long idadeSeg) {
-    // O travessao e o "nao sei" que a propria API manda; ele nao e um instante.
-    if (!m.known || m.at.empty() || m.at == "-") return "";
-    if (prazoRestante(m, idadeSeg) <= 0) return "";
-    return m.at;
+std::string instanteDe(long epochLocal) {
+    struct tm tm {};
+    if (!calendarioDe(epochLocal - 1, tm)) return "";
+
+    const int h = (tm.tm_hour % 12) ? (tm.tm_hour % 12) : 12;
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%d:%02d%s", h, tm.tm_min,
+             tm.tm_hour >= 12 ? "pm" : "am");
+    return buf;
+}
+
+std::string dataDe(long epochLocal) {
+    struct tm tm {};
+    if (!calendarioDe(epochLocal, tm)) return "";
+
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%02d/%02d/%d (%s)", tm.tm_mday, tm.tm_mon + 1,
+             tm.tm_year + 1900, DIAS_EXTENSO[tm.tm_wday % 7]);
+    return buf;
+}
+
+namespace {
+
+// O epoch em que a janela vira, ou zero quando nao da para saber.
+long viradaEm(const Metric &m, long idadeSeg, long agoraLocal) {
+    if (agoraLocal <= 0) return 0;              // a placa ainda nao tem hora
+    const long resta = prazoRestante(m, idadeSeg);
+    if (resta <= 0) return 0;                   // venceu, ou nunca houve prazo
+    return agoraLocal + resta;
+}
+
+}  // namespace
+
+std::string horaDaVirada(const Metric &m, long idadeSeg, long agoraLocal) {
+    const long em = viradaEm(m, idadeSeg, agoraLocal);
+    return em ? instanteDe(em) : "";
+}
+
+std::string dataDaVirada(const Metric &m, long idadeSeg, long agoraLocal) {
+    const long em = viradaEm(m, idadeSeg, agoraLocal);
+    return em ? dataDe(em) : "";
 }

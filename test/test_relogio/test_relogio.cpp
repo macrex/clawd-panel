@@ -156,54 +156,99 @@ void test_relogio_sem_sincronia_se_cala(void) {
     TEST_ASSERT_FALSE(relogioDe(3600).known);
 }
 
-// ---- O instante da virada, que nao envelhecia ----
+// ---- O instante da virada, derivado na placa ----
+//
+// Os valores esperados foram gerados rodando o `fmt_clock`/`fmt_date` do
+// servidor (claude_metrics_api.py) sobre os mesmos epochs, em UTC. E a unica
+// prova que importa: a placa passou a escrever o que a API escrevia.
 
-void test_at_vale_enquanto_a_janela_nao_virou(void) {
+void test_a_hora_bate_com_a_que_a_api_escrevia(void) {
+    TEST_ASSERT_EQUAL_STRING("11:59pm", instanteDe(1786752000L).c_str());
+    TEST_ASSERT_EQUAL_STRING("10:58am", instanteDe(1786791540L).c_str());
+    TEST_ASSERT_EQUAL_STRING("11:59am", instanteDe(1786795200L).c_str());
+    TEST_ASSERT_EQUAL_STRING("3:09pm",  instanteDe(1786806600L).c_str());
+    TEST_ASSERT_EQUAL_STRING("7:19pm",  instanteDe(1786821600L).c_str());
+    TEST_ASSERT_EQUAL_STRING("5:59am",  instanteDe(1787378400L).c_str());
+}
+
+// O -1s e a convencao do `/cost`: mostra-se o ULTIMO MINUTO EM QUE A JANELA
+// AINDA VALE. A janela que vira as 15:10 em ponto vale ate 15:09:59, e o
+// terminal escreve "Resets 3:09pm" — o painel escrevendo "3:10pm" ao lado dele
+// leria como conta errada.
+void test_a_convencao_do_ultimo_minuto(void) {
+    TEST_ASSERT_EQUAL_STRING("3:09pm", instanteDe(1786806600L).c_str());
+    // Carimbo quebrado formata igual com ou sem o -1s.
+    TEST_ASSERT_EQUAL_STRING("3:09pm", instanteDe(1786806600L - 30).c_str());
+}
+
+void test_a_data_bate_com_a_que_a_api_escrevia(void) {
+    TEST_ASSERT_EQUAL_STRING("15/08/2026 (Sabado)", dataDe(1786752000L).c_str());
+    TEST_ASSERT_EQUAL_STRING("16/08/2026 (Domingo)", dataDe(1786838400L).c_str());
+    TEST_ASSERT_EQUAL_STRING("22/08/2026 (Sabado)", dataDe(1787378400L).c_str());
+}
+
+// Sem hora nao ha instante. Antes da primeira sincronia a placa liga em 1970, e
+// "01/01/1970 (Quinta)" seria pior do que linha nenhuma.
+void test_sem_hora_nao_ha_instante(void) {
+    TEST_ASSERT_EQUAL_STRING("", instanteDe(0).c_str());
+    TEST_ASSERT_EQUAL_STRING("", dataDe(3600).c_str());
+    TEST_ASSERT_EQUAL_STRING("", instanteDe(EPOCH_MINIMO - 1).c_str());
+}
+
+void test_a_virada_e_agora_mais_o_prazo(void) {
     Metric m;
     m.known    = true;
     m.resetsIn = 2 * 3600;
-    m.at       = "7:20pm";
-    TEST_ASSERT_EQUAL_STRING("7:20pm", atDaTela(m, 0).c_str());
-    // Meia hora de dado velho ainda deixa uma hora e meia de janela.
-    TEST_ASSERT_EQUAL_STRING("7:20pm", atDaTela(m, 1800).c_str());
+    // 13:10 UTC + 2h = 15:10, que pela convencao do ultimo minuto sai "3:09pm".
+    TEST_ASSERT_EQUAL_STRING("3:09pm",
+                             horaDaVirada(m, 0, 1786806600L - 2 * 3600).c_str());
+    // Meia hora de dado velho encolhe o prazo, e o instante ANDA junto: e isso
+    // que o carimbo pronto da API nunca fazia.
+    TEST_ASSERT_EQUAL_STRING("2:39pm",
+                             horaDaVirada(m, 1800, 1786806600L - 2 * 3600).c_str());
 }
 
-void test_at_some_quando_a_janela_vence(void) {
+void test_a_virada_some_quando_a_janela_vence(void) {
     Metric m;
     m.known    = true;
     m.resetsIn = 600;
-    m.at       = "7:20pm";
-    TEST_ASSERT_EQUAL_STRING("", atDaTela(m, 600).c_str());
-    TEST_ASSERT_EQUAL_STRING("", atDaTela(m, 99999).c_str());
+    TEST_ASSERT_EQUAL_STRING("", horaDaVirada(m, 600, 1786806600L).c_str());
+    TEST_ASSERT_EQUAL_STRING("", horaDaVirada(m, 99999, 1786806600L).c_str());
 }
 
-void test_at_do_retrato_velho_nao_afirma_horario(void) {
-    // O caso que motivou tudo: `lerCache` recalcula `resetsIn` para zero num
-    // retrato lido depois da virada, mas o texto do instante vem intacto do
-    // cartao. Sem isto a tela diz "vira as 6:00am" sobre uma janela de ontem.
+// O caso que motivou o esconder: um retrato do cartao lido depois da virada tem
+// `resetsIn` recalculado para zero. Sem isto a tela diria "vira as 6:00am" sobre
+// uma janela de ontem.
+void test_retrato_velho_nao_afirma_horario(void) {
     Metric doCartao;
     doCartao.known    = true;
     doCartao.resetsIn = 0;
-    doCartao.at       = "01/08/2026 (Sabado)";
-    TEST_ASSERT_EQUAL_STRING("", atDaTela(doCartao, 0).c_str());
+    TEST_ASSERT_EQUAL_STRING("", horaDaVirada(doCartao, 0, 1786806600L).c_str());
+    TEST_ASSERT_EQUAL_STRING("", dataDaVirada(doCartao, 0, 1786806600L).c_str());
 }
 
-void test_at_ausente_ou_travessao_continua_vazio(void) {
-    Metric semCampo;
-    semCampo.known    = true;
-    semCampo.resetsIn = 3600;
-    TEST_ASSERT_EQUAL_STRING("", atDaTela(semCampo, 0).c_str());
+void test_sem_relogio_na_placa_nao_ha_virada(void) {
+    Metric m;
+    m.known    = true;
+    m.resetsIn = 3600;
+    TEST_ASSERT_EQUAL_STRING("", horaDaVirada(m, 0, 0).c_str());
+    TEST_ASSERT_EQUAL_STRING("", dataDaVirada(m, 0, 0).c_str());
+}
 
-    // O travessao e o "nao sei" da propria API, e nao um instante.
-    Metric travessao = semCampo;
-    travessao.at = "-";
-    TEST_ASSERT_EQUAL_STRING("", atDaTela(travessao, 0).c_str());
+void test_metrica_desconhecida_nao_tem_virada(void) {
+    Metric m;
+    m.known    = false;
+    m.resetsIn = 3600;
+    TEST_ASSERT_EQUAL_STRING("", horaDaVirada(m, 0, 1786806600L).c_str());
+}
 
-    Metric desconhecida;
-    desconhecida.known    = false;
-    desconhecida.resetsIn = 3600;
-    desconhecida.at       = "7:20pm";
-    TEST_ASSERT_EQUAL_STRING("", atDaTela(desconhecida, 0).c_str());
+// A semana atravessa dias, e e o dia da semana que responde "da para esperar?".
+void test_a_data_da_semana_atravessa_o_calendario(void) {
+    Metric semana;
+    semana.known    = true;
+    semana.resetsIn = 6 * 86400;
+    TEST_ASSERT_EQUAL_STRING("22/08/2026 (Sabado)",
+                             dataDaVirada(semana, 0, 1787378400L - 6 * 86400).c_str());
 }
 
 // ---- O piso que a NVS guarda entre um boot e o proximo ----
@@ -247,10 +292,16 @@ int main(int, char **) {
     RUN_TEST(test_relogio_dia_e_semana);
     RUN_TEST(test_relogio_domingo_fecha_a_semana);
     RUN_TEST(test_relogio_sem_sincronia_se_cala);
-    RUN_TEST(test_at_vale_enquanto_a_janela_nao_virou);
-    RUN_TEST(test_at_some_quando_a_janela_vence);
-    RUN_TEST(test_at_do_retrato_velho_nao_afirma_horario);
-    RUN_TEST(test_at_ausente_ou_travessao_continua_vazio);
+    RUN_TEST(test_a_hora_bate_com_a_que_a_api_escrevia);
+    RUN_TEST(test_a_convencao_do_ultimo_minuto);
+    RUN_TEST(test_a_data_bate_com_a_que_a_api_escrevia);
+    RUN_TEST(test_sem_hora_nao_ha_instante);
+    RUN_TEST(test_a_virada_e_agora_mais_o_prazo);
+    RUN_TEST(test_a_virada_some_quando_a_janela_vence);
+    RUN_TEST(test_retrato_velho_nao_afirma_horario);
+    RUN_TEST(test_sem_relogio_na_placa_nao_ha_virada);
+    RUN_TEST(test_metrica_desconhecida_nao_tem_virada);
+    RUN_TEST(test_a_data_da_semana_atravessa_o_calendario);
     RUN_TEST(test_epoch_abaixo_do_minimo_e_recusado);
     RUN_TEST(test_sem_piso_qualquer_hora_plausivel_serve);
     RUN_TEST(test_o_tempo_nao_anda_para_tras);
