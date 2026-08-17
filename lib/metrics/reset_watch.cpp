@@ -33,3 +33,17 @@ const char *detectarReset(ResetWatch &w, const Status &s) {
     w.sessaoZerada = s.session.known && s.session.inferred;
     return qual;
 }
+
+const char *virouSemApi(PrazoWatch &w, long sessaoAgora, long semanaAgora) {
+    // A sessao vem primeiro pela mesma razao de sempre: e a janela de 5h que
+    // decide se da para trabalhar agora. A de 7 dias desliza e nao "vira".
+    const bool sessao = w.sessaoAntes > 0 && sessaoAgora <= 0;
+    const bool semana = w.semanaAntes > 0 && semanaAgora <= 0;
+
+    w.sessaoAntes = sessaoAgora;
+    w.semanaAntes = semanaAgora;
+
+    if (sessao) return "SESSAO";
+    if (semana) return "SEMANA";
+    return nullptr;
+}

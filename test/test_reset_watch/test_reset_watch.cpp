@@ -123,6 +123,59 @@ void test_api_sem_o_campo_novo_nao_inventa_virada(void) {
     TEST_ASSERT_EQUAL_INT(0, quantasVezesArmou(saidas));
 }
 
+// ---- A virada que a placa ve sozinha, com o servidor fora ----
+
+// O caso que motivou tudo: o painel offline avisando que a cota voltou.
+void test_o_prazo_chegando_a_zero_arma_a_tela(void) {
+    PrazoWatch w;
+    TEST_ASSERT_NULL(virouSemApi(w, 120, 90000));   // primeiro valor: so guarda
+    TEST_ASSERT_NULL(virouSemApi(w, 60, 89940));
+    TEST_ASSERT_EQUAL_STRING("SESSAO", virouSemApi(w, 0, 89880));
+}
+
+// So a BORDA conta. Depois de virar, o prazo fica em zero ate a API voltar com
+// o carimbo novo — e a tela nao pode reaparecer a cada segundo.
+void test_a_virada_local_arma_uma_vez_so(void) {
+    PrazoWatch w;
+    virouSemApi(w, 30, 0);
+    TEST_ASSERT_EQUAL_STRING("SESSAO", virouSemApi(w, 0, 0));
+    TEST_ASSERT_NULL(virouSemApi(w, 0, 0));
+    TEST_ASSERT_NULL(virouSemApi(w, 0, 0));
+}
+
+// No boot com dado velho o prazo ja pode estar em zero, e nao ha como saber se a
+// janela virou agora ou ontem. Afirmar seria chute.
+void test_prazo_que_ja_nasce_zerado_nao_dispara(void) {
+    PrazoWatch w;
+    TEST_ASSERT_NULL(virouSemApi(w, 0, 0));
+    TEST_ASSERT_NULL(virouSemApi(w, 0, 0));
+}
+
+void test_a_semana_tambem_vira(void) {
+    PrazoWatch w;
+    virouSemApi(w, 3600, 60);
+    TEST_ASSERT_EQUAL_STRING("SEMANA", virouSemApi(w, 3500, 0));
+}
+
+// As duas virando no mesmo instante: a sessao ganha, porque e a janela de 5h que
+// decide se da para trabalhar AGORA.
+void test_a_sessao_ganha_da_semana(void) {
+    PrazoWatch w;
+    virouSemApi(w, 30, 30);
+    TEST_ASSERT_EQUAL_STRING("SESSAO", virouSemApi(w, 0, 0));
+}
+
+// Prazo que volta a crescer (a API respondeu no meio) rearma a borda: a proxima
+// virada dispara de novo.
+void test_prazo_que_volta_a_crescer_rearma(void) {
+    PrazoWatch w;
+    virouSemApi(w, 30, 0);
+    TEST_ASSERT_EQUAL_STRING("SESSAO", virouSemApi(w, 0, 0));
+    virouSemApi(w, 18000, 0);                       // janela nova, carimbada
+    virouSemApi(w, 20, 0);
+    TEST_ASSERT_EQUAL_STRING("SESSAO", virouSemApi(w, 0, 0));
+}
+
 int main(int, char **) {
     UNITY_BEGIN();
     RUN_TEST(test_primeiro_poll_nunca_dispara);
@@ -132,5 +185,11 @@ int main(int, char **) {
     RUN_TEST(test_carimbo_novo_no_mesmo_poll_ainda_dispara);
     RUN_TEST(test_salto_da_semana_dispara_semana);
     RUN_TEST(test_api_sem_o_campo_novo_nao_inventa_virada);
+    RUN_TEST(test_o_prazo_chegando_a_zero_arma_a_tela);
+    RUN_TEST(test_a_virada_local_arma_uma_vez_so);
+    RUN_TEST(test_prazo_que_ja_nasce_zerado_nao_dispara);
+    RUN_TEST(test_a_semana_tambem_vira);
+    RUN_TEST(test_a_sessao_ganha_da_semana);
+    RUN_TEST(test_prazo_que_volta_a_crescer_rearma);
     return UNITY_END();
 }

@@ -247,6 +247,9 @@ const char *resetQual   = nullptr;
 // e a unica forma de ter teste: aqui dentro do laco, o gatilho ficou dois dias
 // escrito de um jeito que nunca disparava fora do ensaio.
 ResetWatch resetWatch;
+// E quem reconhece a MESMA virada com o servidor fora, pelo prazo que a placa
+// conta sozinha. Os dois nunca falam juntos: o local so age com dado velho.
+PrazoWatch prazoWatch;
 
 // ---- A morte do Kenny ----
 // Uma sessao que cala mata o Kenny da fileira. `stale` e o campo que a API
@@ -860,6 +863,33 @@ void loop() {
             last.session.at = atSess;
             last.week.at    = atSem;
             redraw = true;
+        }
+
+        // A VIRADA vista pela propria placa, com o servidor fora.
+        //
+        // `detectarReset` compara dois polls, entao ele so existe enquanto ha
+        // polls. Com a API muda o painel congelava sem saber que a cota tinha
+        // voltado — e essa e justamente a noticia que interessa a quem esta
+        // esperando poder trabalhar de novo.
+        //
+        // SO com dado velho: com a API viva quem avisa e ela, e os dois
+        // detectores disparariam juntos a mesma tela (ver reset_watch.h).
+        if (staleSec > 0) {
+            if (const char *qual = virouSemApi(prazoWatch,
+                                               prazoRestante(sessionDaApi, staleSec),
+                                               prazoRestante(weekDaApi, staleSec))) {
+                resetQual  = qual;
+                resetAteMs = clawd::proximoReset() ? (now ? now : 1) + RESET_MS : 0;
+                Serial.printf("clawd: janela %s virou pelo relogio da placa "
+                              "-> tela de reset %s\n",
+                              qual, resetAteMs ? "armada" : "SEM SPRITE");
+            }
+        } else {
+            // Com a API viva o detector local fica so acompanhando, para que a
+            // primeira volta sem contato ja tenha um valor anterior com que
+            // comparar em vez de perder a borda.
+            virouSemApi(prazoWatch, prazoRestante(sessionDaApi, 0),
+                        prazoRestante(weekDaApi, 0));
         }
     }
 

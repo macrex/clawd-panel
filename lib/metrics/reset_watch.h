@@ -21,3 +21,30 @@ struct ResetWatch {
 // O primeiro poll nunca dispara: no boot nao ha valor anterior, e um "resetou"
 // ali seria chute.
 const char *detectarReset(ResetWatch &w, const Status &s);
+
+// ---- A virada que a placa ve SOZINHA ----
+//
+// `detectarReset` compara dois polls, entao ele so existe enquanto ha polls. Com
+// o servidor fora o painel congelava sem saber que a cota tinha voltado — e a
+// virada de uma janela de 5h e exatamente a noticia que interessa a quem esta
+// esperando poder trabalhar de novo.
+//
+// Desde a leva do relogio o prazo anda na propria placa (ver relogio.h), entao
+// ela sabe a hora em que ele chega a zero sem perguntar a ninguem.
+//
+// Isto roda SO com dado velho. Com a API viva quem avisa e ela: o servidor se
+// recusa a inventar o horario de uma janela que ninguem carimbou, entao o prazo
+// tambem cai a zero na virada e os dois detectores disparariam juntos — a mesma
+// tela, duas vezes.
+struct PrazoWatch {
+    long sessaoAntes = -1;    // -1 = ainda nao ha valor anterior
+    long semanaAntes = -1;
+};
+
+// "SESSAO", "SEMANA" ou nullptr. Os prazos sao os que a placa acabou de contar
+// (`prazoRestante`), ja descontados da idade do dado.
+//
+// So a BORDA conta: positivo virando zero. Um prazo que ja estava em zero
+// quando esta funcao viu pela primeira vez nao dispara — no boot com dado velho
+// nao ha como saber se a janela virou agora ou ontem.
+const char *virouSemApi(PrazoWatch &w, long sessaoAgora, long semanaAgora);
