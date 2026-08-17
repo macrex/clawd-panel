@@ -41,7 +41,7 @@ static std::string umaLinha(const std::string &txt) {
     out.reserve(txt.size());
     bool espaco = false;
     for (char c : txt) {
-        const bool branco = (c == '\n' || c == '\r' || c == '\t' || c == ' ');
+        const bool branco = eControleDeCursor(c) || c == ' ';
         if (branco) {
             if (!out.empty()) espaco = true;
             continue;

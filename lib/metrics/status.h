@@ -81,6 +81,22 @@ struct Agent {
     std::string tag;
 };
 
+// Este caractere move o cursor por conta propria?
+//
+// O painel escreve texto que veio da tela de um terminal, e ele chega com
+// quebras de linha de verdade. Quem desenha conta as linhas e poe o cursor onde
+// quer — mas `print` trata '\n' sozinho e pula linha, furando o limite e
+// escrevendo por cima do que vem abaixo. Foi assim que uma pergunta de
+// brainstorm apagou o aviso de "sem opcoes numeradas".
+//
+// A defesa esta em TRES lugares de proposito: no parse (que limpa na entrada) e
+// nas duas funcoes publicas de desenho, porque o proximo texto pode nao vir do
+// parse. Sao tres trancas, e agora uma definicao so — sem isto, acrescentar um
+// caractere a lista exigiria lembrar dos tres.
+inline bool eControleDeCursor(char c) {
+    return c == '\n' || c == '\r' || c == '\t';
+}
+
 struct Metric {
     int         pct   = 0;
     std::string resets;              // "2h35m" ou "3d06h", ja formatado pela API

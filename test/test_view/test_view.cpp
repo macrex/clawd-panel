@@ -161,6 +161,97 @@ void test_retrato_do_cartao_nao_afirma_ausencia(void) {
     TEST_ASSERT_FALSE(semSessao(s));
 }
 
+// ---- A linha de idade do dado, no rodape ----
+
+void test_dado_fresco_mostra_so_a_idade(void) {
+    Status s;
+    s.updated_ago = 12;
+    TEST_ASSERT_EQUAL_STRING("ha 12s",
+                             textoVetustez(s, 0, "SEM CONTATO", false).c_str());
+    TEST_ASSERT_EQUAL_STRING("ha 12s",
+                             textoVetustez(s, 0, "SEM CONTATO", true).c_str());
+}
+
+void test_dado_velho_traz_o_motivo_e_o_tempo(void) {
+    Status s;
+    TEST_ASSERT_EQUAL_STRING("API FORA HA 40s",
+                             textoVetustez(s, 40, "API FORA", false).c_str());
+    TEST_ASSERT_EQUAL_STRING("SEM WIFI HA 40s",
+                             textoVetustez(s, 40, "SEM WIFI", false).c_str());
+}
+
+// Acima de uma hora vira horas: em segundos, um atraso de dias empurra o texto
+// para a esquerda ate encostar no trio de bichos.
+void test_acima_de_uma_hora_o_tempo_vira_horas(void) {
+    Status s;
+    TEST_ASSERT_EQUAL_STRING("SEM CONTATO HA 3599s",
+                             textoVetustez(s, 3599, "SEM CONTATO", false).c_str());
+    TEST_ASSERT_EQUAL_STRING("SEM CONTATO HA 1h",
+                             textoVetustez(s, 3600, "SEM CONTATO", false).c_str());
+    TEST_ASSERT_EQUAL_STRING("SEM CONTATO HA 25h",
+                             textoVetustez(s, 90000, "SEM CONTATO", false).c_str());
+}
+
+// Motivo ausente cai no texto de sempre, em vez de deixar a linha capenga.
+void test_sem_motivo_o_texto_e_o_de_sempre(void) {
+    Status s;
+    TEST_ASSERT_EQUAL_STRING("SEM CONTATO HA 5s",
+                             textoVetustez(s, 5, nullptr, false).c_str());
+}
+
+// O motor de reserva e prefixo, e vale nos tres ramos.
+void test_o_motor_de_reserva_prefixa_tudo(void) {
+    Status s;
+    s.hooksEngine = true;
+    s.updated_ago = 3;
+    TEST_ASSERT_EQUAL_STRING("HOOKS  ha 3s",
+                             textoVetustez(s, 0, nullptr, false).c_str());
+    TEST_ASSERT_EQUAL_STRING("HOOKS  API TRAVADA HA 8s",
+                             textoVetustez(s, 8, "API TRAVADA", false).c_str());
+    TEST_ASSERT_EQUAL_STRING("HOOKS  S/CONTATO 8s",
+                             textoVetustezCurto(s, 8).c_str());
+}
+
+// Em contato, mas nao com quem manda. So a tela em pe mostra este ramo: deitado
+// o rodape divide a largura com a fileira de bichos.
+void test_o_master_fora_so_aparece_onde_ha_espaco(void) {
+    Status s;
+    s.viaSlave = true;
+    s.masterSemContatoS = 74;
+    s.tag = "MAC";
+    TEST_ASSERT_EQUAL_STRING("MASTER OFF HA 74s - VIA MAC",
+                             textoVetustez(s, 0, nullptr, true).c_str());
+    TEST_ASSERT_EQUAL_STRING("agora", textoVetustez(s, 0, nullptr, false).c_str());
+}
+
+// A reserva sem nome ainda diz que e a reserva.
+void test_reserva_sem_tag_tem_nome_generico(void) {
+    Status s;
+    s.viaSlave = true;
+    s.masterSemContatoS = 5;
+    TEST_ASSERT_EQUAL_STRING("MASTER OFF HA 5s - VIA RESERVA",
+                             textoVetustez(s, 0, nullptr, true).c_str());
+}
+
+// Dado velho ganha do master fora: nao adianta dizer de qual maquina veio um
+// numero que ninguem sabe se ainda vale.
+void test_dado_velho_ganha_do_master_fora(void) {
+    Status s;
+    s.viaSlave = true;
+    s.masterSemContatoS = 74;
+    TEST_ASSERT_EQUAL_STRING("SEM WIFI HA 9s",
+                             textoVetustez(s, 9, "SEM WIFI", true).c_str());
+}
+
+// A forma curta e sempre MENOR que a longa — e a razao de ela existir.
+void test_a_forma_curta_cabe_onde_a_longa_nao_cabe(void) {
+    Status s;
+    TEST_ASSERT_EQUAL_STRING("S/CONTATO 40s", textoVetustezCurto(s, 40).c_str());
+    TEST_ASSERT_EQUAL_STRING("S/CONTATO 2h", textoVetustezCurto(s, 7200).c_str());
+    TEST_ASSERT_TRUE(textoVetustezCurto(s, 40).size() <
+                     textoVetustez(s, 40, "SEM CONTATO", false).size());
+}
+
 int main(int, char **) {
     UNITY_BEGIN();
     RUN_TEST(test_sem_sessao_quando_ninguem_publica);
@@ -181,5 +272,14 @@ int main(int, char **) {
     RUN_TEST(test_metrica_desconhecida_nao_conta_para_o_pill);
     RUN_TEST(test_largura_da_barra);
     RUN_TEST(test_largura_da_barra_satura);
+    RUN_TEST(test_dado_fresco_mostra_so_a_idade);
+    RUN_TEST(test_dado_velho_traz_o_motivo_e_o_tempo);
+    RUN_TEST(test_acima_de_uma_hora_o_tempo_vira_horas);
+    RUN_TEST(test_sem_motivo_o_texto_e_o_de_sempre);
+    RUN_TEST(test_o_motor_de_reserva_prefixa_tudo);
+    RUN_TEST(test_o_master_fora_so_aparece_onde_ha_espaco);
+    RUN_TEST(test_reserva_sem_tag_tem_nome_generico);
+    RUN_TEST(test_dado_velho_ganha_do_master_fora);
+    RUN_TEST(test_a_forma_curta_cabe_onde_a_longa_nao_cabe);
     return UNITY_END();
 }

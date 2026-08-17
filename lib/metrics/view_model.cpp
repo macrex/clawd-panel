@@ -79,3 +79,49 @@ int barWidth(int pct, int fullWidth) {
     if (pct > 100) pct = 100;
     return fullWidth * pct / 100;
 }
+
+namespace {
+
+// O motor de reserva vira PREFIXO do texto que ja mora ali. Rotulo proprio
+// precisaria de um espaco que o rodape nao tem.
+//
+// E amarelo tambem por causa dele (ver quem desenha): os dois motores nao tem a
+// mesma confiabilidade, e mostrar estado deduzido com a cara de estado lido
+// seria a mesma mentira que o aviso de contato perdido existe para evitar.
+std::string prefixoDoMotor(const Status &s) {
+    return s.hooksEngine ? "HOOKS  " : "";
+}
+
+// Acima de uma hora vira horas. Nao e estetica: em segundos, um atraso de dias
+// empurra este texto para a esquerda ate encostar no trio de bichos.
+std::string haQuantoTempo(int staleSeconds) {
+    return staleSeconds < 3600
+               ? "HA " + std::to_string(staleSeconds) + "s"
+               : "HA " + std::to_string(staleSeconds / 3600) + "h";
+}
+
+}   // namespace
+
+std::string textoVetustez(const Status &s, int staleSeconds, const char *motivo,
+                          bool comMasterOff) {
+    const std::string pre = prefixoDoMotor(s);
+
+    if (staleSeconds > 0)
+        return pre + (motivo ? motivo : "SEM CONTATO") + " " +
+               haQuantoTempo(staleSeconds);
+
+    if (comMasterOff && s.viaSlave) {
+        // Em contato, mas nao com quem manda: o dado desta tela veio da reserva,
+        // e ela mesma diz como se chama.
+        return pre + "MASTER OFF HA " + std::to_string(s.masterSemContatoS) +
+               "s - VIA " + (s.tag.empty() ? "RESERVA" : s.tag);
+    }
+
+    return pre + formatAge(s.updated_ago);
+}
+
+std::string textoVetustezCurto(const Status &s, int staleSeconds) {
+    return prefixoDoMotor(s) + "S/CONTATO " +
+           (staleSeconds < 3600 ? std::to_string(staleSeconds) + "s"
+                                : std::to_string(staleSeconds / 3600) + "h");
+}

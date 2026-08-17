@@ -415,20 +415,12 @@ void drawFooter(Arduino_Canvas *g, const Status &s, int page, int staleSeconds) 
     // saiu de la para o relogio caber: ali era a informacao menos consultada
     // ocupando o canto mais visivel da tela. Com dado velho ela vira o aviso —
     // mesmo lugar, em amarelo, sem faixa extra.
-    char buf[64];
-    // O motor de reserva vira PREFIXO do texto que ja mora aqui. Rotulo proprio
-    // precisaria de espaco que o rodape nao tem.
-    const char *mot = s.hooksEngine ? "HOOKS  " : "";
-    if (staleSeconds > 0) {
-        // Acima de uma hora vira horas. Nao e estetica: em segundos, um atraso
-        // de dias empurra este texto para a esquerda ate encostar no trio.
-        if (staleSeconds < 3600)
-            snprintf(buf, sizeof(buf), "%s%s HA %ds", mot, g_motivo, staleSeconds);
-        else
-            snprintf(buf, sizeof(buf), "%s%s HA %dh", mot, g_motivo, staleSeconds / 3600);
-    } else {
-        snprintf(buf, sizeof(buf), "%s%s", mot, formatAge(s.updated_ago).c_str());
-    }
+    //
+    // O texto sai de lib/metrics/view_model.h: ele era escrito aqui e outra vez,
+    // palavra por palavra, na versao em pe. `false` desliga o ramo do master
+    // fora — deitado o rodape divide a largura com a fileira de bichos, e o
+    // cabecalho ja mostra o selo VIA.
+    std::string txt = textoVetustez(s, staleSeconds, g_motivo, false);
 
     const int dotEsq = SCREEN_W - 40 - (ui::PAGES - 1) * 18 - 5;
 
@@ -442,19 +434,15 @@ void drawFooter(Arduino_Canvas *g, const Status &s, int page, int staleSeconds) 
     // So o aviso de contato perdido chega a esse tamanho; a idade normal ("12s")
     // nao tem como encostar em nada.
     const int trioFim = (page != 2 && clawd::crewW()) ? 14 + clawd::crewW() : 14;
-    if (staleSeconds > 0 && dotEsq - 12 - (int)strlen(buf) * 6 < trioFim + 8) {
-        if (staleSeconds < 3600)
-            snprintf(buf, sizeof(buf), "%sS/CONTATO %ds", mot, staleSeconds);
-        else
-            snprintf(buf, sizeof(buf), "%sS/CONTATO %dh", mot, staleSeconds / 3600);
-    }
+    if (staleSeconds > 0 && dotEsq - 12 - (int)txt.size() * 6 < trioFim + 8)
+        txt = textoVetustezCurto(s, staleSeconds);
     // Amarelo tambem quando o motor e o de reserva: os dois motores nao tem a
     // mesma confiabilidade, e mostrar estado deduzido com a cara de estado lido
     // seria a mesma mentira que o aviso de contato perdido existe para evitar.
     g->setTextColor((staleSeconds > 0 || s.hooksEngine) ? C_YELL : MUTED);
     g->setTextSize(1);
-    g->setCursor(dotEsq - 12 - (int)strlen(buf) * 6, SCREEN_H - 30);
-    g->print(buf);
+    g->setCursor(dotEsq - 12 - (int)txt.size() * 6, SCREEN_H - 30);
+    g->print(txt.c_str());
 }
 
 // As duas janelas de limite, em segundos. Sao elas que transformam o prazo que
@@ -889,10 +877,8 @@ int textoQuebrado(Arduino_Canvas *g, int x, int y, int passo, int cols,
         // Controle vira espaco na SAIDA: escrever '\n' aqui moveria o cursor por
         // conta propria e a linha seguinte sairia deslocada, por cima do que
         // ja esta na tela.
-        for (int i = 0; i < n; i++) {
-            const char c = p[i];
-            g->write((c == '\n' || c == '\r' || c == '\t') ? ' ' : c);
-        }
+        for (int i = 0; i < n; i++)
+            g->write(eControleDeCursor(p[i]) ? ' ' : p[i]);
         linhas++;
         p += n;
         while (*p == ' ') p++;
@@ -1218,7 +1204,7 @@ int textoQuebradoProp(Arduino_Canvas *g, int x, int y, int passo, int larg,
     // porque a funcao e publica e o proximo texto pode nao vir de la.
     std::string txt;
     txt.reserve(txt0.size());
-    for (char c : txt0) txt += (c == '\n' || c == '\r' || c == '\t') ? ' ' : c;
+    for (char c : txt0) txt += eControleDeCursor(c) ? ' ' : c;
 
     int linhas = 0;
     size_t p = 0;
@@ -2027,26 +2013,15 @@ void drawTurmaRetrato(Arduino_Canvas *g) {
 }
 
 void drawStatusRetrato(Arduino_Canvas *g, const Status &s, int staleSeconds) {
-    char buf[64];
-    const char *mot = s.hooksEngine ? "HOOKS  " : "";
-    if (staleSeconds > 0) {
-        if (staleSeconds < 3600)
-            snprintf(buf, sizeof(buf), "%s%s HA %ds", mot, g_motivo, staleSeconds);
-        else
-            snprintf(buf, sizeof(buf), "%s%s HA %dh", mot, g_motivo, staleSeconds / 3600);
-    } else if (s.viaSlave) {
-        // Em contato, mas nao com quem manda: o dado desta tela veio da
-        // reserva, e ela mesma diz como se chama.
-        snprintf(buf, sizeof(buf), "%sMASTER OFF HA %ds - VIA %s", mot,
-                 s.masterSemContatoS,
-                 s.tag.empty() ? "RESERVA" : s.tag.c_str());
-    } else {
-        snprintf(buf, sizeof(buf), "%s%s", mot, formatAge(s.updated_ago).c_str());
-    }
+    // O mesmo texto do rodape deitado, e agora literalmente o mesmo codigo (ver
+    // lib/metrics/view_model.h). `true` liga o ramo do master fora, que so
+    // existe aqui: em pe ha largura para ele, e o rodape nao divide espaco com a
+    // fileira de bichos.
+    const std::string txt = textoVetustez(s, staleSeconds, g_motivo, true);
     g->setTextColor((staleSeconds > 0 || s.hooksEngine || s.viaSlave) ? C_YELL : MUTED);
     g->setTextSize(1);
-    g->setCursor(PANEL_W - R_MARG - (int)strlen(buf) * 6, R_STATUS_Y);
-    g->print(buf);
+    g->setCursor(PANEL_W - R_MARG - (int)txt.size() * 6, R_STATUS_Y);
+    g->print(txt.c_str());
 }
 
 // A tela do Token: um limite estourou, e abaixo do cabecalho fica so ele e os

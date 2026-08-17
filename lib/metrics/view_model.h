@@ -46,3 +46,27 @@ std::string formatApiTime(uint32_t ms);
 // Duracao em segundos, curta: "45s", "12min", "3h20". Mesma familia do
 // formatApiTime, mas partindo de segundos — o livro-caixa conta assim.
 std::string formatDuration(int seconds);
+
+// ---- A linha de idade do dado, no rodape ----
+//
+// Ela existia duas vezes, palavra por palavra, nas duas orientacoes. As duas
+// copias tinham a mesma cadeia, os mesmos formatos e o mesmo prefixo — e uma
+// delas tinha um ramo a mais, que e a unica diferenca de verdade.
+//
+// `motivo` e o que `motivoDaFalha` (falha.h) escolheu, e so aparece com
+// `staleSeconds > 0`. Nulo cai em "SEM CONTATO", que e o texto de sempre.
+//
+// `comMasterOff` liga o terceiro caso — em contato, mas nao com quem manda. Em
+// pe ele existe; deitado NAO, e nao por esquecimento: la o rodape divide a
+// largura com a fileira de bichos, e o texto ja precisa encolher para nao
+// escrever por cima do primeiro deles. Os dois cabecalhos mostram o selo VIA de
+// qualquer jeito; o que essa linha acrescenta e HA QUANTO TEMPO.
+std::string textoVetustez(const Status &s, int staleSeconds, const char *motivo,
+                          bool comMasterOff);
+
+// A MESMA linha, na forma curta, para quando a longa nao cabe.
+//
+// So o aviso de contato perdido chega ao tamanho que obriga a isto; a idade
+// normal ("12s") nao tem como encostar em nada. Aqui o motivo se perde: com a
+// largura no limite, dizer HA QUANTO TEMPO vale mais do que dizer por que.
+std::string textoVetustezCurto(const Status &s, int staleSeconds);

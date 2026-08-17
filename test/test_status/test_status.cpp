@@ -631,6 +631,21 @@ void test_api_antiga_sem_tag_nao_inventa_nome(void) {
     TEST_ASSERT_EQUAL_STRING("", s.agents[0].tag.c_str());
 }
 
+// A lista que as tres trancas compartilham. O teste existe para fixar QUAIS
+// caracteres estao nela: era escrita a mao em tres lugares, e acrescentar um
+// significava lembrar dos tres.
+void test_quais_caracteres_movem_o_cursor(void) {
+    TEST_ASSERT_TRUE(eControleDeCursor('\n'));
+    TEST_ASSERT_TRUE(eControleDeCursor('\r'));
+    TEST_ASSERT_TRUE(eControleDeCursor('\t'));
+
+    // O espaco NAO entra: ele nao move o cursor sozinho, e trata-lo como
+    // controle faria o texto perder as separacoes de palavra.
+    TEST_ASSERT_FALSE(eControleDeCursor(' '));
+    TEST_ASSERT_FALSE(eControleDeCursor('a'));
+    TEST_ASSERT_FALSE(eControleDeCursor('\0'));
+}
+
 int main(int, char **) {
     UNITY_BEGIN();
     RUN_TEST(test_cumulativos_da_sessao_sao_lidos);
@@ -693,5 +708,6 @@ int main(int, char **) {
     RUN_TEST(test_origem_default_e_master);
     RUN_TEST(test_tag_da_maquina_desce_para_cada_agente);
     RUN_TEST(test_api_antiga_sem_tag_nao_inventa_nome);
+    RUN_TEST(test_quais_caracteres_movem_o_cursor);
     return UNITY_END();
 }
