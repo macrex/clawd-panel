@@ -6,7 +6,6 @@
 #include "layout.h"
 #include "grupos.h"
 #include "provedores.h"
-#include "storage.h"
 #include "DejaVuSans7pt7b.h"
 #include <cstdio>
 #include <cstring>
@@ -439,23 +438,25 @@ void drawFooter(Arduino_Canvas *g, const Status &s, int page, int staleSeconds) 
     const int trioFim = (page != 2 && clawd::crewW()) ? 14 + clawd::crewW() : 14;
     if (staleSeconds > 0 && dotEsq - 12 - (int)txt.size() * 6 < trioFim + 8)
         txt = textoVetustezCurto(s, staleSeconds);
-    // O cartao ausente TOMA esta linha, e so perde para o contato perdido.
-    // Sem ele a placa sobe e funciona pela metade — a configuracao vem da NVS,
-    // entao o Wi-Fi associa e o painel desenha, mas todo sprite falha e a tela
-    // fica com bichos que nao trocam. Sem este aviso o defeito aparecia sem
-    // nome, e so a serial dizia o que era ("File system is not mounted", uma
-    // vez por tentativa de leitura).
+    // O AVISO DE CARTAO AUSENTE SAIU DAQUI, e a razao dele e que sumiu.
     //
-    // Perde para o contato perdido de proposito: sem servidor nao ha painel
-    // nenhum, e um cartao ausente ainda deixa os numeros na tela.
-    const bool semCartao = !storage::montado() && staleSeconds <= 0;
-    if (semCartao) txt = "SEM CARTAO";
-
+    // Ele existia porque sem cartao o painel funcionava pela metade: a config
+    // vinha da NVS, o Wi-Fi associava e os numeros apareciam, mas todo sprite
+    // falhava e a tela ficava com bichos que nao trocam. O aviso dava nome a
+    // esse defeito, que antes so a serial sabia.
+    //
+    // Os sprites agora moram na flash (src/assets.h). Com o cartao fora ou
+    // travado em 0x107, o painel desenha COMPLETO — a fileira, o cabecalho, o
+    // clima, tudo. Um aviso vermelho permanente para uma condicao que nao
+    // degrada mais nada e alarme falso, e alarme falso ensina a ignorar o
+    // rodape, que e onde mora o aviso que importa: o contato perdido.
+    //
+    // O fato continua registrado onde ele ainda serve para diagnosticar: a
+    // serial diz no boot se o cartao montou.
     // Amarelo tambem quando o motor e o de reserva: os dois motores nao tem a
     // mesma confiabilidade, e mostrar estado deduzido com a cara de estado lido
     // seria a mesma mentira que o aviso de contato perdido existe para evitar.
-    g->setTextColor(semCartao ? C_RED
-                              : ((staleSeconds > 0 || s.hooksEngine) ? C_YELL : MUTED));
+    g->setTextColor((staleSeconds > 0 || s.hooksEngine) ? C_YELL : MUTED);
     g->setTextSize(1);
     g->setCursor(dotEsq - 12 - (int)txt.size() * 6, SCREEN_H - 30);
     g->print(txt.c_str());
@@ -2248,14 +2249,11 @@ void drawStatusRetrato(Arduino_Canvas *g, const Status &s, int staleSeconds) {
     // fileira de bichos.
     std::string txt = textoVetustez(s, staleSeconds, g_motivo, true);
 
-    // Mesma regra do rodape deitado: o cartao ausente toma a linha, e so perde
-    // para o contato perdido. Ver o comentario longo la.
-    const bool semCartao = !storage::montado() && staleSeconds <= 0;
-    if (semCartao) txt = "SEM CARTAO";
-
-    g->setTextColor(semCartao ? C_RED
-                              : ((staleSeconds > 0 || s.hooksEngine || s.viaSlave)
-                                     ? C_YELL : MUTED));
+    // O aviso de cartao ausente saiu daqui tambem. Ver o comentario longo no
+    // rodape deitado: com os sprites na flash, cartao fora deixou de degradar a
+    // tela, e o aviso virou alarme falso.
+    g->setTextColor((staleSeconds > 0 || s.hooksEngine || s.viaSlave)
+                        ? C_YELL : MUTED);
     g->setTextSize(1);
     g->setCursor(PANEL_W - R_MARG - (int)txt.size() * 6, R_STATUS_Y);
     g->print(txt.c_str());
