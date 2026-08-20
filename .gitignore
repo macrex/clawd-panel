@@ -52,6 +52,10 @@ server/capturas/
 sdcard/clawd/sonic_*.clw
 sdcard/clawd/sp_*.clw
 
+# O blob de sprites da particao `assets`: artefato de build, e carrega a arte
+# que nao pode ser versionada (ver sdcard/clawd/sp_*.clw acima).
+assets.bin
+
 # A staging da atualizacao de arquivo via placa (tools/atualizar_sprite.py):
 # copias transitorias do que vai para o cartao — inclusive dos sprites acima.
 server/atualizacoes/
