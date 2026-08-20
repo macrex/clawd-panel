@@ -1130,14 +1130,41 @@ void drawPlanoUnico(Arduino_Canvas *g, int xTexto, int y, int xLim,
 // porque ela e lida em TRES lugares: o desenho da faixa, a centragem do icone
 // dentro dela, e a conta de quantas linhas cabem no card (nas duas telas). Um
 // deles fora de sincronia com os outros e cabecalho sobrepondo sessao.
-const int H_CAB = 14;
+// 16 e nao 14: os icones passaram a vir dos SVGs oficiais, e o knot da OpenAI
+// so se le a partir de 12 px de altura (abaixo disso as seis alcas se fundem
+// numa mancha). Com 12 px de arte, 14 de faixa deixavam 1 px de folga de cada
+// lado — o icone encostava nas duas bordas e a faixa lia como aperto. Os 2 px
+// a mais custam 6 px de tela com tres grupos.
+const int H_CAB = 16;
 
-// O icone de 1 bit de um fornecedor, pintado na cor da marca.
+// Mistura a cor da marca com o fundo da faixa na proporcao do alfa. Os dois
+// lados sao decompostos do MESMO jeito, do RGB565 de volta para 8 bits, para
+// que alfa 0 devolva exatamente TRACK — decompor so um deles deixava franja de
+// um degrau em volta de cada icone.
+uint16_t misturaNaFaixa(uint16_t cor, uint8_t a) {
+    const int cr = ((cor   >> 11) & 0x1F) * 255 / 31;
+    const int cg = ((cor   >>  5) & 0x3F) * 255 / 63;
+    const int cb = ( cor          & 0x1F) * 255 / 31;
+    const int fr = ((TRACK >> 11) & 0x1F) * 255 / 31;
+    const int fg = ((TRACK >>  5) & 0x3F) * 255 / 63;
+    const int fb = ( TRACK        & 0x1F) * 255 / 31;
+    return RGB565((cr * a + fr * (255 - a)) / 255,
+                  (cg * a + fg * (255 - a)) / 255,
+                  (cb * a + fb * (255 - a)) / 255);
+}
+
+// O icone de um fornecedor, na cor da marca, com o meio-tom da mascara.
 void drawIconeProvedor(Arduino_Canvas *g, int x, int y,
                        const provedores::Icone &ic, uint16_t cor) {
     for (int r = 0; r < ic.h; r++)
-        for (int c = 0; c < ic.w; c++)
-            if (ic.linhas[r][c] == '#') g->drawPixel(x + c, y + r, cor);
+        for (int c = 0; c < ic.w; c++) {
+            // Os arredondamentos da reducao deixam lixo de 1 ou 2 no fundo
+            // vazio. Pintar isso nao muda o pixel (o resultado quantiza de
+            // volta para TRACK) e so custa chamada; o corte tambem garante que
+            // o retangulo do icone nao pise no fundo da faixa.
+            const uint8_t a = ic.alfa[r * ic.w + c];
+            if (a >= 8) g->drawPixel(x + c, y + r, misturaNaFaixa(cor, a));
+        }
 }
 
 // O cabecalho de um grupo: uma FAIXA de fundo com o icone do fornecedor na
@@ -1149,8 +1176,8 @@ void drawIconeProvedor(Arduino_Canvas *g, int x, int y,
 // fundo um degrau acima do card separa sem disputar nada.
 //
 // O icone substituiu o nome escrito: "CLAUDE" custava 36 px de largura, e o
-// icone faz o mesmo trabalho em 9. A contagem do grupo saiu junto — quantas
-// sessoes sao se ve contando as linhas logo abaixo, que estao na tela.
+// icone faz o mesmo trabalho em 12 a 16. A contagem do grupo saiu junto —
+// quantas sessoes sao se ve contando as linhas logo abaixo, que estao na tela.
 //
 // `w` e a largura util da linha, a partir de `x`.
 void drawCabecalhoGrupo(Arduino_Canvas *g, int x, int y, int w,
@@ -1159,18 +1186,17 @@ void drawCabecalhoGrupo(Arduino_Canvas *g, int x, int y, int w,
     // como uma barra que atravessa o bloco, e nao como mais uma linha indentada
     // igual as sessoes.
     //
-    // 14 px e nao 12: com 12 o icone de 9 px do Antigravity encostava na borda
-    // de cima — sobravam 3 px para dividir entre as duas folgas, e a divisao
-    // inteira dava 1. Os 2 px a mais custam 6 px de tela com tres grupos, e sao
-    // o que separa "faixa com um icone dentro" de "icone espremido na faixa".
+    // A altura da faixa e `H_CAB`, e o porque de ela ser 16 esta la em cima:
+    // e a arte mais alta (12 px) mais uma folga que se ve dos dois lados.
     g->fillRect(x - 4, y - 2, w + 8, H_CAB, TRACK);
 
     const provedores::Icone ic = provedores::iconeDe(l.cli);
     const uint16_t cor = provedores::corDe(l.cli);
 
-    // O icone centrado na faixa pela ALTURA DELE, e nao por um numero fixo: os
-    // tres tem alturas diferentes (o Clawd e 5, os outros 9), e centrar todos
-    // pelo mesmo valor cortava o mais alto contra a borda de cima.
+    // O icone centrado na faixa pela ALTURA DELE, e nao por um numero fixo: as
+    // tres artes tem alturas diferentes (o Claude e 5, os outros 12, porque cada
+    // logotipo tem a proporcao que tem), e centrar todas pelo mesmo valor
+    // cortava a mais alta contra a borda de cima.
     int cx = x;
     if (ic.w) {
         drawIconeProvedor(g, cx, y - 2 + (H_CAB - ic.h) / 2, ic, cor);
@@ -1178,24 +1204,45 @@ void drawCabecalhoGrupo(Arduino_Canvas *g, int x, int y, int w,
     }
 
     // O nome do fornecedor por extenso, ao lado do icone. Ele voltou depois de
-    // ter saido: o icone sozinho identifica quem ja sabe o que procurar, e o
-    // Clawd de 17x5 nao le como "Anthropic" para mais ninguem. Na cor da marca,
-    // como o icone — os dois sao a mesma etiqueta.
+    // ter saido: o icone sozinho identifica quem ja sabe o que procurar, e um
+    // logotipo de 16x10 nao le como "Anthropic" para mais ninguem. Na cor da
+    // marca, como o icone — os dois sao a mesma etiqueta.
+    //
+    // Na DejaVu, e nao no corpo 1 da grade: com a fonte embutida o nome saia
+    // com metade da altura do icone ao lado dele, e lia como legenda em vez de
+    // etiqueta. E a mesma fonte dos nomes de repo logo abaixo, entao a faixa
+    // deixa de ter um corpo so dela. A LINHA NAO MUDOU: `H_CAB` continua 16, e
+    // a fonte cabe porque sua caixa inteira (`d` no topo, `g` embaixo) mede 14.
     const std::string nome = provedores::nomeDe(l.cli);
     const int wPlano = (int)l.plano.size() * 6;
     const int xPlano = x + w - wPlano;
     if (!nome.empty()) {
+        g->setFont(&DejaVuSans7pt7b);
+        g->setTextSize(1);
+        g->setTextColor(cor);
+
         // O nome cede se colidir com o plano: o plano e a informacao que este
-        // cabecalho existe para trazer, e o nome ja tem o icone o apoiando.
-        const int cabe = (xPlano - 8 - cx) / 6;
+        // cabecalho existe para trazer, e o nome ja tem o icone o apoiando. O
+        // corte e por MEDIDA e nao por contagem de letras — a DejaVu e
+        // proporcional, e dividir por uma largura fixa cortaria cedo demais.
         std::string txt = nome;
-        if (cabe < (int)txt.size()) txt.resize(cabe > 0 ? cabe : 0);
+        int16_t tx1, ty1; uint16_t tw, th;
+        while (!txt.empty()) {
+            g->getTextBounds(txt.c_str(), 0, 0, &tx1, &ty1, &tw, &th);
+            if ((int)tw <= xPlano - 8 - cx) break;
+            txt.pop_back();
+        }
         if (!txt.empty()) {
-            g->setTextSize(1);
-            g->setTextColor(cor);
-            g->setCursor(cx, y + 1);
+            // `y + 10` e a BASELINE, nao o topo: com a fonte da grade o cursor
+            // marcava o canto de cima, e repetir o `y + 1` daqui jogaria o
+            // nome para fora da faixa por baixo. Daqui a caixa sobe 11 px (ate
+            // `y - 1`, um dentro da borda) e desce 3 (ate `y + 13`, a ultima
+            // linha da faixa) — o rabo do `g` de "Antigravity" e o unico que
+            // chega la.
+            g->setCursor(cx, y + 10);
             g->print(txt.c_str());
         }
+        g->setFont();
     }
 
     // O plano na direita, em corpo 1. Sobre a faixa ele usa a cor de frente e
