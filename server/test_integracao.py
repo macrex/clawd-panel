@@ -197,6 +197,258 @@ class TesteIntegracaoStatus(unittest.TestCase):
         self.assertNotIn("s1", api._divergencias)
 
 
+class TestePlanos(unittest.TestCase):
+    """O bloco `planos` do /status e o modelo dos orfaos.
+
+    As duas coisas na mesma suite porque sao a mesma leva e o mesmo risco: as
+    duas leem DISCO dentro de um endpoint que a placa pede a cada dois segundos,
+    e as duas so podem fazer isso porque tem cache.
+    """
+
+    def setUp(self):
+        api._sessions.clear()
+        api._divergencias.clear()
+        herdr._retrato = {"online": False, "agents": [], "ts": 0.0}
+        self.limpar_caches()
+
+    def tearDown(self):
+        api._sessions.clear()
+        api._divergencias.clear()
+        herdr._retrato = {"online": False, "agents": [], "ts": 0.0}
+        self.limpar_caches()
+
+    def limpar_caches(self):
+        """Os caches sao de MODULO e sobrevivem entre testes: sem isto, o
+        primeiro teste que rodar aquece o plano e os seguintes medem o cache
+        dele em vez do proprio comportamento."""
+        api._planos_cache["ts"] = 0.0
+        api._planos_cache["valor"] = {}
+        with api._cache_lock:
+            api._modelos_cache.clear()
+
+    def test_status_traz_o_bloco_de_planos(self):
+        """`planos` e global: e da CONTA, nao do agente. Repeti-lo em cada
+        entrada de `labels` sugeriria que pertence a sessao."""
+        s = api.build_status()
+        self.assertIsInstance(s["planos"], dict)
+
+    def test_status_traz_o_bloco_de_planos_tambem_com_sessao_viva(self):
+        # `build_status` tem DOIS returns, e o de cima (sem sessao nossa) e o
+        # que o teste acima exercita. Publicar o campo so num deles faria o
+        # painel perder o plano no instante em que um agente aparece.
+        self.povoar_uma_sessao()
+        s = api.build_status()
+        self.assertIsInstance(s["planos"], dict)
+
+    def povoar_uma_sessao(self):
+        sid, rec = sessao("s1", pane_id=None, estado=api.WORKING, repo="nosso")
+        api._sessions[sid] = rec
+
+    def test_planos_sobrevive_ao_corte_do_painel(self):
+        """A lista do ?campos=painel e de REMOCAO, nao de permissao. Este teste
+        trava isso: alguem que a converta em lista branca quebra aqui."""
+        import painel
+        magro = painel.enxugar({"planos": {"claude": "Max 5x"}, "labels": []})
+        self.assertEqual(magro["planos"], {"claude": "Max 5x"})
+
+    def test_build_planos_nao_rele_o_disco_na_segunda_chamada(self):
+        # O plano de conta muda uma vez por ano e o /status e pedido a cada dois
+        # segundos: a segunda chamada nao pode encostar em disco nenhum.
+        with mock.patch.object(api, "_ler_json", return_value=None) as ler, \
+                mock.patch.object(api, "_planos_json", return_value={}) as decl:
+            api.build_planos()
+            leituras = ler.call_count + decl.call_count
+            self.assertGreater(leituras, 0)   # a PRIMEIRA le, senao nao ha o que cachear
+            api.build_planos()
+            self.assertEqual(ler.call_count + decl.call_count, leituras)
+
+    def test_build_planos_rele_quando_o_ttl_vence(self):
+        # O relogio e INJETADO, nao esperado: um teste que dorme uma hora para
+        # provar um TTL de uma hora nao e um teste.
+        with mock.patch.object(api, "_ler_json", return_value=None) as ler, \
+                mock.patch.object(api, "_planos_json", return_value={}):
+            with mock.patch.object(api, "_now", return_value=1000.0):
+                api.build_planos()
+                leituras = ler.call_count
+            with mock.patch.object(api, "_now",
+                                   return_value=1000.0 + api.PLANOS_TTL_S + 1):
+                api.build_planos()
+        self.assertGreater(ler.call_count, leituras)
+
+    def test_planos_declarado_nao_sobrescreve_o_descoberto(self):
+        # Se um dia o Claude publicar o plano num campo novo, a linha velha do
+        # planos.json nao pode mentir por cima dele.
+        claude = {"oauthAccount": {"organizationType": "claude_max",
+                                   "organizationRateLimitTier":
+                                   "default_claude_max_5x"}}
+        with mock.patch.object(api, "_ler_json",
+                               side_effect=lambda c: claude if ".claude" in c
+                               else None), \
+                mock.patch.object(api, "_planos_json",
+                                  return_value={"claude": "Pro",
+                                                "agy": "AI Pro"}):
+            p = api.build_planos()
+        self.assertEqual(p["claude"], "Max 5x")
+        self.assertEqual(p["agy"], "AI Pro")
+
+    def test_a_chave_de_planos_e_o_mesmo_nome_do_agente_no_labels(self):
+        """As duas pontas falam o MESMO vocabulario, que e o do herdr.
+
+        Quem desenha o card casa o plano com o grupo pelo nome do agente. Uma
+        chave `antigravity` em `planos` ao lado de um `labels[].agent` igual a
+        `agy` nao casaria, e o sintoma — grupo do Antigravity sem plano — so
+        apareceria na placa, depois de gravar.
+        """
+        herdr._aplicar([dele("w4D:p1", "idle", agente="agy", repo="D:")])
+        with mock.patch.object(api, "_planos_json",
+                               return_value={"agy": "AI Pro"}), \
+                mock.patch.object(api.modelos, "modelo_antigravity",
+                                  return_value=None):
+            s = api.build_status()
+        orfao = next(a for a in s["labels"] if a["agent"] == "agy")
+        self.assertIn(orfao["agent"], s["planos"])
+        self.assertEqual(s["planos"][orfao["agent"]], "AI Pro")
+
+    def test_provedor_sem_plano_nao_entra_no_dicionario(self):
+        # A placa desenha "—" para a chave ausente; string vazia no fio seria a
+        # mesma coisa custando bytes.
+        with mock.patch.object(api, "_ler_json", return_value=None), \
+                mock.patch.object(api, "_planos_json", return_value={}):
+            self.assertEqual(api.build_planos(), {})
+
+    def test_orfao_ganha_o_modelo_da_cli_dele(self):
+        herdr._aplicar([dele("w9:p9", "working", agente="codex", repo="alheio")])
+        with mock.patch.object(api.modelos, "modelo_codex",
+                               return_value="GPT-5.6 Terra"):
+            s = api.build_status()
+        orfao = next(a for a in s["labels"] if a["agent"] == "codex")
+        self.assertEqual(orfao["model"], "GPT-5.6 Terra")
+        # A `line` leva o modelo quando ha um: sem isto ela continuaria dizendo
+        # so "Codex", com o modelo certo no campo ao lado.
+        self.assertIn("GPT-5.6 Terra", orfao["line"])
+
+    def test_orfao_sem_modelo_mantem_o_nome_do_agente_na_linha(self):
+        # Sem isto `agent_line` cai no default "Claude" de `short_model`, e um
+        # codex sai afirmando que e o Claude.
+        herdr._aplicar([dele("w9:p9", "working", agente="codex", repo="alheio")])
+        with mock.patch.object(api.modelos, "modelo_codex", return_value=None):
+            s = api.build_status()
+        orfao = next(a for a in s["labels"] if a["agent"] == "codex")
+        self.assertIsNone(orfao["model"])
+        self.assertIn("Codex", orfao["line"])
+
+    def test_agy_e_o_nome_do_antigravity_no_herdr(self):
+        # Medido: `herdr agent start --kind` lista `agy`, e nunca
+        # "antigravity". Um dispatch que so conhecesse "antigravity" nunca
+        # dispararia — o agente existe nesta maquina e chega como `agy`.
+        with mock.patch.object(api.modelos, "modelo_antigravity",
+                               return_value="Claude Opus 4.6") as sonda:
+            self.assertEqual(api.modelo_do_orfao("agy", "D:\\"),
+                             "Claude Opus 4.6")
+        sonda.assert_called_once_with("D:\\")
+
+    def test_antigravity_nao_e_nome_de_agente_em_lugar_nenhum(self):
+        """`agy` e o nome canonico, e este teste e o que impede a volta.
+
+        A traducao `agy` -> "antigravity" foi DESCARTADA: exigiria uma tabela
+        dos 21 kinds do herdr para alguem manter, e "ANTIGRAVITY" nao cabe no
+        cabecalho de grupo do card (156 px uteis; 11 caracteres contra 3).
+        Aceitar "antigravity" como alias e o refactor bem-intencionado que
+        desfaz a decisao em silencio — se ele voltar, quebra aqui.
+        """
+        with mock.patch.object(api.modelos, "modelo_antigravity") as sonda:
+            self.assertIsNone(api.modelo_do_orfao("antigravity", "D:\\x"))
+        sonda.assert_not_called()
+
+    def test_gemini_nao_e_roteado_para_a_sonda_do_antigravity(self):
+        # `gemini` e `agy` sao DOIS kinds distintos do herdr: Gemini CLI e
+        # Antigravity. A sonda do Antigravity tem reserva ("a conversa mais
+        # recente"), entao rotear o gemini para ela mostraria o modelo de OUTRO
+        # programa com cara de certo.
+        with mock.patch.object(api.modelos, "modelo_antigravity") as sonda:
+            self.assertIsNone(api.modelo_do_orfao("gemini", "D:\\x"))
+        sonda.assert_not_called()
+
+    def test_modelo_do_orfao_nao_consulta_o_disco_duas_vezes(self):
+        with mock.patch.object(api.modelos, "modelo_codex",
+                               return_value="GPT-5.6") as sonda:
+            api.modelo_do_orfao("codex", "D:\\x")
+            api.modelo_do_orfao("codex", "D:\\x")
+        sonda.assert_called_once()
+
+    def test_modelo_do_orfao_rele_quando_o_ttl_vence(self):
+        """O cache PEGA e o cache SOLTA. Sem este, so a metade facil tem prova.
+
+        O relogio e INJETADO, pelo mesmo motivo do TTL de uma hora: um teste que
+        dorme trinta segundos para provar um TTL de trinta segundos nao e um
+        teste. E sem ele, trocar a condicao por um `if c:` cru transformaria o
+        cache em ETERNO — o modelo do orfao congelaria no primeiro valor visto,
+        que e exatamente o que MODELOS_TTL_S existe para evitar — com a suite
+        inteira passando.
+        """
+        with mock.patch.object(api.modelos, "modelo_codex",
+                               side_effect=["GPT-5.6", "GPT-6"]) as sonda:
+            with mock.patch.object(api, "_now", return_value=1000.0):
+                self.assertEqual(api.modelo_do_orfao("codex", "D:\\x"),
+                                 "GPT-5.6")
+            with mock.patch.object(api, "_now",
+                                   return_value=1000.0 + api.MODELOS_TTL_S + 1):
+                self.assertEqual(api.modelo_do_orfao("codex", "D:\\x"), "GPT-6")
+        self.assertEqual(sonda.call_count, 2)
+
+    def test_dentro_do_ttl_o_valor_velho_continua_valendo(self):
+        # O outro lado da mesma moeda: o relogio andando POUCO nao pode soltar o
+        # cache, senao o TTL nao existe e a sonda roda a cada poll.
+        with mock.patch.object(api.modelos, "modelo_codex",
+                               side_effect=["GPT-5.6", "GPT-6"]) as sonda:
+            with mock.patch.object(api, "_now", return_value=1000.0):
+                api.modelo_do_orfao("codex", "D:\\x")
+            with mock.patch.object(api, "_now",
+                                   return_value=1000.0 + api.MODELOS_TTL_S - 1):
+                self.assertEqual(api.modelo_do_orfao("codex", "D:\\x"),
+                                 "GPT-5.6")
+        sonda.assert_called_once()
+
+    def test_defeito_na_sonda_nao_derruba_o_status(self):
+        # Os modulos prometem nao levantar. Este teste trava o cinto de
+        # seguranca: a promessa quebrada nao pode apagar o painel inteiro.
+        with mock.patch.object(api.modelos, "modelo_codex",
+                               side_effect=RuntimeError("boom")):
+            self.assertIsNone(api.modelo_do_orfao("codex", "D:\\x"))
+
+    def test_defeito_na_sonda_deixa_rastro_no_contador(self):
+        """Engolir a excecao em silencio faria o defeito virar um "—"
+        indistinguivel do "nao achei nada". O contador e o que separa os dois,
+        e o /health e onde ele aparece — `print` nao escreve nada sob pythonw."""
+        antes = api._sondas_falhas
+        with mock.patch.object(api.modelos, "modelo_codex",
+                               side_effect=RuntimeError("boom")):
+            self.assertIsNone(api.modelo_do_orfao("codex", "D:\\explode"))
+        self.assertEqual(api._sondas_falhas, antes + 1)
+
+    def test_sonda_que_nao_acha_nada_nao_conta_como_falha(self):
+        # O caso NORMAL: um pane de Codex que ainda nao gravou rollout. Contar
+        # isto como falha apagaria a unica informacao que o contador carrega.
+        antes = api._sondas_falhas
+        with mock.patch.object(api.modelos, "modelo_codex", return_value=None):
+            self.assertIsNone(api.modelo_do_orfao("codex", "D:\\vazio"))
+        self.assertEqual(api._sondas_falhas, antes)
+
+    def test_cache_de_modelos_nao_cresce_sem_limite(self):
+        # Uma entrada por (agente, cwd) VISTO, e o servidor roda por meses.
+        velho = api._now() - api.MODELOS_TTL_S - 1
+        with api._cache_lock:
+            for i in range(api.MODELOS_CACHE_MAX + 5):
+                api._modelos_cache[("codex", f"D:\\morto{i}")] = {
+                    "ts": velho, "valor": None}
+            antes = len(api._modelos_cache)
+        with mock.patch.object(api.modelos, "modelo_codex", return_value="X"):
+            api.modelo_do_orfao("codex", "D:\\vivo")
+        self.assertLess(len(api._modelos_cache), antes)
+        # A entrada nova sobrevive a propria poda que ela disparou.
+        self.assertEqual(api._modelos_cache[("codex", "D:\\vivo")]["valor"], "X")
+
+
 class TesteHealth(unittest.TestCase):
     """`/health` precisa carregar o estado do sensor do herdr e as ultimas
     divergencias — o unico lugar onde essa informacao sobrevive em producao,
@@ -248,6 +500,16 @@ class TesteHealth(unittest.TestCase):
         self.assertIsNone(payload["herdr"]["binario"])
         self.assertFalse(payload["herdr"]["online"])
         self.assertEqual(payload["divergencias"], [])
+
+    def test_health_publica_o_contador_de_falhas_da_sonda(self):
+        # Sem isto o contador existiria e ninguem o leria: sob pythonw.exe
+        # destacado o `print` nao escreve nada, e o /health e o unico lugar de
+        # onde se pergunta se a sonda de modelo esta quebrada.
+        with mock.patch.object(api.modelos, "modelo_codex",
+                               side_effect=RuntimeError("boom")):
+            api.modelo_do_orfao("codex", "D:\\health")
+        payload = self._get("/health")["payload"]
+        self.assertGreaterEqual(payload["sondas_falhas"], 1)
 
 
 class TesteTag(unittest.TestCase):

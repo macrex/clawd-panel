@@ -22,8 +22,12 @@ from urllib.parse import unquote
 import arquivo
 import bloqueio
 import herdr
+import modelos
 import motor
 import painel
+# `planos_mod` e nao `planos`: o nome curto e variavel local em mais de um lugar
+# deste arquivo, e uma delas sombrearia o modulo.
+import planos as planos_mod
 import tela
 import terminal
 import transcript
@@ -559,6 +563,212 @@ def limits_labels(session_pct, session_hm, week_pct, week_dh,
             rotulo("Week", week_pct, week_dh, week_known))
 
 
+# ---- O plano de cada conta, e o modelo de quem so o herdr enxerga ----
+#
+# As duas informacoes vem de DISCO — do que cada CLI grava por conta propria
+# (ver planos.py e modelos.py) — e as duas sao consumidas de dentro do /status,
+# que a placa pede a cada dois segundos. Sao os caches abaixo que fazem isso ser
+# possivel: sem eles, cada poll pagaria a varredura inteira.
+
+# O plano de conta muda uma vez por ano; reler o disco a cada /status seria
+# desperdicio puro. Uma hora e folgado e ainda pega a troca de plano no mesmo
+# dia em que ela acontece.
+PLANOS_TTL_S = 3600.0
+
+# O modelo muda a cada turno, e a leitura custa entre 2 e 75 ms conforme o
+# numero de panes — caro demais para o caminho de uma requisicao que responde
+# em 2 a 14 ms. Meio minuto e curto o bastante para a troca de modelo aparecer
+# antes de virar mentira na tela, e longo o bastante para o custo sumir na
+# media: uma leitura a cada quinze polls.
+MODELOS_TTL_S = 30.0
+
+# Quando parar para varrer as entradas vencidas de `_modelos_cache`.
+#
+# O cache tem uma entrada por (agente, cwd) VISTO, e o servidor sobe no logon e
+# roda por meses: sem poda nenhuma, os diretorios de ontem ficam ali para
+# sempre. Nao e vazamento agudo — sao alguns panes por dia, de algumas dezenas
+# de bytes cada — e por isso o remedio e o mais barato que resolve: entrada
+# vencida nunca mais e servida, entao joga-las fora quando o dicionario passa do
+# teto nao perde nada e dispensa LRU, thread de limpeza e contabilidade de
+# acesso.
+#
+# E um GATILHO, e nao um teto rigido: 64 panes vivos simultaneos manteriam 64
+# entradas frescas e nenhuma seria podada — que e o certo, porque todas estao em
+# uso. O que o numero garante e que o dicionario nao acumula os MORTOS.
+MODELOS_CACHE_MAX = 64
+
+_planos_cache = {"ts": 0.0, "valor": {}}
+_modelos_cache = {}      # (agente, cwd) -> {"ts": float, "valor": str|None}
+
+# Quantas vezes a sonda de modelo LEVANTOU desde o boot, exposto em /health.
+#
+# Existe porque `None` e uma resposta ambigua: a sonda devolve None quando nao
+# acha nada (o caso normal — um pane de Codex que ainda nao gravou rollout) e o
+# `except` de `modelo_do_orfao` tambem devolve None quando ela explode. Os dois
+# desenham o mesmo "—" na tela, e de fora nao havia como separar "nao casou" de
+# "esta quebrada desde o deploy" — pagando ~68 ms a cada 30 s para descobrir.
+#
+# Contador e nao lista, e sem `print`: `print` nao chega a lugar nenhum sob
+# pythonw.exe destacado (sys.stdout is None), que e a mesma razao de
+# `_divergencia_log` existir. A pergunta que se faz do /health e "esta
+# explodindo?", e para isso um numero que so cresce basta.
+_sondas_falhas = 0
+
+# Trava so dos dois caches acima e do contador. Quem a ADQUIRE sao apenas
+# `build_planos` e `modelo_do_orfao` — nao confunda com `build_agents` e o
+# `return` de `build_status`, que sao quem CHAMA essas duas.
+#
+# NAO aninha com `_lock` nem com `_div_lock`: os dois chamadores rodam FORA do
+# `with _lock:` de build_status, de proposito (ver o comentario de `_div_lock`
+# sobre por que a ordem das travas importa neste arquivo). E o disco fica fora
+# dela: so as operacoes de dicionario ficam dentro.
+#
+# Existe pelo mesmo motivo de `_div_lock`: o servidor e ThreadingHTTPServer, uma
+# thread por conexao, e a poda de `_modelos_cache` itera o dicionario — iterar
+# enquanto outra thread escreve levanta RuntimeError e derrubaria o /status.
+_cache_lock = threading.Lock()
+
+
+def _ler_json(caminho):
+    """Um JSON do disco. `None` quando nao deu — ausente, ilegivel ou quebrado.
+
+    `None` e nao `{}` de proposito: quem chama precisa distinguir "o arquivo nao
+    existe" de "existe e esta vazio". `build_planos` depende disso — o
+    `isinstance(auth, dict)` do caminho do Codex so pergunta pelo `id_token`
+    quando houve arquivo de verdade, em vez de mergulhar num vazio inventado
+    aqui. Quem quiser o `{}` converte na sua ponta, como `_planos_json` faz.
+    """
+    try:
+        with open(os.path.expanduser(caminho), encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def _planos_json():
+    """O `planos.json` da instalacao. Ausente e o caso NORMAL — quem so usa
+    provedores que publicam o plano em disco nunca precisa criar o arquivo.
+
+    Sempre um dicionario: `plano_declarado` itera as chaves, e um `None` aqui
+    obrigaria toda chamada a se defender do mesmo jeito.
+    """
+    d = _ler_json(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               "planos.json"))
+    return d if isinstance(d, dict) else {}
+
+
+def build_planos():
+    """{"claude": "Max 5x", "codex": "Free", "agy": "AI Pro"}.
+
+    As chaves sao os nomes de agente DO HERDR — os mesmos que saem em
+    `labels[].agent`. E por isso que o Antigravity aparece como `agy`: as duas
+    pontas tem que falar o mesmo vocabulario para quem desenha poder casar o
+    plano com o grupo. Ver o comentario em `modelo_do_orfao`.
+
+    Provedor sem plano conhecido simplesmente NAO entra no dicionario: a placa
+    desenha "—" para a chave ausente, e uma string vazia no fio seria a mesma
+    coisa custando bytes.
+
+    O dicionario devolvido e O DO CACHE, e nao uma copia: muta-lo corrompe a
+    memoria por uma hora inteira. E o mesmo acordo de `vitalicio_do_livro` e de
+    `works.ler_cache` neste arquivo — ninguem mexe no que eles devolvem.
+    """
+    agora = _now()
+    with _cache_lock:
+        if agora - _planos_cache["ts"] < PLANOS_TTL_S:
+            return _planos_cache["valor"]
+
+    # O disco fica FORA da trava: duas threads que percam a corrida leem o mesmo
+    # arquivo duas vezes uma vez por hora, o que e barato; segurar a trava
+    # durante a leitura pararia a outra requisicao por ela.
+    declarados = _planos_json()
+    fora = {}
+
+    p = planos_mod.plano_claude(_ler_json("~/.claude.json"))
+    if p:
+        fora["claude"] = p
+
+    auth = _ler_json("~/.codex/auth.json")
+    if isinstance(auth, dict):
+        p = planos_mod.plano_codex((auth.get("tokens") or {}).get("id_token"))
+        if p:
+            fora["codex"] = p
+
+    # Declarado a mao NUNCA sobrescreve o que foi descoberto: se um dia o Claude
+    # passar a publicar o plano num campo novo, a linha velha do planos.json nao
+    # pode mentir por cima dele.
+    for agente in declarados:
+        if agente not in fora:
+            p = planos_mod.plano_declarado(declarados, agente)
+            if p:
+                fora[agente] = p
+
+    with _cache_lock:
+        _planos_cache["ts"] = agora
+        _planos_cache["valor"] = fora
+    return fora
+
+
+def _podar_modelos(agora):
+    """Joga fora as entradas vencidas de `_modelos_cache`. Chamado sob a trava."""
+    if len(_modelos_cache) < MODELOS_CACHE_MAX:
+        return
+    for chave in [k for k, v in _modelos_cache.items()
+                  if agora - v["ts"] >= MODELOS_TTL_S]:
+        _modelos_cache.pop(chave, None)
+
+
+def modelo_do_orfao(agente, cwd):
+    """O modelo de um agente que so o herdr enxerga. None quando nao se sabe."""
+    global _sondas_falhas
+    chave = (agente, cwd)
+    agora = _now()
+    with _cache_lock:
+        c = _modelos_cache.get(chave)
+        if c and agora - c["ts"] < MODELOS_TTL_S:
+            return c["valor"]
+
+    falhou = False
+    try:
+        if agente == "codex":
+            v = modelos.modelo_codex(cwd)
+        # `agy` E O NOME. Nao e abreviacao nossa nem apelido: e como o herdr
+        # nomeia o Antigravity, e por isso e o que chega em `labels[].agent` e o
+        # que se escreve no `planos.json`. O nome do PRODUTO nao aparece em
+        # lugar nenhum deste caminho de proposito — traduzir `agy` para
+        # "antigravity" exigiria uma tabela dos 21 kinds do herdr para alguem
+        # manter sincronizada, e a primeira CLI nova passaria sem traducao sem
+        # ninguem notar ate a tela mentir. NAO "conserte" para "antigravity":
+        # esse nome nunca chega aqui, e o alias so sugeriria um caminho que nao
+        # existe. Ha teste travando isto.
+        #
+        # `gemini` NAO entra: e outro kind do herdr, o Gemini CLI, e a sonda do
+        # Antigravity tem reserva ("a conversa mais recente"). Roteado para ca,
+        # um pane de Gemini CLI mostraria o modelo de OUTRO programa com cara de
+        # certo — pior do que "—".
+        elif agente == "agy":
+            v = modelos.modelo_antigravity(cwd)
+        else:
+            v = None
+    except Exception:
+        # Os modulos ja prometem nao levantar. Este except e o cinto de
+        # seguranca: um defeito neles nao pode derrubar o /status inteiro.
+        #
+        # Mas engolir em silencio faria o defeito virar um "—" indistinguivel do
+        # "nao achei nada", entao ele deixa RASTRO — ver `_sondas_falhas`. O
+        # `None` continua sendo o que a placa recebe: nao ha resposta melhor, e
+        # quem quer saber se a sonda quebrou pergunta ao /health.
+        v = None
+        falhou = True
+
+    with _cache_lock:
+        if falhou:
+            _sondas_falhas += 1
+        _podar_modelos(agora)
+        _modelos_cache[chave] = {"ts": agora, "valor": v}
+    return v
+
+
 def build_agents(live_items, retrato=None):
     """Uma entrada por agente vivo, do maior contexto para o menor.
 
@@ -656,11 +866,14 @@ def build_agents(live_items, retrato=None):
     # nos campos que faltam (src/ui.cpp:362).
     for a in orfaos:
         estado = DO_HERDR.get(a["state"], UNKNOWN)
+        # O modelo do orfao vem do disco da CLI dele — ver modelos.py. Era None
+        # fixo, e o card desenhava "-" para todo agente que nao fosse o Claude.
+        modelo_orfao = modelo_do_orfao(a["agent"], a["cwd"])
         agents.append({
             "session_id": a["pane_id"],
             "repo": a["repo"],
             "branch": None,
-            "model": None,
+            "model": modelo_orfao,
             "effort": None,
             "context_pct": None,
             "color": "green",
@@ -685,7 +898,9 @@ def build_agents(live_items, retrato=None):
             # Um orfao E o pane: o herdr e a unica fonte que temos dele. Aqui
             # `pane_id` sempre existe, ao contrario das nossas sessoes.
             "pane_id": a["pane_id"],
-            "line": agent_line(a["repo"], None, agent_label(a["agent"]), None, None),
+            "line": agent_line(a["repo"], None,
+                               modelo_orfao or agent_label(a["agent"]),
+                               None, None),
         })
 
     # Quem precisa de você primeiro; depois, maior contexto. Um agente bloqueado
@@ -1243,6 +1458,11 @@ def build_status():
             "sessions_active": 0,
             "blocked": sum(1 for a in agents if a["state"] == BLOCKED),
             "model": None,
+            # Ver o comentario do mesmo campo no outro retorno. Sai NOS DOIS: o
+            # plano e da conta, e a conta existe mesmo sem nenhuma sessao aberta
+            # — publicar so no outro caminho apagaria o plano da tela justamente
+            # quando o painel vira relogio de parede.
+            "planos": build_planos(),
             "effort": None,
             "context_pct": 0,
             "context_repo": None,
@@ -1424,6 +1644,10 @@ def build_status():
         # avisar mesmo na página que não mostra a lista de agentes.
         "blocked": sum(1 for a in agents if a["state"] == BLOCKED),
         "model": model,
+        # O plano de cada conta. GLOBAL, e nao por agente: `labels[]` descreve
+        # sessoes, e o plano descreve a assinatura por tras delas. Provedor sem
+        # plano conhecido nao aparece aqui, e a placa desenha "—".
+        "planos": build_planos(),
         "effort": effort,
         "context_pct": ctx_pct,
         "context_repo": ctx_repo,
@@ -1516,6 +1740,11 @@ def build_health():
         # discordaram por mais de DIVERGENCIA_S. Mesmo motivo: o print
         # de fundir() nao escreve nada em producao.
         "divergencias": list(_divergencia_log),
+        # Quantas vezes a sonda de modelo do orfao levantou desde o boot. Zero
+        # e o esperado — modelos.py promete nao levantar. Diferente de zero e o
+        # unico jeito de separar "a sonda quebrou" de "nao achei nada": os dois
+        # viram None e desenham o mesmo "—" na tela. Ver `_sondas_falhas`.
+        "sondas_falhas": _sondas_falhas,
     }
 
 

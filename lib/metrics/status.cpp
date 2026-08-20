@@ -79,6 +79,19 @@ Status parseStatus(const char *json) {
     s.repo        = strOr(doc["context_repo"], "");
     s.branch      = strOr(doc["context_branch"], "");
 
+    // O plano de cada conta. `is<JsonObjectConst>()` e nao `containsKey`: uma
+    // API futura que mande o campo com outro tipo tem que ser ignorada, nunca
+    // derrubar o parse do documento inteiro.
+    if (doc["planos"].is<JsonObjectConst>()) {
+        for (JsonPairConst p : doc["planos"].as<JsonObjectConst>()) {
+            PlanoConta pc;
+            pc.agente = p.key().c_str();
+            pc.rotulo = strOr(p.value(), "");
+            if (!pc.agente.empty() && !pc.rotulo.empty())
+                s.planos.push_back(pc);
+        }
+    }
+
     // Uma flag por janela. Antes havia uma so (`limits_fresh`) e ela derrubava
     // as duas juntas: quando a janela de 5h virava, a semana — valida por mais
     // dois dias — sumia da tela junto. Uma API antiga so manda `limits_fresh`,

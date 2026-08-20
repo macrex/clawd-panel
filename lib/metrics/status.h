@@ -285,6 +285,17 @@ struct Atualizacao {
     bool        reiniciar = true;
 };
 
+// O plano de UMA conta. Um vetor de pares e nao um mapa: sao tres ou quatro
+// entradas, e um std::map custa alocacao de no por elemento numa placa onde a
+// heap ja e disputada.
+struct PlanoConta {
+    // O nome vem do herdr, e e o MESMO de `Agent::agent` — e o que faz o plano
+    // casar com o grupo. O Antigravity aparece como "agy" porque e assim que o
+    // herdr o chama; o nome do produto nao existe neste campo.
+    std::string agente;   // "claude", "codex", "agy"
+    std::string rotulo;   // "Max 5x", "Free", "AI Pro"
+};
+
 struct Status {
     bool        valid    = false;    // false se o JSON nao pode ser parseado
     bool        online   = false;
@@ -333,6 +344,15 @@ struct Status {
     Bloqueio    bloqueio;
     Captura     captura;
     Atualizacao atualizacao;
+    // O plano de cada conta, como o servidor o publica. GLOBAL e nao por
+    // agente: descreve a assinatura por tras das sessoes, nao a sessao.
+    //
+    // Na fusao de duas maquinas isto vem do MASTER, como o resto do cabecalho —
+    // `fundirAgentes` so mexe em `agents` e no bloqueio. E o certo: as duas
+    // maquinas usam a mesma conta.
+    //
+    // Vazio contra uma API antiga, e ai o painel simplesmente nao mostra plano.
+    std::vector<PlanoConta> planos;
     // Na ordem que a API mandou (maior contexto primeiro). O firmware nao
     // reordena: a regra de ordenacao mora num lugar so, no servidor.
     std::vector<Agent> agents;

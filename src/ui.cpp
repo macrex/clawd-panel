@@ -4,6 +4,9 @@
 #include "view_model.h"
 #include "clawd.h"
 #include "layout.h"
+#include "grupos.h"
+#include "provedores.h"
+#include "storage.h"
 #include "DejaVuSans7pt7b.h"
 #include <cstdio>
 #include <cstring>
@@ -436,10 +439,23 @@ void drawFooter(Arduino_Canvas *g, const Status &s, int page, int staleSeconds) 
     const int trioFim = (page != 2 && clawd::crewW()) ? 14 + clawd::crewW() : 14;
     if (staleSeconds > 0 && dotEsq - 12 - (int)txt.size() * 6 < trioFim + 8)
         txt = textoVetustezCurto(s, staleSeconds);
+    // O cartao ausente TOMA esta linha, e so perde para o contato perdido.
+    // Sem ele a placa sobe e funciona pela metade — a configuracao vem da NVS,
+    // entao o Wi-Fi associa e o painel desenha, mas todo sprite falha e a tela
+    // fica com bichos que nao trocam. Sem este aviso o defeito aparecia sem
+    // nome, e so a serial dizia o que era ("File system is not mounted", uma
+    // vez por tentativa de leitura).
+    //
+    // Perde para o contato perdido de proposito: sem servidor nao ha painel
+    // nenhum, e um cartao ausente ainda deixa os numeros na tela.
+    const bool semCartao = !storage::montado() && staleSeconds <= 0;
+    if (semCartao) txt = "SEM CARTAO";
+
     // Amarelo tambem quando o motor e o de reserva: os dois motores nao tem a
     // mesma confiabilidade, e mostrar estado deduzido com a cara de estado lido
     // seria a mesma mentira que o aviso de contato perdido existe para evitar.
-    g->setTextColor((staleSeconds > 0 || s.hooksEngine) ? C_YELL : MUTED);
+    g->setTextColor(semCartao ? C_RED
+                              : ((staleSeconds > 0 || s.hooksEngine) ? C_YELL : MUTED));
     g->setTextSize(1);
     g->setCursor(dotEsq - 12 - (int)txt.size() * 6, SCREEN_H - 30);
     g->print(txt.c_str());
@@ -1053,6 +1069,145 @@ int drawChip(Arduino_Canvas *g, int x, int y, const std::string &txt,
     return cw;
 }
 
+// O mesmo chip, mas CORTANDO o texto em vez de desistir dele.
+//
+// Existe por causa do modelo dos agentes que nao sao o Claude. "Claude Opus
+// 4.6" pede 98 px e sobram 74 depois do chip da maquina: com `drawChip` o chip
+// inteiro sumia, e a linha do Codex e a do Antigravity apareciam sem modelo
+// nenhum — que foi exatamente o defeito visto na placa. Um nome cortado ainda
+// diz qual modelo e; a ausencia dele nao diz nada.
+//
+// So o modelo usa esta variante. A tag da maquina e o esforco sao curtos e
+// fixos, e cortar um deles seria perder o dado inteiro.
+int drawChipCortando(Arduino_Canvas *g, int x, int y, const std::string &txt,
+                     uint16_t corTxt, int xLimite) {
+    if (txt.empty()) return 0;
+    const int cabe = (xLimite - x - 8) / 6;
+    if (cabe < 3) return 0;              // menos que tres letras nao informa
+    if ((int)txt.size() <= cabe)
+        return drawChip(g, x, y, txt, corTxt, xLimite);
+    return drawChip(g, x, y, txt.substr(0, cabe), corTxt, xLimite);
+}
+
+// Os planos do Status no formato que a lib grupos entende. Duas structs
+// separadas de proposito: `lib/grupos` nao pode depender do formato do payload,
+// senao a mudanca de um campo do servidor arrastaria a lib de agrupamento
+// junto.
+std::vector<grupos::Plano> planosDe(const Status &s) {
+    std::vector<grupos::Plano> p;
+    p.reserve(s.planos.size());
+    for (const PlanoConta &c : s.planos)
+        p.push_back({c.agente, c.rotulo});
+    return p;
+}
+
+// O plano da conta ao lado do rotulo do card, no caso de um provedor so.
+// `xTexto` e onde ele comeca; `xLim`, onde ele nao pode passar.
+//
+// TRUNCA em vez de invadir a borda: o cabecalho do card deitado tem 115 px
+// uteis, e "SESSOES 4" ja come 62 deles — "Enterprise" com o "- " na frente
+// pede 72 e sairia pela direita do card. Cortado ainda se le; derramado por
+// cima da moldura, nao.
+void drawPlanoUnico(Arduino_Canvas *g, int xTexto, int y, int xLim,
+                    const std::string &plano) {
+    const int cabe = (xLim - xTexto) / 6;
+    if (cabe < 4) return;                  // nem "- Ma" cabe: melhor nada
+    std::string txt = "- " + plano;
+    if ((int)txt.size() > cabe) txt.resize(cabe);
+    g->setTextSize(1);
+    g->setTextColor(MUTED);
+    g->setCursor(xTexto, y);
+    g->print(txt.c_str());
+}
+
+// O cabecalho de um grupo: rotulo a esquerda, plano a direita, filete ligando
+// os dois. Corpo 1 para nao competir com os nomes de repo, que sao quem manda
+// no card. `w` e a largura util da linha, a partir de `x`.
+//
+// O plano ausente vira "-" e nao string vazia: a lacuna diz "nao se sabe", e um
+// espaco em branco leria como se o grupo nao tivesse plano nenhum.
+// A altura da faixa de cabecalho de grupo. Constante, e nao numero solto,
+// porque ela e lida em TRES lugares: o desenho da faixa, a centragem do icone
+// dentro dela, e a conta de quantas linhas cabem no card (nas duas telas). Um
+// deles fora de sincronia com os outros e cabecalho sobrepondo sessao.
+const int H_CAB = 14;
+
+// O icone de 1 bit de um fornecedor, pintado na cor da marca.
+void drawIconeProvedor(Arduino_Canvas *g, int x, int y,
+                       const provedores::Icone &ic, uint16_t cor) {
+    for (int r = 0; r < ic.h; r++)
+        for (int c = 0; c < ic.w; c++)
+            if (ic.linhas[r][c] == '#') g->drawPixel(x + c, y + r, cor);
+}
+
+// O cabecalho de um grupo: uma FAIXA de fundo com o icone do fornecedor na
+// esquerda e o plano da conta na direita.
+//
+// A faixa substituiu um filete que atravessava a tela entre o rotulo e o
+// plano. O traco tinha que competir por largura com o nome do grupo e com a
+// contagem, e o resultado eram tres coisas disputando 12 px de altura. Um
+// fundo um degrau acima do card separa sem disputar nada.
+//
+// O icone substituiu o nome escrito: "CLAUDE" custava 36 px de largura, e o
+// icone faz o mesmo trabalho em 9. A contagem do grupo saiu junto — quantas
+// sessoes sao se ve contando as linhas logo abaixo, que estao na tela.
+//
+// `w` e a largura util da linha, a partir de `x`.
+void drawCabecalhoGrupo(Arduino_Canvas *g, int x, int y, int w,
+                        const grupos::Linha &l) {
+    // A faixa sangra 4 px para cada lado do texto do card: ela precisa ler
+    // como uma barra que atravessa o bloco, e nao como mais uma linha indentada
+    // igual as sessoes.
+    //
+    // 14 px e nao 12: com 12 o icone de 9 px do Antigravity encostava na borda
+    // de cima — sobravam 3 px para dividir entre as duas folgas, e a divisao
+    // inteira dava 1. Os 2 px a mais custam 6 px de tela com tres grupos, e sao
+    // o que separa "faixa com um icone dentro" de "icone espremido na faixa".
+    g->fillRect(x - 4, y - 2, w + 8, H_CAB, TRACK);
+
+    const provedores::Icone ic = provedores::iconeDe(l.cli);
+    const uint16_t cor = provedores::corDe(l.cli);
+
+    // O icone centrado na faixa pela ALTURA DELE, e nao por um numero fixo: os
+    // tres tem alturas diferentes (o Clawd e 5, os outros 9), e centrar todos
+    // pelo mesmo valor cortava o mais alto contra a borda de cima.
+    int cx = x;
+    if (ic.w) {
+        drawIconeProvedor(g, cx, y - 2 + (H_CAB - ic.h) / 2, ic, cor);
+        cx += ic.w + 5;
+    }
+
+    // O nome do fornecedor por extenso, ao lado do icone. Ele voltou depois de
+    // ter saido: o icone sozinho identifica quem ja sabe o que procurar, e o
+    // Clawd de 17x5 nao le como "Anthropic" para mais ninguem. Na cor da marca,
+    // como o icone — os dois sao a mesma etiqueta.
+    const std::string nome = provedores::nomeDe(l.cli);
+    const int wPlano = (int)l.plano.size() * 6;
+    const int xPlano = x + w - wPlano;
+    if (!nome.empty()) {
+        // O nome cede se colidir com o plano: o plano e a informacao que este
+        // cabecalho existe para trazer, e o nome ja tem o icone o apoiando.
+        const int cabe = (xPlano - 8 - cx) / 6;
+        std::string txt = nome;
+        if (cabe < (int)txt.size()) txt.resize(cabe > 0 ? cabe : 0);
+        if (!txt.empty()) {
+            g->setTextSize(1);
+            g->setTextColor(cor);
+            g->setCursor(cx, y + 1);
+            g->print(txt.c_str());
+        }
+    }
+
+    // O plano na direita, em corpo 1. Sobre a faixa ele usa a cor de frente e
+    // nao a apagada: aqui ele e o dado, e o resto da linha e etiqueta.
+    if (!l.plano.empty() && xPlano > cx) {
+        g->setTextSize(1);
+        g->setTextColor(fgColor());
+        g->setCursor(xPlano, y + 1);
+        g->print(l.plano.c_str());
+    }
+}
+
 void drawCardSessoes(Arduino_Canvas *g, int x, int y, int w, int h,
                      const Status &s) {
     g->fillRoundRect(x, y, w, h, 10, CARD);
@@ -1084,16 +1239,36 @@ void drawCardSessoes(Arduino_Canvas *g, int x, int y, int w, int h,
     }
 
     // Duas linhas por sessao: o repo em cima, modelo e esforco em chips embaixo.
-    // 37 px cabe quatro sessoes inteiras nos 156 px uteis do card; o total ao
+    // 38 px cabe quatro sessoes inteiras nos 156 px uteis do card; o total ao
     // lado do rotulo ja diz quantas existem, e o "+N" quantas ficaram de fora.
     const int passo = 38;
-    const int cabem = (h - 34) / passo;
-    const int n = (int)s.agents.size() < cabem ? (int)s.agents.size() : cabem;
+    const int hCab  = H_CAB;
+    // UMA vez por desenho, e nunca dentro do laco: cada chamada aloca o vetor
+    // de linhas inteiro, e o card e redesenhado a cada poll.
+    const grupos::Lista lista = grupos::montarLista(s.agents, planosDe(s));
+
+    // Com UM provedor so nao ha cabecalho, e o plano vai para o lado do rotulo
+    // do card: o caso mais comum e o mais apertado, e gastar 12 px para dizer
+    // "CLAUDE" numa tela onde tudo e Claude seria pagar caro por nada.
+    if (!lista.planoUnico.empty())
+        drawPlanoUnico(g, x + 14 + 7 * 6 + 8 + (int)strlen(total) * 6 + 8,
+                       y + 14, x + w - 12, lista.planoUnico);
+
+    int fora = 0;
+    const int n = grupos::cabemLinhas(lista.linhas, h - 34, hCab, passo, fora);
     const int xLim = x + w - 12;
 
+    int ly = y + 34;
     for (int i = 0; i < n; i++) {
-        const Agent &a = s.agents[i];
-        const int ly = y + 34 + i * passo;
+        const grupos::Linha &linha = lista.linhas[i];
+
+        if (linha.cabecalho) {
+            drawCabecalhoGrupo(g, x + 14, ly, w - 26, linha);
+            ly += hCab;
+            continue;
+        }
+
+        const Agent &a = s.agents[linha.agente];
 
         // A marca de turno concluido, atras da linha inteira.
         drawNovoLinha(g, a.novo, x + 2, ly - 5, w - 4, passo - 2);
@@ -1108,9 +1283,9 @@ void drawCardSessoes(Arduino_Canvas *g, int x, int y, int w, int h,
         g->setCursor(x + 26, ly + 2);
         g->print(a.repo.substr(0, 9).c_str());
 
-        // Linha 2: chips. O agente so aparece quando foge de "claude" (senao
-        // seria a mesma palavra em toda linha); depois o modelo e o esforco.
-        // Cada chip so entra se couber — o card e estreito e o corte e em cascata.
+        // Linha 2: chips. O chip do AGENTE saiu: o cabecalho do grupo ja diz de
+        // que CLI a sessao e, e a largura que ele ocupava passa para o nome do
+        // modelo, que era o primeiro a ser cortado na cascata.
         int cx = x + 26;
         {
             // A TAG da maquina, primeiro chip da linha: e o dado que responde
@@ -1119,11 +1294,7 @@ void drawCardSessoes(Arduino_Canvas *g, int x, int y, int w, int h,
                                      corDaTag(a.origem), xLim);
             if (cwo) cx += cwo + 4;
         }
-        if (!a.agent.empty() && a.agent != "claude") {
-            int cw = drawChip(g, cx, ly + 20, a.agent, LARANJA, xLim);
-            if (cw) cx += cw + 4;
-        }
-        int cw = drawChip(g, cx, ly + 20, a.model, fgColor(), xLim);
+        int cw = drawChipCortando(g, cx, ly + 20, a.model, fgColor(), xLim);
         if (cw) cx += cw + 4;
         drawChip(g, cx, ly + 20, effortCurto(a.effort), C_YELL, xLim);
 
@@ -1137,15 +1308,18 @@ void drawCardSessoes(Arduino_Canvas *g, int x, int y, int w, int h,
             if (fill < 2) fill = 2;
             g->fillRect(bx, by - 1, fill, 3, colorOf(a.level));
         }
+        ly += passo;
     }
 
     // Nao coube todo mundo: dizer QUANTOS ficaram de fora e melhor do que uma
-    // lista que termina sem aviso e parece completa.
-    if (n < (int)s.agents.size()) {
+    // lista que termina sem aviso e parece completa. `fora` conta AGENTES, e
+    // nunca cabecalhos — "+1" tem que significar uma sessao que voce nao esta
+    // vendo.
+    if (fora > 0) {
         g->setTextColor(MUTED);
         g->setTextSize(1);
-        g->setCursor(x + 14, y + 34 + n * passo + 2);
-        g->printf("+%d", (int)s.agents.size() - n);
+        g->setCursor(x + 14, ly + 2);
+        g->printf("+%d", fora);
     }
 }
 
@@ -1907,37 +2081,50 @@ void drawSessoesRetrato(Arduino_Canvas *g, int x, int y, int w, int h,
                         const Status &s) {
     g->fillRoundRect(x, y, w, h, 10, CARD);
 
-    // Cabecalho no corpo 1 da grade, discreto como era: quem manda neste card
-    // sao os nomes das sessoes, e o rotulo so precisa dizer o que a lista e.
-    g->setTextColor(MUTED);
-    g->setTextSize(1);
-    g->setCursor(x + 12, y + 11);
-    g->print("AGENTS");
-
-    char total[8];
-    snprintf(total, sizeof(total), "%d", (int)s.agents.size());
-    g->setTextColor(s.agents.empty() ? MUTED : fgColor());
-    g->setCursor(x + 12 + 6 * 6 + 8, y + 11);
-    g->print(total);
-
+    // SEM rotulo e SEM total. Os 30 px que o "AGENTS 4" custava valem uma
+    // sessao inteira neste card, onde o passo e 26 — e ele dizia duas coisas
+    // que a lista ja diz de outro jeito: o que a lista e (obvio, sao nomes de
+    // repo com bolinha de estado) e quantas existem (o "+N" do rodape somado ao
+    // que esta na tela, e com grupos cada cabecalho traz a contagem dele).
     if (s.agents.empty()) {
         g->setTextColor(MUTED);
         g->setTextSize(2);
-        g->setCursor(x + 12, y + 34);
+        g->setCursor(x + 12, y + 20);
         g->print("-");
         return;
     }
 
     const int passo = 26;
-    const int cabem = (h - 30) / passo;
-    const int n = (int)s.agents.size() < cabem ? (int)s.agents.size() : cabem;
+    const int hCab  = H_CAB;
+    // UMA vez por desenho, e nunca dentro do laco: cada chamada aloca o vetor
+    // de linhas inteiro, e o card e redesenhado a cada poll.
+    const grupos::Lista lista = grupos::montarLista(s.agents, planosDe(s));
+
+    // Com UM provedor so o card nao diz nem de quem sao as sessoes nem qual o
+    // plano: as duas informacoes so existem para SEPARAR, e nao ha o que
+    // separar. O plano da conta unica ja esta implicito no cabecalho da tela,
+    // que mostra SESSION e WEEK dela. O resultado e um card identico ao de
+    // antes desta leva, com todo o espaco de volta para as sessoes.
+    const int y0 = y + 8;
+
+    int fora = 0;
+    const int n = grupos::cabemLinhas(lista.linhas, h - (y0 - y), hCab, passo,
+                                      fora);
     const int bw   = 40;                       // barra de contexto, na direita
     const int bx   = x + w - 6 - bw;
     const int xLim = bx - 6;                   // ate onde os chips podem ir
 
+    int ly = y0;
     for (int i = 0; i < n; i++) {
-        const Agent &a = s.agents[i];
-        const int ly = y + 30 + i * passo;
+        const grupos::Linha &linha = lista.linhas[i];
+
+        if (linha.cabecalho) {
+            drawCabecalhoGrupo(g, x + 12, ly, w - 24, linha);
+            ly += hCab;
+            continue;
+        }
+
+        const Agent &a = s.agents[linha.agente];
 
         // A marca de turno concluido, atras da linha inteira.
         drawNovoLinha(g, a.novo, x + 2, ly - 3, w - 4, passo - 2);
@@ -1966,7 +2153,8 @@ void drawSessoesRetrato(Arduino_Canvas *g, int x, int y, int w, int h,
 
         // Coluna FIXA para os chips, e nao "logo depois do repo": com o inicio
         // variavel os chips dancariam de linha para linha conforme o tamanho do
-        // nome, e a coluna deixaria de ser lida como coluna.
+        // nome, e a coluna deixaria de ser lida como coluna. O chip do AGENTE
+        // saiu — o cabecalho do grupo ja diz de que CLI a sessao e.
         int cx = x + 136;
         {
             // A TAG da maquina abre a coluna de chips, como no card deitado.
@@ -1974,11 +2162,7 @@ void drawSessoesRetrato(Arduino_Canvas *g, int x, int y, int w, int h,
                                      corDaTag(a.origem), xLim);
             if (cwo) cx += cwo + 4;
         }
-        if (!a.agent.empty() && a.agent != "claude") {
-            const int cw = drawChip(g, cx, ly + 5, a.agent, LARANJA, xLim);
-            if (cw) cx += cw + 4;
-        }
-        const int cw = drawChip(g, cx, ly + 5, a.model, fgColor(), xLim);
+        const int cw = drawChipCortando(g, cx, ly + 5, a.model, fgColor(), xLim);
         if (cw) cx += cw + 4;
         drawChip(g, cx, ly + 5, effortCurto(a.effort), C_YELL, xLim);
 
@@ -1988,13 +2172,16 @@ void drawSessoesRetrato(Arduino_Canvas *g, int x, int y, int w, int h,
             if (fill < 2) fill = 2;
             g->fillRect(bx, ly + 11, fill, 3, colorOf(a.level));
         }
+        ly += passo;
     }
 
-    if (n < (int)s.agents.size()) {
+    // `fora` conta AGENTES, e nunca cabecalhos — "+1" tem que significar uma
+    // sessao que voce nao esta vendo.
+    if (fora > 0) {
         g->setTextColor(MUTED);
         g->setTextSize(1);
-        g->setCursor(x + 12, y + 30 + n * passo + 3);
-        g->printf("+%d", (int)s.agents.size() - n);
+        g->setCursor(x + 12, ly + 3);
+        g->printf("+%d", fora);
     }
 }
 
@@ -2012,8 +2199,16 @@ void drawStatusRetrato(Arduino_Canvas *g, const Status &s, int staleSeconds) {
     // lib/metrics/view_model.h). `true` liga o ramo do master fora, que so
     // existe aqui: em pe ha largura para ele, e o rodape nao divide espaco com a
     // fileira de bichos.
-    const std::string txt = textoVetustez(s, staleSeconds, g_motivo, true);
-    g->setTextColor((staleSeconds > 0 || s.hooksEngine || s.viaSlave) ? C_YELL : MUTED);
+    std::string txt = textoVetustez(s, staleSeconds, g_motivo, true);
+
+    // Mesma regra do rodape deitado: o cartao ausente toma a linha, e so perde
+    // para o contato perdido. Ver o comentario longo la.
+    const bool semCartao = !storage::montado() && staleSeconds <= 0;
+    if (semCartao) txt = "SEM CARTAO";
+
+    g->setTextColor(semCartao ? C_RED
+                              : ((staleSeconds > 0 || s.hooksEngine || s.viaSlave)
+                                     ? C_YELL : MUTED));
     g->setTextSize(1);
     g->setCursor(PANEL_W - R_MARG - (int)txt.size() * 6, R_STATUS_Y);
     g->print(txt.c_str());

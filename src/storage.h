@@ -3,6 +3,23 @@
 
 namespace storage {
 bool begin();
+
+// O cartao montou? Falso ate `begin()` rodar, e falso para sempre depois de um
+// `begin()` que falhou.
+//
+// POR QUE ISTO PRECISA SER VISIVEL
+// Com a configuracao guardada na NVS, a placa SOBE sem cartao: associa o Wi-Fi,
+// busca o /status e desenha o painel inteiro. O que falta e tudo o que mora no
+// cartao — os sprites do rodape, do cabecalho, do clima e dos fundos. Na tela
+// isso aparece como bichos que nao trocam, e na serial como uma enxurrada de
+// `open(): File system is not mounted`. Sem este estado exposto, o painel
+// mostrava o defeito e nao sabia dizer o nome dele.
+//
+// Quando ele for falso, o remedio nao e software: o cartao trava em 0x107 e so
+// um corte REAL de energia o solta (USB fora E chave da bateria desligada) —
+// reset por software nao serve, porque com bateria a placa nunca desliga.
+bool montado();
+
 bool readFile(const char *path, std::string &out);
 
 // Le um arquivo inteiro para um buffer na PSRAM. Devolve nullptr se faltar

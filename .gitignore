@@ -31,6 +31,11 @@ __pycache__/
 # carrega nomes de repo, branches e o que cada turno custou.
 server/works.jsonl
 
+# Os planos declarados a mao, para os provedores que nao expoem o plano em disco
+# (ver planos.plano_declarado). Mora na INSTALACAO, ao lado do script, e diz o
+# que cada conta de quem roda isto paga — dado da maquina, nao do projeto.
+server/planos.json
+
 # Toolchain de host para `pio test -e native` (w64devkit portatil, ~575 MB).
 # Fica fora do git: e ferramenta de maquina, nao codigo do projeto.
 toolchain/

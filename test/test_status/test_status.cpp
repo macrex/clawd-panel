@@ -631,6 +631,35 @@ void test_api_antiga_sem_tag_nao_inventa_nome(void) {
     TEST_ASSERT_EQUAL_STRING("", s.agents[0].tag.c_str());
 }
 
+// ---- O plano de cada conta ----
+
+void test_planos_viram_pares(void) {
+    const char *j = R"({"planos":{"claude":"Max 5x","codex":"Free"},"labels":[]})";
+    const Status s = parseStatus(j);
+    TEST_ASSERT_TRUE(s.valid);
+    TEST_ASSERT_EQUAL_INT(2, (int)s.planos.size());
+    // A ordem do JSON e preservada; quem ordena os GRUPOS e a lib grupos.
+    TEST_ASSERT_EQUAL_STRING("claude", s.planos[0].agente.c_str());
+    TEST_ASSERT_EQUAL_STRING("Max 5x", s.planos[0].rotulo.c_str());
+}
+
+// Uma API antiga nao manda o campo. A placa tem que subir igual e simplesmente
+// nao mostrar plano nenhum.
+void test_sem_planos_a_lista_fica_vazia(void) {
+    const Status s = parseStatus(R"({"online":true,"labels":[]})");
+    TEST_ASSERT_TRUE(s.valid);
+    TEST_ASSERT_EQUAL_INT(0, (int)s.planos.size());
+}
+
+// `planos` com o tipo errado (uma API futura que o transforme em lista) nao
+// pode derrubar o parse do resto do documento.
+void test_planos_do_tipo_errado_e_ignorado(void) {
+    const Status s = parseStatus(R"({"planos":["claude"],"online":true,"labels":[]})");
+    TEST_ASSERT_TRUE(s.valid);
+    TEST_ASSERT_TRUE(s.online);
+    TEST_ASSERT_EQUAL_INT(0, (int)s.planos.size());
+}
+
 // A lista que as tres trancas compartilham. O teste existe para fixar QUAIS
 // caracteres estao nela: era escrita a mao em tres lugares, e acrescentar um
 // significava lembrar dos tres.
@@ -708,6 +737,9 @@ int main(int, char **) {
     RUN_TEST(test_origem_default_e_master);
     RUN_TEST(test_tag_da_maquina_desce_para_cada_agente);
     RUN_TEST(test_api_antiga_sem_tag_nao_inventa_nome);
+    RUN_TEST(test_planos_viram_pares);
+    RUN_TEST(test_sem_planos_a_lista_fica_vazia);
+    RUN_TEST(test_planos_do_tipo_errado_e_ignorado);
     RUN_TEST(test_quais_caracteres_movem_o_cursor);
     return UNITY_END();
 }

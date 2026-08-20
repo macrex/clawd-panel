@@ -68,7 +68,15 @@ void drenarCartao(uint32_t ms) {
     Serial.printf("sd: dreno de %lums\n", (unsigned long)ms);
 }
 
+// O resultado do ultimo `begin()`. Guardado porque a UI precisa dele muito
+// depois do boot: sem cartao a placa sobe e funciona pela metade, e o painel
+// tem que poder dizer isso em vez de so desenhar os buracos.
+bool g_montado = false;
+
+bool montado() { return g_montado; }
+
 bool begin() {
+    g_montado = false;
     if (!SD_MMC.setPins(SD_CLK, SD_CMD, SD_D0)) return false;
 
     for (int i = 0; i < SD_TENTATIVAS; i++) {
@@ -85,6 +93,7 @@ bool begin() {
         if (SD_MMC.begin("/sdcard", true)) {   // 1-bit
             if (i) Serial.printf("sd: montou na tentativa %d (dreno resolveu)\n",
                                  i + 1);
+            g_montado = true;
             return true;
         }
         SD_MMC.end();
