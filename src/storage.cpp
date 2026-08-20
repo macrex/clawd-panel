@@ -1,4 +1,5 @@
 #include "storage.h"
+#include "assets.h"
 #include "board_pins.h"
 #include <Arduino.h>
 #include <SD_MMC.h>
@@ -138,7 +139,8 @@ bool begin() {
     return false;
 }
 
-// As duas leituras comecam pela mesma pergunta, e ela nao e zelo: sem cartao
+// As duas leituras seguem a mesma ordem — flash primeiro, cartao depois — e a
+// pergunta sobre `g_montado` que sobra para o cartao nao e zelo: sem cartao
 // montado, `SD_MMC.open()` nao devolve so `false` — ele imprime
 // `open(): File system is not mounted` pelo log do VFS, que nao passa pelo
 // nosso `Serial.printf` e nao tem como ser silenciado no ponto de chamada.
@@ -148,6 +150,12 @@ bool begin() {
 // enxurrada inteira num lugar so, e e o lugar certo: quem guarda `g_montado` e
 // este arquivo.
 bool readFile(const char *path, std::string &out) {
+    // A FLASH MANDA. Um sprite que esta nos dois lugares vem daqui, e o cartao
+    // so responde pelo que nao coube na particao — que e o oposto da regra
+    // antiga ("o cartao manda"). A troca e o que torna o painel imune ao 0x107:
+    // com o cartao travado, tudo o que importa continua sendo desenhado.
+    if (assets::ler(path, out)) return true;
+
     if (!g_montado) return false;
     File f = SD_MMC.open(path, FILE_READ);
     if (!f || f.isDirectory()) return false;
@@ -160,6 +168,10 @@ bool readFile(const char *path, std::string &out) {
 
 uint8_t *readFileToPsram(const char *path, size_t &len) {
     len = 0;
+
+    // Ver o comentario em `readFile`: a flash manda.
+    if (uint8_t *daFlash = assets::lerParaPsram(path, len)) return daFlash;
+
     if (!g_montado) return nullptr;
     File f = SD_MMC.open(path, FILE_READ);
     if (!f || f.isDirectory()) return nullptr;

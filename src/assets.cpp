@@ -110,6 +110,24 @@ bool ler(const char *path, std::string &out) {
     AssetEntry e;
     if (!g_idx.valid || !acharAsset(g_idx, path, e)) return false;
 
+    // Um teto para o que pode ir para a RAM interna.
+    //
+    // Esta funcao devolve uma std::string, que mora na RAM interna — 327 KB no
+    // total, sustentando pilha e Wi-Fi. O maior sprite do blob tem 649 KB
+    // descomprimidos, e pedir isso aqui nao degrada: aborta. Quem le sprite usa
+    // `lerParaPsram`, e e por isso que as duas funcoes existem separadas (a
+    // mesma razao que separou `readFile` de `readFileToPsram` em storage.h).
+    //
+    // 64 KB e folgado para o que legitimamente passa por aqui — config e JSON
+    // pequeno — e barra o resto ANTES de alocar.
+    const size_t TETO_RAM_INTERNA = 64 * 1024;
+    if (e.cru > TETO_RAM_INTERNA) {
+        Serial.printf("assets: %s tem %u bytes, grande demais para a RAM "
+                      "interna — use lerParaPsram\n",
+                      path, (unsigned)e.cru);
+        return false;
+    }
+
     out.assign(e.cru, '\0');
     if (!descomprimir(path, (uint8_t *)&out[0], e.cru, e)) {
         out.clear();
