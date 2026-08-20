@@ -577,10 +577,18 @@ PLANOS_TTL_S = 3600.0
 
 # O modelo muda a cada turno, e a leitura custa entre 2 e 75 ms conforme o
 # numero de panes — caro demais para o caminho de uma requisicao que responde
-# em 2 a 14 ms. Meio minuto e curto o bastante para a troca de modelo aparecer
-# antes de virar mentira na tela, e longo o bastante para o custo sumir na
-# media: uma leitura a cada quinze polls.
-MODELOS_TTL_S = 30.0
+# em 2 a 14 ms, e por isso memorizado.
+#
+# Eram 30 s, e o preco disso foi medido na tela: trocar o modelo do Antigravity
+# e mandar uma mensagem levava cerca de um minuto ate o card mudar. Metade era
+# este cache. A outra metade e do proprio Antigravity, que so grava
+# `executor_metadata` quando o turno TERMINA — antes disso a sonda le o turno
+# anterior e devolve o modelo velho, corretamente; essa parte nao ha como
+# encurtar daqui.
+#
+# Oito segundos tiram da conta a parte que era nossa e o custo continua diluido:
+# uma leitura a cada quatro polls em vez de uma a cada quinze.
+MODELOS_TTL_S = 8.0
 
 # Quando parar para varrer as entradas vencidas de `_modelos_cache`.
 #

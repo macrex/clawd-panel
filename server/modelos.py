@@ -122,7 +122,7 @@ CAUDA_BYTES = 2 * 1024 * 1024
 # a custar 71 ms.
 #
 # Cinco segundos e folgado para o ciclo inteiro de panes e curto o bastante
-# para que o ciclo seguinte (30 s, pelo cache da API) SEMPRE varra de novo — na
+# para que o ciclo seguinte (8 s, pelo cache da API) SEMPRE varra de novo — na
 # pratica o cache nunca serve lista velha entre ciclos, so dentro de um. O
 # atraso maximo para uma sessao recem-CRIADA aparecer e o proprio TTL; turno
 # novo em sessao que ja existe aparece na hora, porque so a LISTA e memorizada,
@@ -400,7 +400,7 @@ def _metadados(banco):
     laco e custa 83 ms para os mesmos 8. Memorizar por (caminho, mtime) com o
     TTL de CACHE_TTL_S resolve, e e o mesmo remedio que `_por_recencia` aplicou
     a varredura; nao esta feito porque o custo ainda nao foi visto na
-    integracao, e o painel consulta uma vez a cada 30 s.
+    integracao, e o painel consulta uma vez a cada 8 s.
     """
     try:
         # mode=ro: o arquivo pertence a um processo VIVO, e o painel nao pode
