@@ -47,6 +47,56 @@ std::string formatApiTime(uint32_t ms);
 // formatApiTime, mas partindo de segundos — o livro-caixa conta assim.
 std::string formatDuration(int seconds);
 
+// O contador de turno: "45s", "2m34", "1h02". Difere de formatDuration porque
+// um contador que ANDA precisa dos segundos ("2m34" -> "2m35"); acima de uma
+// hora os minutos assumem o papel de "parte que anda". Negativo = sem dado,
+// devolve vazio.
+std::string formatTurno(int seconds);
+
+// O turno extrapolado entre polls: o state_age do ultimo payload mais o tempo
+// que passou desde que ele chegou. `congelado` (dado stale) devolve o valor
+// cru — numero que anda sobre payload morto mentiria. -1 atravessa.
+int turnoSegundos(int stateAgeS, uint32_t msDesdePoll, bool congelado);
+
+// ---- A memoria que impede o contador de andar para tras ----
+//
+// A extrapolacao acima e recalculada do zero a cada payload, e os dois lados
+// truncam segundos por conta propria: o servidor no state_age, a placa no
+// (now - chegada). Os cortes nao se alinham, entao cada sincronismo podia
+// recuar o numero exibido — na placa real o contador subia seis segundos e
+// voltava cinco, num serrote continuo. O numero que o usuario ve passa por
+// aqui e nunca regride dentro do mesmo (sessao, estado).
+struct TurnoReg {
+    std::string id;
+    AgentState  st;
+    int         seg;      // o turno CORRENTE, -1 quando nao ha
+    int         fim;      // o ultimo turno encerrado, -1 enquanto nao houver
+};
+
+// Devolve o valor a exibir e atualiza a memoria. As regras, em ordem:
+//   turno encerrado    (estado que nao cronometra) devolve o ultimo WORKING
+//                      congelado — quanto durou o turno que acabou de terminar,
+//                      que a UI pinta em cinza. Sem working conhecido, -1: uma
+//                      sessao encontrada ja parada nao tem o que relatar, e o
+//                      relogio do Blocked ("espera voce ha 3m") e outro assunto
+//                      e nao vira tempo de turno;
+//   seg < 0            zera o corrente e devolve -1 — sem clampar um futuro
+//                      turno curto pelo passado;
+//   estado trocou      comeca outro relogio (Working -> Blocked);
+//   recuo pequeno      segura o maior valor ja mostrado (jitter de poll);
+//   recuo grande       aceita: UserPromptSubmit no meio de um working rearma o
+//                      state_ts do servidor sem trocar o estado, e ai o recuo
+//                      e de minutos — verdade nova, nao ruido.
+// A fronteira entre os dois recuos e TURNO_RECUO_TOL_S.
+const int TURNO_RECUO_TOL_S = 10;
+int turnoMonotonico(std::vector<TurnoReg> &mem, const std::string &id,
+                    AgentState st, int seg);
+
+// Tira da memoria as sessoes que sairam da lista. Sem isto o vetor cresce um
+// registro por sessao aberta na vida da placa — pouco por dia, mas a placa
+// fica ligada na parede por semanas.
+void turnoPodar(std::vector<TurnoReg> &mem, const std::vector<Agent> &vivos);
+
 // ---- A linha de idade do dado, no rodape ----
 //
 // Ela existia duas vezes, palavra por palavra, nas duas orientacoes. As duas

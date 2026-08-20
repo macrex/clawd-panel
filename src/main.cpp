@@ -422,6 +422,7 @@ void tratarToque(uint32_t now, const TouchPoint &t, bool &redraw);
 void restaurarDoCartao(uint32_t now, bool &redraw);
 bool colherRede(uint32_t now, bool &redraw);
 void andarSemAApi(uint32_t now, bool &redraw);
+void atualizarTurnos(uint32_t now, bool &redraw);
 void contarConvivio(uint32_t now, bool &redraw);
 void vigiarTarefaDeRede(uint32_t now);
 void animarClawd(uint32_t now, bool dedoNaTela, bool &redraw);
@@ -558,6 +559,7 @@ void loop() {
     if (!colherRede(now, redraw)) return;
 
     andarSemAApi(now, redraw);
+    atualizarTurnos(now, redraw);
 
     contarConvivio(now, redraw);
     vigiarTarefaDeRede(now);
@@ -1023,6 +1025,41 @@ void andarSemAApi(uint32_t now, bool &redraw) {
             redraw = true;
         }
     }
+}
+
+// O contador de turno de cada agente, pronto para exibir em `turnoS`.
+//
+// Recalculado a cada volta: extrapola entre polls (turnoSegundos, congelando
+// no stale) e passa pela memoria que impede o numero de andar para tras no
+// sincronismo (turnoMonotonico) — o serrote de "sobe seis, volta cinco" veio
+// dos truncamentos desalinhados entre o state_age do servidor e o relogio da
+// placa. O redraw so dispara quando um segundo VISIVEL muda, e so na tela que
+// desenha o contador (a primeira, em pe).
+std::vector<TurnoReg> turnoMem;
+
+void atualizarTurnos(uint32_t now, bool &redraw) {
+    if (!haveLast) return;
+
+    // A poda acompanha o payload, nao a volta: e quando a lista pode mudar.
+    static uint32_t podadoEm = 0;
+    if (lastOkMs != podadoEm) {
+        turnoPodar(turnoMem, last.agents);
+        podadoEm = lastOkMs;
+    }
+
+    bool mudou = false;
+    for (Agent &a : last.agents) {
+        // So working e blocked tem turno CORRENTE. Nos demais o -1 entra e a
+        // memoria devolve o ultimo working encerrado, que a UI pinta em cinza.
+        const bool conta = a.state == AgentState::Working ||
+                           a.state == AgentState::Blocked;
+        const int cru  = conta ? turnoSegundos(a.stateAgeS, now - lastOkMs,
+                                               staleSec > 0)
+                               : -1;
+        const int novo = turnoMonotonico(turnoMem, a.id, a.state, cru);
+        if (novo != a.turnoS) { a.turnoS = novo; mudou = true; }
+    }
+    if (mudou && page == 0 && display::retrato()) redraw = true;
 }
 // O nivel do Clawd: o tempo de convivio, a trava de maximo, e o que vai
 // para o cartao e para a NVS.

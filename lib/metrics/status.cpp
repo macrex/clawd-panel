@@ -251,6 +251,8 @@ Status parseStatus(const char *json) {
         a.effort = strOr(v["effort"], "");
         a.level  = levelFromColor(v["color"]);
         a.age    = v["age"] | 0;
+        // null/ausente = -1: zero seria afirmar "mudou de estado agora".
+        a.stateAgeS = v["state_age"].is<int>() ? v["state_age"].as<int>() : -1;
         a.stale  = v["stale"] | (v["idle"] | false);   // ausente = publicando
         // Campo ausente (API antiga) cai em Unknown, e Unknown nao pulsa: uma
         // versao velha do servidor deixa o painel discreto, nunca alarmado.

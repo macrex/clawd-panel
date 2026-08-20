@@ -39,6 +39,14 @@ struct Agent {
     bool        hasContext = false;  // false quando a API manda context_pct null
     Level       level      = Level::Green;
     int         age        = 0;      // segundos desde a ultima publicacao dele
+    // Segundos desde a ultima mudanca de estado, dita pela API (state_age).
+    // Com state == Working e o tempo de processamento do turno — o mesmo
+    // contador do terminal do Claude Code. -1 = a API nao mandou.
+    int         stateAgeS  = -1;
+    // O MESMO tempo, pronto para exibir: extrapolado entre polls e protegido
+    // contra recuo (ver turnoMonotonico). Quem escreve e o laco principal, a
+    // cada volta — o parse deixa em -1, que e "nao desenha".
+    int         turnoS     = -1;
     // O heartbeat calou. Diz so isso — o motivo mora em `state`. Chamava-se
     // `idle`, e o nome mentia: da para estar ocioso publicando normalmente, e
     // trabalhando sem publicar.

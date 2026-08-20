@@ -67,13 +67,11 @@ TOPO = frozenset({
 # Cada entrada de `labels[]`. E o corte que mais rende, porque multiplica pelo
 # numero de agentes vivos.
 #
-#   state_age    a placa usa `age`, que e o silencio do heartbeat
 #   event        nome do hook que produziu o estado; diagnostico do servidor
 #   proc_alive   a placa ja recebe `stale`
 #   line         a statusline pronta, em UTF-8 — a maior de todas e a que o
 #                painel menos pode usar
 LABEL = frozenset({
-    "state_age",
     "event",
     "proc_alive",
     "line",

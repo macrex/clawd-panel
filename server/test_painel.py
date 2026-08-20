@@ -92,8 +92,11 @@ class TestEnxugar(unittest.TestCase):
             self.assertNotIn(chave, magro, chave)
 
         agente = magro["labels"][0]
-        for chave in ("state_age", "event", "proc_alive", "line"):
+        for chave in ("event", "proc_alive", "line"):
             self.assertNotIn(chave, agente, chave)
+        # O firmware aprendeu a ler o state_age (turno cronometrado na tela 1
+        # em pe); a regra do modulo e tirar da lista o que a placa passa a ler.
+        self.assertEqual(3, agente["state_age"])
 
         for chave in ("api_seconds", "blocks", "mediana_gap_seconds", "marcados"):
             self.assertNotIn(chave, magro["works"], chave)

@@ -135,6 +135,16 @@ void test_stale_ausente_significa_publicando(void) {
     TEST_ASSERT_FALSE(s.agents[0].stale);
 }
 
+void test_state_age_do_agente(void) {
+    Status s = parseStatus(
+        R"json({"labels":[{"session_id":"a","state":"working","state_age":154},
+                          {"session_id":"b","state":"idle"}]})json");
+    TEST_ASSERT_EQUAL_INT(154, s.agents[0].stateAgeS);
+    // Ausente (API antiga ou orfao do herdr) = -1, "nao sei" — nunca zero, que
+    // afirmaria "acabou de mudar de estado".
+    TEST_ASSERT_EQUAL_INT(-1, s.agents[1].stateAgeS);
+}
+
 void test_ordem_da_api_e_preservada(void) {
     // A API ja ordena por contexto decrescente. O firmware nao reordena.
     Status s = parseStatus(REAL);
@@ -735,6 +745,7 @@ int main(int, char **) {
     RUN_TEST(test_bloqueio_com_opcoes_demais_e_cortado);
     RUN_TEST(test_bloqueio_sem_pane_e_ignorado);
     RUN_TEST(test_origem_default_e_master);
+    RUN_TEST(test_state_age_do_agente);
     RUN_TEST(test_tag_da_maquina_desce_para_cada_agente);
     RUN_TEST(test_api_antiga_sem_tag_nao_inventa_nome);
     RUN_TEST(test_planos_viram_pares);

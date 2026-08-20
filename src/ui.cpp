@@ -2214,11 +2214,45 @@ void drawSessoesRetrato(Arduino_Canvas *g, int x, int y, int w, int h,
         if (cw) cx += cw + 4;
         drawChip(g, cx, ly + 5, effortCurto(a.effort), C_YELL, xLim);
 
-        g->drawFastHLine(bx, ly + 12, bw, TRACK);
-        if (a.hasContext && a.contextPct > 0) {
-            int fill = bw * a.contextPct / 100;
-            if (fill < 2) fill = 2;
-            g->fillRect(bx, ly + 11, fill, 3, colorOf(a.level));
+        // A ponta direita e a coluna de quem anda: enquanto a sessao roda (ou
+        // espera voce), o turno cronometrado entra ACIMA da barrinha de
+        // contexto — a barrinha nao sai, porque em pe ela e a unica fonte do
+        // contexto; ela so desce 3 px para abrir o andar do numero. O tempo e
+        // o mesmo contador do terminal do Claude Code — o zero dos dois e o
+        // UserPromptSubmit. O valor chega PRONTO do laco principal
+        // (last.agents[].turnoS): extrapolado entre polls e protegido contra
+        // andar para tras no sincronismo — ver turnoMonotonico.
+        //
+        // Terminado o turno, o numero NAO some: ele para onde parou e fica em
+        // cinza, dizendo quanto durou a ultima execucao daquela sessao. E a
+        // mesma regra do resto do painel — cor viva e o que esta acontecendo,
+        // cinza e o que ja aconteceu.
+        const int turno = a.turnoS;
+        const bool cronometra = turno >= 0;
+        // `topoY` e o pixel de cima do preenchimento; o trilho fica 1 abaixo,
+        // no meio dos 3 px, como sempre foi.
+        auto barrinha = [&](int topoY) {
+            g->drawFastHLine(bx, topoY + 1, bw, TRACK);
+            if (a.hasContext && a.contextPct > 0) {
+                int fill = bw * a.contextPct / 100;
+                if (fill < 2) fill = 2;
+                g->fillRect(bx, topoY, fill, 3, colorOf(a.level));
+            }
+        };
+        if (cronometra) {
+            const std::string t = formatTurno(turno);
+            const uint16_t cor = a.state == AgentState::Working ? H_WORKING
+                               : a.state == AgentState::Blocked ? H_BLOCKED
+                                                                : MUTED;
+            g->setTextColor(g_stale ? MUTED : cor);
+            g->setTextSize(1);
+            // ly+3 e nao ly+5 (linha dos chips): os 2 px pagam o vao entre o
+            // numero e a barrinha de baixo, que fica em ly+14..16.
+            g->setCursor(x + w - 6 - (int)t.size() * 6, ly + 3);
+            g->print(t.c_str());
+            barrinha(ly + 14);
+        } else {
+            barrinha(ly + 11);
         }
         ly += passo;
     }

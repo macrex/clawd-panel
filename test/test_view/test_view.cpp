@@ -17,6 +17,124 @@ void test_idade_em_minutos_e_horas(void) {
     TEST_ASSERT_EQUAL_STRING("ha 5h", formatAge(3600 * 5 + 61).c_str());
 }
 
+void test_formato_do_turno(void) {
+    TEST_ASSERT_EQUAL_STRING("0s",   formatTurno(0).c_str());
+    TEST_ASSERT_EQUAL_STRING("45s",  formatTurno(45).c_str());
+    TEST_ASSERT_EQUAL_STRING("59s",  formatTurno(59).c_str());
+    TEST_ASSERT_EQUAL_STRING("1m00", formatTurno(60).c_str());   // a virada
+    TEST_ASSERT_EQUAL_STRING("2m34", formatTurno(154).c_str());
+    TEST_ASSERT_EQUAL_STRING("59m59", formatTurno(3599).c_str());
+    TEST_ASSERT_EQUAL_STRING("1h00", formatTurno(3600).c_str());
+    TEST_ASSERT_EQUAL_STRING("1h02", formatTurno(3722).c_str()); // minutos, nao segundos
+    TEST_ASSERT_EQUAL_STRING("", formatTurno(-1).c_str());       // sem dado, sem texto
+}
+
+void test_turno_extrapola_entre_polls(void) {
+    // 154 s no payload + 1,8 s desde que ele chegou = 155 na tela.
+    TEST_ASSERT_EQUAL_INT(155, turnoSegundos(154, 1800, false));
+    TEST_ASSERT_EQUAL_INT(154, turnoSegundos(154, 999, false));
+}
+
+void test_turno_congela_no_stale_e_respeita_ausencia(void) {
+    // Dado velho: numero que anda sobre payload morto mentiria.
+    TEST_ASSERT_EQUAL_INT(154, turnoSegundos(154, 60000, true));
+    // -1 atravessa: quem desenha decide nao desenhar.
+    TEST_ASSERT_EQUAL_INT(-1, turnoSegundos(-1, 5000, false));
+    TEST_ASSERT_EQUAL_INT(-1, turnoSegundos(-1, 5000, true));
+}
+
+void test_turno_nao_anda_para_tras_no_sincronismo(void) {
+    // O serrote visto na placa: extrapola ate 156, chega payload novo e a soma
+    // recua para 152. O numero exibido nao pode voltar — jitter de poll nao e
+    // noticia.
+    std::vector<TurnoReg> mem;
+    TEST_ASSERT_EQUAL_INT(154, turnoMonotonico(mem, "a", AgentState::Working, 154));
+    TEST_ASSERT_EQUAL_INT(156, turnoMonotonico(mem, "a", AgentState::Working, 156));
+    TEST_ASSERT_EQUAL_INT(156, turnoMonotonico(mem, "a", AgentState::Working, 152));
+    TEST_ASSERT_EQUAL_INT(156, turnoMonotonico(mem, "a", AgentState::Working, 155));
+    TEST_ASSERT_EQUAL_INT(157, turnoMonotonico(mem, "a", AgentState::Working, 157));
+}
+
+void test_turno_recuo_grande_e_turno_novo(void) {
+    // UserPromptSubmit no meio de um working rearma o state_ts do servidor sem
+    // trocar o estado: recuo de minutos e verdade nova, nao jitter.
+    std::vector<TurnoReg> mem;
+    turnoMonotonico(mem, "a", AgentState::Working, 154);
+    TEST_ASSERT_EQUAL_INT(20, turnoMonotonico(mem, "a", AgentState::Working, 20));
+}
+
+void test_turno_troca_de_estado_zera_a_memoria(void) {
+    // Working -> Blocked comeca outro relogio: o "espera voce" nasce do zero.
+    std::vector<TurnoReg> mem;
+    turnoMonotonico(mem, "a", AgentState::Working, 154);
+    TEST_ASSERT_EQUAL_INT(3, turnoMonotonico(mem, "a", AgentState::Blocked, 3));
+}
+
+void test_turno_cada_sessao_tem_o_seu_relogio(void) {
+    std::vector<TurnoReg> mem;
+    turnoMonotonico(mem, "a", AgentState::Working, 154);
+    TEST_ASSERT_EQUAL_INT(7, turnoMonotonico(mem, "b", AgentState::Working, 7));
+    TEST_ASSERT_EQUAL_INT(155, turnoMonotonico(mem, "a", AgentState::Working, 155));
+}
+
+void test_turno_encerrado_congela_o_ultimo_valor(void) {
+    // Terminou o turno: o numero para onde parou e fica (a UI o pinta cinza).
+    std::vector<TurnoReg> mem;
+    turnoMonotonico(mem, "a", AgentState::Working, 154);
+    TEST_ASSERT_EQUAL_INT(154, turnoMonotonico(mem, "a", AgentState::Idle, -1));
+    TEST_ASSERT_EQUAL_INT(154, turnoMonotonico(mem, "a", AgentState::Idle, -1));
+    // Unknown tambem segura: a sessao que parou de publicar nao apaga o que
+    // ela fez — some quando ela sair da lista (turnoPodar).
+    TEST_ASSERT_EQUAL_INT(154, turnoMonotonico(mem, "a", AgentState::Unknown, -1));
+}
+
+void test_turno_novo_substitui_o_congelado(void) {
+    std::vector<TurnoReg> mem;
+    turnoMonotonico(mem, "a", AgentState::Working, 154);
+    turnoMonotonico(mem, "a", AgentState::Idle, -1);
+    // Turno novo: o vivo manda enquanto roda...
+    TEST_ASSERT_EQUAL_INT(5, turnoMonotonico(mem, "a", AgentState::Working, 5));
+    TEST_ASSERT_EQUAL_INT(9, turnoMonotonico(mem, "a", AgentState::Working, 9));
+    // ...e ao acabar e ELE que fica, nao o 154 de antes.
+    TEST_ASSERT_EQUAL_INT(9, turnoMonotonico(mem, "a", AgentState::Idle, -1));
+}
+
+void test_turno_ocioso_sem_historia_nao_inventa(void) {
+    // Sessao que a placa encontrou ja parada: nao ha turno para relatar.
+    std::vector<TurnoReg> mem;
+    TEST_ASSERT_EQUAL_INT(-1, turnoMonotonico(mem, "a", AgentState::Idle, -1));
+    TEST_ASSERT_EQUAL_INT(-1, turnoMonotonico(mem, "a", AgentState::Unknown, -1));
+}
+
+void test_bloqueio_nao_vira_tempo_de_turno(void) {
+    // "Espera voce ha 3m" e outro relogio: ao encerrar, o que fica e o ultimo
+    // WORKING conhecido — e sem nenhum, nada.
+    std::vector<TurnoReg> mem;
+    turnoMonotonico(mem, "a", AgentState::Blocked, 180);
+    TEST_ASSERT_EQUAL_INT(-1, turnoMonotonico(mem, "a", AgentState::Idle, -1));
+}
+
+void test_turno_sem_dado_apaga_a_memoria(void) {
+    // A API parou de mandar o campo: -1 atravessa e o registro morre — um
+    // futuro 5s do mesmo id nao pode ser clampado pelos 154 de antes.
+    std::vector<TurnoReg> mem;
+    turnoMonotonico(mem, "a", AgentState::Working, 154);
+    TEST_ASSERT_EQUAL_INT(-1, turnoMonotonico(mem, "a", AgentState::Working, -1));
+    TEST_ASSERT_EQUAL_INT(5, turnoMonotonico(mem, "a", AgentState::Working, 5));
+}
+
+void test_turno_poda_remove_sessoes_mortas(void) {
+    std::vector<TurnoReg> mem;
+    turnoMonotonico(mem, "a", AgentState::Working, 10);
+    turnoMonotonico(mem, "b", AgentState::Working, 20);
+    Status s;
+    Agent viva; viva.id = "b";
+    s.agents.push_back(viva);
+    turnoPodar(mem, s.agents);
+    TEST_ASSERT_EQUAL_INT(1, (int)mem.size());
+    TEST_ASSERT_EQUAL_STRING("b", mem[0].id.c_str());
+}
+
 void test_percentual_conhecido_e_desconhecido(void) {
     Metric m; m.pct = 26; m.known = true;
     TEST_ASSERT_EQUAL_STRING("26%", pctText(m).c_str());
@@ -266,6 +384,19 @@ int main(int, char **) {
     RUN_TEST(test_ordem_de_urgencia);
     RUN_TEST(test_sem_agentes_nao_inventa_estado);
     RUN_TEST(test_idade_em_segundos);
+    RUN_TEST(test_formato_do_turno);
+    RUN_TEST(test_turno_extrapola_entre_polls);
+    RUN_TEST(test_turno_congela_no_stale_e_respeita_ausencia);
+    RUN_TEST(test_turno_nao_anda_para_tras_no_sincronismo);
+    RUN_TEST(test_turno_recuo_grande_e_turno_novo);
+    RUN_TEST(test_turno_troca_de_estado_zera_a_memoria);
+    RUN_TEST(test_turno_cada_sessao_tem_o_seu_relogio);
+    RUN_TEST(test_turno_encerrado_congela_o_ultimo_valor);
+    RUN_TEST(test_turno_novo_substitui_o_congelado);
+    RUN_TEST(test_turno_ocioso_sem_historia_nao_inventa);
+    RUN_TEST(test_bloqueio_nao_vira_tempo_de_turno);
+    RUN_TEST(test_turno_sem_dado_apaga_a_memoria);
+    RUN_TEST(test_turno_poda_remove_sessoes_mortas);
     RUN_TEST(test_idade_em_minutos_e_horas);
     RUN_TEST(test_percentual_conhecido_e_desconhecido);
     RUN_TEST(test_pior_nivel_governa_o_pill);

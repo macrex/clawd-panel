@@ -62,6 +62,64 @@ std::string formatDuration(int seconds) {
     return formatApiTime((uint32_t)seconds * 1000u);
 }
 
+std::string formatTurno(int s) {
+    if (s < 0) return "";
+    char buf[16];
+    if (s < 60)        snprintf(buf, sizeof(buf), "%ds", s);
+    else if (s < 3600) snprintf(buf, sizeof(buf), "%dm%02d", s / 60, s % 60);
+    else               snprintf(buf, sizeof(buf), "%dh%02d", s / 3600,
+                                (s % 3600) / 60);
+    return buf;
+}
+
+int turnoSegundos(int stateAgeS, uint32_t msDesdePoll, bool congelado) {
+    if (stateAgeS < 0) return -1;
+    if (congelado) return stateAgeS;
+    return stateAgeS + (int)(msDesdePoll / 1000);
+}
+
+int turnoMonotonico(std::vector<TurnoReg> &mem, const std::string &id,
+                    AgentState st, int seg) {
+    const bool conta = st == AgentState::Working || st == AgentState::Blocked;
+
+    for (size_t i = 0; i < mem.size(); i++) {
+        TurnoReg &r = mem[i];
+        if (r.id != id) continue;
+
+        if (!conta) {
+            // Encerrou. O que estava correndo vira o tempo DAQUELE turno e
+            // fica na tela, em cinza. So o Working vira historia: o relogio do
+            // Blocked conta a espera, e nao o trabalho.
+            if (r.st == AgentState::Working && r.seg >= 0) r.fim = r.seg;
+            r.st  = st;
+            r.seg = -1;
+            return r.fim;
+        }
+        if (seg < 0) { r.st = st; r.seg = -1; return -1; }
+        if (r.st == st && r.seg >= 0 && seg < r.seg &&
+            r.seg - seg <= TURNO_RECUO_TOL_S)
+            return r.seg;                    // jitter: segura o ja mostrado
+        r.st  = st;                          // estado novo, avanco ou recuo real
+        r.seg = seg;
+        return seg;
+    }
+
+    // Sem registro: so nasce com turno correndo. Uma sessao vista pela
+    // primeira vez ja parada nao tem passado que a placa possa afirmar.
+    if (!conta || seg < 0) return -1;
+    mem.push_back({id, st, seg, -1});
+    return seg;
+}
+
+void turnoPodar(std::vector<TurnoReg> &mem, const std::vector<Agent> &vivos) {
+    for (size_t i = mem.size(); i > 0; i--) {
+        bool vivo = false;
+        for (const Agent &a : vivos)
+            if (a.id == mem[i - 1].id) { vivo = true; break; }
+        if (!vivo) mem.erase(mem.begin() + (i - 1));
+    }
+}
+
 std::string formatApiTime(uint32_t ms) {
     const uint32_t seg = ms / 1000;
     if (seg < 60)   return std::to_string(seg) + "s";
