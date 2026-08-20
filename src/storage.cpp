@@ -18,7 +18,21 @@ namespace storage {
 // SEMPRE roda em 400 kHz (SDMMC_FREQ_PROBING) qualquer que seja o parametro —
 // ele so vale depois que o cartao respondeu. Baixar a frequencia nao teria
 // mudado nada neste erro, e cobraria o boot inteiro em cartao lento.
-const int      SD_TENTATIVAS = 5;
+//
+// QUANTAS: duas. O numero e um orcamento de TEMPO DE BOOT, nao de teimosia.
+//
+// Cada tentativa que falha custa ~4 s — e o timeout do `send_op_cond`, nao uma
+// escolha nossa. Com cinco tentativas mais os drenos e as esperas, um cartao
+// travado segurava `setup()` por ~24 s ANTES de `net::begin()` (main.cpp), que
+// so roda depois. Medido nesta placa: com o cartao travado o primeiro pulso saiu
+// em t=27s; com o cartao bom, em t=5s. Os 22 s de diferenca sao um painel aceso
+// dizendo SEM WIFI enquanto ninguem tocou no Wi-Fi.
+//
+// E as cinco nao compravam nada. Tentativas identicas ja tinham sido reprovadas
+// duas vezes, e o dreno que diferenciava as tentativas 2 a 5 foi reprovado tres
+// (ver `drenarCartao`). Restam duas por prudencia — a segunda cobre uma falha
+// realmente transitoria — e o boot cego cai de ~24 s para ~8,5 s.
+const int      SD_TENTATIVAS = 2;
 const uint32_t SD_ESPERA_MS  = 300;
 // O dreno CRESCE a cada tentativa: 200, 400, 800, 1600 ms.
 //
@@ -68,6 +82,28 @@ void drenarCartao(uint32_t ms) {
     Serial.printf("sd: dreno de %lums\n", (unsigned long)ms);
 }
 
+// TERCEIRA IDEIA TESTADA E REPROVADA: pulsos de clock.
+//
+// A teoria era boa e a contradicao com o dreno era o que a tornava atraente: um
+// cartao SD que parou de responder costuma estar esperando terminar uma
+// transferencia, o padrao SD manda dar >=74 ciclos de clock antes do primeiro
+// comando, e o que este arquivo fazia era o OPOSTO — segurar CLK em LOW por ate
+// 1,6 s, que e a definicao de nenhum pulso.
+//
+// Foi implementado e medido nesta placa, com o cartao no estado 0x107: 2000
+// ciclos a ~170 kHz (CMD e D0 em pull-up, CLK por bit-bang), antes da primeira
+// tentativa. A serial confirmou que rodou (`sd: 2000 pulsos de clock`), e as
+// cinco tentativas seguintes deram 0x107 exatamente como antes. Removido.
+//
+// O QUE AS TRES REPROVACOES JUNTAS DIZEM
+// Dreno de pinos, dreno encadeado por contador na NVS e agora clock: nenhum
+// caminho que so mexe em CLK/CMD/D0 traz o cartao de volta. E esta placa nao
+// tem outro caminho — a JC3248W535 liga o slot em tres pinos e mais nada, sem
+// nenhum GPIO que corte o VDD do cartao. Um estado que so o power-on-reset
+// limpa e, por construcao, inalcancavel para o firmware. O que sobra ao
+// software nao e recuperar: e nao deixar o cartao chegar la, e nao cegar o
+// painel enquanto isso.
+
 // O resultado do ultimo `begin()`. Guardado porque a UI precisa dele muito
 // depois do boot: sem cartao a placa sobe e funciona pela metade, e o painel
 // tem que poder dizer isso em vez de so desenhar os buracos.
@@ -102,7 +138,17 @@ bool begin() {
     return false;
 }
 
+// As duas leituras comecam pela mesma pergunta, e ela nao e zelo: sem cartao
+// montado, `SD_MMC.open()` nao devolve so `false` — ele imprime
+// `open(): File system is not mounted` pelo log do VFS, que nao passa pelo
+// nosso `Serial.printf` e nao tem como ser silenciado no ponto de chamada.
+// Medido com o cartao travado: 511 dessas linhas em 15 s, de varios
+// carregadores diferentes (fundo, clima, nivel), cada uma custando a ida ao
+// driver para descobrir o que `montado()` ja sabia. Perguntar aqui apaga a
+// enxurrada inteira num lugar so, e e o lugar certo: quem guarda `g_montado` e
+// este arquivo.
 bool readFile(const char *path, std::string &out) {
+    if (!g_montado) return false;
     File f = SD_MMC.open(path, FILE_READ);
     if (!f || f.isDirectory()) return false;
     out.clear();
@@ -114,6 +160,7 @@ bool readFile(const char *path, std::string &out) {
 
 uint8_t *readFileToPsram(const char *path, size_t &len) {
     len = 0;
+    if (!g_montado) return nullptr;
     File f = SD_MMC.open(path, FILE_READ);
     if (!f || f.isDirectory()) return nullptr;
 
@@ -134,6 +181,7 @@ uint8_t *readFileToPsram(const char *path, size_t &len) {
 }
 
 bool writeFileAtomic(const char *path, const std::string &dados) {
+    if (!g_montado) return false;
     const std::string tmp = std::string(path) + ".tmp";
 
     File f = SD_MMC.open(tmp.c_str(), FILE_WRITE);
@@ -161,6 +209,7 @@ bool writeFileAtomic(const char *path, const std::string &dados) {
 }
 
 bool writeBufferAtomic(const char *path, const uint8_t *dados, size_t len) {
+    if (!g_montado) return false;
     const std::string tmp = std::string(path) + ".tmp";
 
     File f = SD_MMC.open(tmp.c_str(), FILE_WRITE);

@@ -1242,9 +1242,18 @@ bool drawIconInto(Arduino_Canvas *g, int x, int y, bool naPaginaDoNivel) {
 
 bool tickIconeCabecalho(uint32_t nowMs, bool podeCarregar) {
     if (!podeCarregar) return false;
-    // A primeira troca e imediata: esperar dez minutos para o rodizio comecar
-    // faria a placa parecer que ele nao existe.
-    if (rodizio.buf && (nowMs - rodizioMs) < RODIZIO_MS) return false;
+    // O relogio conta desde a ultima TENTATIVA, e nao desde o ultimo bicho que
+    // entrou em cena. A diferenca so aparece quando a carga falha, e ai ela e
+    // enorme: a guarda antiga era `rodizio.buf && ...`, entao sem cartao o
+    // `buf` ficava nulo, a guarda nunca valia, e este tick tentava reabrir um
+    // arquivo A CADA VOLTA DO LOOP. Medido na serial com o cartao travado:
+    // centenas de `cabecalho: falhou` por segundo, cada uma um `open()` num
+    // sistema de arquivos que nao esta montado.
+    //
+    // `rodizioMs` comeca em zero, entao a primeira troca continua imediata —
+    // esperar dez minutos para o rodizio comecar faria a placa parecer que ele
+    // nao existe.
+    if (rodizioMs && (nowMs - rodizioMs) < RODIZIO_MS) return false;
     rodizioMs = nowMs ? nowMs : 1;
     return trocarIconeCabecalho();
 }

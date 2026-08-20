@@ -17,6 +17,7 @@
 #include "falha.h"       // motivoDaFalha: por que o painel esta sem dado
 #include "view_model.h"     // semSessao: quem decide se o Clawd dorme
 #include "cache.h"
+#include "retrato.h"    // o ultimo status bom, na NVS e nao no cartao
 #include "hora.h"
 
 namespace {
@@ -51,8 +52,8 @@ Metric          sessionDaApi, weekDaApi;
 bool            cleaningDaApi = false;
 LimpezaWatch    limpezaWatch;
 
-// O retrato do ultimo status bom, para o boot com o servidor fora.
-const char     *CACHE_ARQ    = "/clawd/ultimo_status.json";
+// O retrato do ultimo status bom, para o boot com o servidor fora. Onde ele
+// mora e assunto de src/retrato.h — aqui so a memoria da ligada atual.
 bool            cacheTentado = false;
 uint32_t        cacheSalvoMs = 0;    // 0 = nunca gravou nesta ligada
 // Quantos segundos o dado ja tinha quando entrou na memoria. Zero no caminho
@@ -698,23 +699,23 @@ void tratarToque(uint32_t now, const TouchPoint &t, bool &redraw) {
 // O retrato do cartao, quando nao ha nada melhor.
 void restaurarDoCartao(uint32_t now, bool &redraw) {
     // Uma placa que liga com o PC desligado nao tinha nada a dizer: `haveLast`
-    // falso, tela "API FORA" e fim. O cartao guarda o ultimo retrato bom (ver
-    // lib/metrics/cache.h) e ele entra aqui, uma vez, no boot.
+    // falso, tela "API FORA" e fim. A NVS guarda o ultimo retrato bom (ver
+    // src/retrato.h e lib/metrics/cache.h) e ele entra aqui, uma vez, no boot.
     //
-    // SO depois do SNTP: sem hora nao da para saber de quando e o arquivo, e um
+    // SO depois do SNTP: sem hora nao da para saber de quando e o retrato, e um
     // retrato sem idade na tela e um dado velho com cara de fresco — que e
     // exatamente o defeito que este trabalho inteiro foi corrigir.
     //
-    // Uma tentativa so. Se o arquivo nao existe ou nao serve, ele nao vai passar
-    // a servir na volta seguinte, e reler o cartao a 50 Hz custaria caro.
+    // Uma tentativa so. Se nao existe ou nao serve, ele nao vai passar a servir
+    // na volta seguinte, e reler a 50 Hz custaria caro.
     if (!haveLast && !cacheTentado && hora::sincronizada()) {
         cacheTentado = true;
         std::string  txt;
-        Status       doCartao;
+        Status       daNvs;
         int          idade = 0;
-        if (storage::readFile(CACHE_ARQ, txt) &&
-            lerCache(txt.c_str(), hora::agoraLocal(), doCartao, idade)) {
-            last         = doCartao;
+        if (retrato::ler(txt) &&
+            lerCache(txt.c_str(), hora::agoraLocal(), daNvs, idade)) {
+            last         = daNvs;
             haveLast     = true;
             lastOkMs     = now;
             idadeBaseSeg = idade;
@@ -725,7 +726,7 @@ void restaurarDoCartao(uint32_t now, bool &redraw) {
             redraw       = true;
             Serial.printf("cache: retrato de %d s atras\n", idade);
         } else {
-            Serial.println("cache: sem retrato utilizavel no cartao");
+            Serial.println("cache: sem retrato utilizavel na NVS");
         }
     }
 }
@@ -1090,26 +1091,25 @@ void contarConvivio(uint32_t now, bool &redraw) {
     //
     // Fora do bloco de 60 s acima porque a PRIMEIRA gravacao nao pode esperar um
     // minuto: uma placa que liga, pega um /status bom e ve o PC desligar aos 40 s
-    // nao teria nada no cartao — e esse e exatamente o caso que o cache existe
+    // nao teria nada guardado — e esse e exatamente o caso que o retrato existe
     // para cobrir.
     //
-    // Depois da primeira, uma a cada CINCO minutos. O cache descreve um passado
-    // que vai ser lido horas depois — cinco minutos de defasagem nele nao mudam
-    // nenhuma decisao de quem olha o painel, e a cadencia de um minuto seriam
-    // 1440 pares de remove+rename por dia no FAT para reescrever quase sempre o
-    // mesmo texto.
+    // Depois da primeira, uma a cada CINCO minutos. O retrato descreve um
+    // passado que vai ser lido horas depois — cinco minutos de defasagem nele
+    // nao mudam nenhuma decisao de quem olha o painel, e a cadencia de um minuto
+    // seriam 1440 reescritas por dia de quase sempre o mesmo texto.
     //
     // Cinco minutos e nao "so quando mudou": o carimbo `em` muda a cada
     // gravacao por construcao, entao comparar o texto exigiria compara-lo
     // ignorando um campo — codigo que sabe a ordem do JSON para economizar uma
-    // escrita de 400 bytes.
+    // escrita de algumas centenas de bytes.
     //
     // So com dado FRESCO. Regravar um retrato ja velho faria o carimbo mentir a
-    // idade dele, que e a unica coisa que este arquivo precisa acertar.
+    // idade dele, que e a unica coisa que este retrato precisa acertar.
     if (haveLast && staleSec == 0 && hora::sincronizada()
         && (!cacheSalvoMs || (now - cacheSalvoMs) > 5UL * 60UL * 1000UL)) {
         const std::string txt = serializarCache(last, hora::agoraLocal());
-        if (!txt.empty() && storage::writeFileAtomic(CACHE_ARQ, txt))
+        if (!txt.empty() && retrato::guardar(txt))
             cacheSalvoMs = now ? now : 1;
     }
 
