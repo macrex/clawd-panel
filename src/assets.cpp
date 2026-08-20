@@ -73,6 +73,47 @@ bool begin() {
 
 namespace {
 
+// Descomprime com o estado do tinfl no HEAP, e nao na pilha.
+//
+// POR QUE NAO `tinfl_decompress_mem_to_mem`, QUE SERIA UMA LINHA
+// Porque ela derruba a placa. Aquela funcao declara um `tinfl_decompressor`
+// como variavel LOCAL, e essa struct carrega as tres tabelas de Huffman do
+// deflate: cada uma tem um look-up de 1024 entradas mais uma arvore de 1152,
+// as duas de 16 bits, e sao ~14 KB somados. A `loopTask` do Arduino tem 8 KB
+// (ARDUINO_LOOP_STACK_SIZE, no core), entao a primeira descompressao estoura a
+// pilha antes de descomprimir coisa alguma.
+//
+// MEDIDO NA PLACA, e o sintoma nao aponta para ca: a serial deu
+// `Guru Meditation Error: Core 1 panic'ed (Unhandled debug exception)` com
+// `Stack canary watchpoint triggered (loopTask)`, e a placa entrou em boot
+// loop. Nada na mensagem fala em compressao — o backtrace morre dentro da ROM.
+//
+// A saida nao e aumentar a pilha de todo o firmware por causa de uma funcao
+// que roda por alguns milissegundos: e chamar a API de baixo nivel com o
+// estado alocado no heap, que e exatamente o que a versao `mem_to_mem` faz,
+// menos o lugar onde ela poe a struct. Sai pelo mesmo caminho que entrou.
+size_t inflarNoHeap(uint8_t *destino, size_t destinoLen, const uint8_t *comp,
+                    size_t compLen) {
+    tinfl_decompressor *r =
+        (tinfl_decompressor *)malloc(sizeof(tinfl_decompressor));
+    if (!r) return 0;
+    tinfl_init(r);
+
+    size_t entrou = compLen;
+    size_t saiu   = destinoLen;
+    // Deflate RAW: sem TINFL_FLAG_PARSE_ZLIB_HEADER, porque o gerador usa wbits
+    // negativo. O flag de saida nao-circular vale porque `destino` ja tem o
+    // tamanho cru inteiro — sem ele o tinfl trabalharia numa janela de 32 KB e
+    // seria mais lento por nada. E sem HAS_MORE_INPUT: o buffer comprimido
+    // inteiro ja esta aqui.
+    const tinfl_status st = tinfl_decompress(
+        r, comp, &entrou, destino, destino, &saiu,
+        TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF);
+
+    free(r);
+    return (st == TINFL_STATUS_DONE) ? saiu : 0;
+}
+
 // O caminho comum das duas leituras: le o comprimido da flash e descomprime no
 // destino que ja veio dimensionado.
 bool descomprimir(const char *path, uint8_t *destino, size_t destinoLen,
@@ -92,9 +133,8 @@ bool descomprimir(const char *path, uint8_t *destino, size_t destinoLen,
         // wbits negativo. O flag de saida nao-circular vale porque `destino` ja
         // tem o tamanho cru inteiro — sem ele o tinfl trabalharia numa janela
         // de 32 KB e seria mais lento por nada.
-        const size_t saiu = tinfl_decompress_mem_to_mem(
-            destino, destinoLen, comp, e.comprimido,
-            TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF);
+        const size_t saiu = inflarNoHeap(destino, destinoLen, comp,
+                                         e.comprimido);
         ok = (saiu == e.cru);
         if (!ok)
             Serial.printf("assets: %s descomprimiu %u de %u\n", path,
