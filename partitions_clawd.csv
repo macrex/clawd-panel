@@ -1,0 +1,14 @@
+# Name,     Type, SubType,  Offset,   Size,     Flags
+# O `app1` do default_16MB virou `assets`: ele existia para OTA de firmware, que
+# este projeto nunca usou — a gravacao e por USB, pela skill esp32-flash. Em
+# troca, os sprites saem do cartao (que trava em 0x107 e nao volta por
+# software) e passam a morar na flash.
+#
+# `nvs` NAO muda de offset nem de tamanho: a config, o nivel e o retrato do
+# ultimo status moram la e precisam atravessar a virada.
+nvs,        data, nvs,      0x9000,   0x5000,
+otadata,    data, ota,      0xe000,   0x2000,
+app0,       app,  factory,  0x10000,  0x640000,
+assets,     data, 0x40,     0x650000, 0x640000,
+spiffs,     data, spiffs,   0xc90000, 0x360000,
+coredump,   data, coredump, 0xFF0000, 0x10000,
