@@ -109,16 +109,18 @@ bool drawCrewInto(Arduino_Canvas *g, int x, int chao);   // alinhado pela BASE
 //
 // Tem o proprio contador de quadros, no ritmo do proprio arquivo — nao esta
 // amarrado ao selo do rodape.
-// O icone do canto superior ESQUERDO. Normalmente e o Clawd DO NIVEL ATUAL —
-// ele substituiu o mago aqui, aproveitando que este canto mora na faixa do
-// flush de prefixo e anima por ~9 ms em vez de ~64.
 //
-// Na QUARTA pagina volta a ser o mago: la o bicho do nivel ja ocupa o centro da
-// tela, e o mesmo desenho duas vezes ficaria repetido.
+// Quem esta em cena e o bicho do RODIZIO, sorteado a cada dez minutos; o mago e
+// a reserva de quando nenhum carregou. Ja foi o Clawd do nivel atual, e nao e
+// mais: aquele sprite saiu com os 99 arquivos que nao cabem na particao de
+// flash.
 //
-// Devolve 0 enquanto o nivel nao e conhecido (antes da primeira resposta da API,
-// ou contra uma API sem o bloco vitalicio) e o cabecalho cai no logo da marca,
-// como ja fazia quando o wizard faltava no cartao.
+// `naPaginaDoNivel` sobrevive na assinatura mas nao decide mais nada — era ele
+// que trocava o bicho do nivel pelo mago na quarta pagina, para o mesmo desenho
+// nao aparecer duas vezes na mesma tela.
+//
+// Devolve 0 quando nem o rodizio nem o mago carregaram, e ai o cabecalho cai no
+// logo da marca.
 int  iconW(bool naPaginaDoNivel);                // 0 se nao ha o que desenhar
 int  iconH(bool naPaginaDoNivel);
 bool drawIconInto(Arduino_Canvas *g, int x, int y, bool naPaginaDoNivel);
@@ -221,41 +223,15 @@ int  climaH();
 bool tickClima(uint32_t nowMs);
 bool drawClimaInto(Arduino_Canvas *g, int x, int y);
 
-// ---- O sprite do nivel (quarta pagina) ----
-// Os 99 arquivos somam 28 MB e CRESCEM com o nivel: o level_001 tem 8 KB e o
-// level_099 tem 438 KB. Carregar todos e impossivel com ~5,5 MB de PSRAM livre,
-// entao fica UM residente, trocado so quando o nivel muda — o que acontece
-// poucas vezes por semana.
+// ---- O sprite do nivel e o fundo da quarta pagina: SAIRAM ----
+// Eram as duas maiores colecoes do cartao e sao as duas que nao cabem na
+// particao de flash: 99 bichos de nivel (27 MB, o level_099 sozinho tem 438 KB)
+// e 20 fundos por faixa de dezena (5,8 MB). Sem os dois, o resto da arte cabe
+// com folga de 3,6 MB.
 //
-// Este ANIMA, ao contrario do icone de clima, entao aqui o blob fica: animar
-// exige todos os quadros. Mesmo custo e mesmo padrao da pagina do Clawd —
-// quadro so com a pagina visivel, e animacao pausada com dedo na tela, porque
-// nesta pagina o quadro custa um flush inteiro e cegaria o toque no meio do
-// gesto.
-// ---- Fundo animado da quarta pagina ----
-// Um por DEZENA de nivel (1-9, 10-19, ... 90-99). Sao 240x160 com escala 2, ou
-// seja tela inteira, 8 quadros a 4 fps.
-//
-// Desenhado ANTES do cabecalho, senao ele apagaria o que ja foi posto na tela.
-// So um fica residente: os dez somam 3,5 MB no cartao e trocar de dezena
-// acontece algumas vezes por ano.
-void selecionarFundo(int n);
-bool fundoPronto();                      // para o pulso de diagnostico
-bool tickFundo(uint32_t nowMs);
-bool drawFundoInto(Arduino_Canvas *g);   // false quando nao ha fundo carregado
-
-void selecionarNivel(int n);
-// Qual nivel esta carregado agora, ou 0 se nenhum. A pagina desenha POR ESTE
-// numero em vez de recalcular o seu: com dois calculos independentes, o sprite e
-// o numero escrito podem discordar — foi o que aconteceu ao forcar um nivel para
-// demonstracao.
-int  nivelEmCena();
-int  nivelW();                                   // 0 se nao ha o que desenhar
-int  nivelH();
-bool tickNivel(uint32_t nowMs);
-bool drawNivelInto(Arduino_Canvas *g, int x, int y);
-// Vazio quando carregou. Diz QUAL arquivo falta, para a pagina nao aparecer
-// vazia sem explicacao — foi assim que a primeira versao enganou.
-const char *nivelErro();
+// A quarta pagina nao morreu junto — ela encolheu. Ficou com o numero do nivel,
+// a linha de contexto, as colunas de estatistica e a barra de XP; o que a placa
+// CONTA (turnos, custo, convivio guardado na NVS) nunca dependeu de sprite.
+// Ver src/assets.h.
 
 }

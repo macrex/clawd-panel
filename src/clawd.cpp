@@ -334,12 +334,10 @@ bool desenharIcone(Icone &ic, Arduino_Canvas *g, int x, int y) {
 //
 // O canto superior ESQUERDO vive dentro da faixa do envio de prefixo, entao o
 // que estiver ali anima por ~9 ms por quadro em vez dos ~64 de um flush
-// inteiro. Era o mago; agora e o Clawd do nivel atual.
+// inteiro. E o mesmo alvo para o mago e para os bichos do rodizio.
 const int ICONE_H = 36;
 
-// O mago continua existindo, mas so para a QUARTA pagina. La o bicho do nivel
-// ja ocupa o centro da tela, e repeti-lo no canto seria o mesmo desenho duas
-// vezes na mesma tela.
+// O mago: a reserva do cabecalho, para quando nenhum bicho do rodizio carregou.
 Icone mago;
 
 // O Token da tela de limite estourado (retrato). Quatro poses de 900 ms — os
@@ -356,7 +354,7 @@ Icone tokenIc;
 // estoura no meio de um poll normal, e ler 292 KB de cartao naquele instante
 // atrasaria a tela do aviso; o servidor cair ja e um evento de espera, e a
 // leitura cabe dentro dela. Sao ~150 KB de PSRAM que ficam livres o dia inteiro
-// para a foto de tela e para os fundos de nivel.
+// para a foto de tela.
 Icone offlineIc;
 
 // O bicho da tela de RESET, o par do Token: um limite estourou e o outro acabou
@@ -448,75 +446,6 @@ const int CLIMA_N = (int)(sizeof(CLIMA) / sizeof(CLIMA[0]));
 // decidir se o bicho vale o preco.
 Icone clima;
 int   climaFaixa = -1;          // -1 = nenhuma carregada ainda
-
-// ---- O bicho do nivel ----
-// Altura alvo: a quarta pagina vai de 54 (abaixo do cabecalho) a 300 (acima das
-// bolinhas), e 180 deixa espaco para o numero, a barra e as tres linhas.
-const int NIVEL_H = 180;
-
-Icone nivelIc;                  // grande, para a quarta pagina
-int   nivelCarregado = 0;       // 0 = nenhum
-
-// O MESMO bicho, em tamanho de cabecalho. Ele substituiu o mago no canto
-// superior esquerdo: ali dentro da faixa do flush de prefixo, animar custa
-// ~9 ms por quadro em vez dos ~64 de um flush inteiro.
-//
-// COMPARTILHA o blob com `nivelIc` em vez de reler o arquivo: no nivel 99 seriam
-// 438 KB duplicados para desenhar a mesma coisa em dois tamanhos. Ele tem o
-// proprio buffer e o proprio contador de quadros, mas o `sp` dele APONTA para
-// dentro do blob do outro.
-//
-// A consequencia perigosa: liberar o blob de `nivelIc` deixa este com ponteiro
-// solto. Os dois so podem ser trocados JUNTOS, e `selecionarNivel` e o unico
-// lugar que faz isso.
-Icone nivelHdr;
-
-// ---- Fundo animado da quarta pagina ----
-// Um por dezena de nivel: 001_009, 010_019, ... 090_099. Sao 240x160 com escala
-// 2, ou seja TELA INTEIRA (480x320), 8 quadros a 4 fps.
-//
-// Buffer PROPRIO e nao o `scratch` das animacoes de estado: aquele e
-// dimensionado pelo maior quadro delas, e um fundo de tela cheia (307 KB) faria
-// todas as outras pagarem esse tamanho a toa.
-//
-// So UM residente. Os dez somam 3,5 MB no cartao, e trocar de dezena acontece
-// algumas vezes por ano.
-uint8_t  *fundoBlob   = nullptr;
-Sprite    fundoSp;
-uint16_t *fundoBuf    = nullptr;
-size_t    fundoBufPx  = 0;
-int       fundoQuadro = 0;
-uint32_t  fundoUltimo = 0;
-int       fundoDezena = -1;      // -1 = nenhuma carregada
-bool      fundoEmPe   = false;   // o arquivo carregado e o da orientacao?
-// Qual quadro esta DECODIFICADO no buffer agora. -1 = nenhum.
-//
-// Sem isto o fundo era redecodificado a cada redesenho, e nao a cada quadro
-// dele: o bicho do nivel anda a 6 fps e o fundo a 4, entao a maioria dos
-// decodes de 307 KB era jogada fora. O buffer ja guarda o quadro pronto — so
-// faltava reparar que ele ainda servia.
-int       fundoNoBuf  = -1;
-
-// Um segundo tamanho do mesmo sprite, sem reler o arquivo. Ver `nivelHdr`.
-bool derivarIcone(const Icone &fonte, int alturaAlvo, Icone &ic) {
-    if (!fonte.blob) return false;
-    ic = Icone();
-    ic.blob = nullptr;              // NAO e dono: quem libera e a fonte
-    ic.sp   = fonte.sp;             // aponta para dentro do blob da fonte
-    ic.box  = fonte.box;            // o recorte do corpo e do sprite, nao do alvo
-
-    ic.div = (ic.box.h + alturaAlvo - 1) / alturaAlvo;
-    if (ic.div < 1) ic.div = 1;
-    ic.w = boxDownW(ic.box, ic.div);
-    ic.h = boxDownH(ic.box, ic.div);
-    ic.buf = (uint16_t *)ps_malloc((size_t)ic.w * ic.h * sizeof(uint16_t));
-    return ic.buf != nullptr;
-}
-// Guarda o caminho que falhou, para a pagina poder DIZER o que falta em vez de
-// aparecer vazia. Falha silenciosa de sprite ja custou uma investigacao inteira
-// aqui: PSRAM inalterada e igualmente compativel com "liberou o blob" e com "o
-// arquivo nunca existiu".
-char  nivelFalha[48] = "";
 
 // Indices na tabela CLIMA, para o override dos extremos poder aponta-los pelo
 // nome em vez de por numero solto.
@@ -1171,19 +1100,23 @@ void debugBlock(int lx, int ly, int lw, int lh, uint16_t cor) {
     display::raw()->draw16bitRGBBitmap(PANEL_W - ly - lh, lx, scratch, lh, lw);
 }
 
-// O icone do cabecalho e o Clawd DO NIVEL ATUAL. Era o mago; a troca aproveita
-// que este canto mora na faixa do flush de prefixo, entao o bicho anima aqui
-// pelo mesmo preco que o mago custava.
+// O icone do cabecalho: o bicho sorteado do rodizio, com o mago de reserva.
+// Este canto mora na faixa do flush de prefixo, entao animar aqui custa ~9 ms
+// por quadro em vez dos ~64 de uma tela inteira — foi por isso que o icone do
+// cabecalho nasceu neste canto.
 //
-// Enquanto o nivel nao e conhecido — antes da primeira resposta da API, ou
-// contra uma API que nao publica o vitalicio — devolve 0 e o cabecalho cai no
-// logo da marca, como ja fazia quando o wizard faltava no cartao.
-// `naPaginaDoNivel` troca o bicho pelo mago: la o Clawd do nivel ja ocupa o
-// centro da tela, e o mesmo desenho duas vezes na mesma tela fica repetido.
+// Devolve um icone sem `buf` quando nenhum dos dois carregou, e ai o cabecalho
+// cai no logo da marca.
 Icone &iconeDoCabecalho(bool naPaginaDoNivel) {
-    // O rodizio manda quando esta carregado; sem ele, o de sempre.
+    // O rodizio manda quando esta carregado; sem ele, o mago.
+    //
+    // A reserva era o bicho do nivel, derivado do sprite que a quarta pagina
+    // carregava. Esse sprite saiu — sao 99 arquivos e 27 MB que nao cabem na
+    // particao de flash, e a pagina do nivel deixou de mostrar o bicho. O mago
+    // ja estava aqui e ja era a arte desta pagina.
+    (void)naPaginaDoNivel;
     if (rodizio.buf) return rodizio;
-    return naPaginaDoNivel ? mago : nivelHdr;
+    return mago;
 }
 
 // Sorteia e carrega o proximo bicho do cabecalho. Devolve true quando trocou.
@@ -1297,159 +1230,6 @@ bool drawClimaInto(Arduino_Canvas *g, int x, int y) {
     return desenharIcone(clima, g, x, y);
 }
 
-void selecionarNivel(int n) {
-    if (n < 1)  n = 1;
-    if (n > 99) n = 99;
-    if (n == nivelCarregado) return;
-
-    // Libera ANTES de ler o proximo: com 438 KB no pior caso, segurar os dois
-    // ao mesmo tempo seria um pico de quase 1 MB sem necessidade nenhuma.
-    //
-    // E os DOIS juntos, nesta ordem: `nivelHdr` aponta para dentro do blob de
-    // `nivelIc`, entao soltar o blob deixando o cabecalho de pe seria ponteiro
-    // solto sendo desenhado 50 vezes por segundo.
-    if (nivelHdr.buf) { free(nivelHdr.buf); }
-    nivelHdr = Icone();
-    if (nivelIc.blob) { free(nivelIc.blob); nivelIc.blob = nullptr; }
-    if (nivelIc.buf)  { free(nivelIc.buf);  nivelIc.buf  = nullptr; }
-    nivelIc = Icone();
-
-    char path[48];
-    snprintf(path, sizeof(path), "/clawd/clawd_level_%03d.clw", n);
-    // Marca antes de tentar, pela mesma razao do clima: arquivo faltando no
-    // cartao nao pode virar uma releitura de SD a cada redesenho da pagina.
-    nivelCarregado = n;
-    if (carregarIcone(path, NIVEL_H, R_CORPO, nivelIc)) {
-        nivelFalha[0] = '\0';
-        // O mesmo bicho em tamanho de cabecalho, sem reler o arquivo.
-        derivarIcone(nivelIc, ICONE_H, nivelHdr);
-        Serial.printf("nivel %d: pagina %dx%d, cabecalho %dx%d\n",
-                      n, nivelIc.w, nivelIc.h, nivelHdr.w, nivelHdr.h);
-    } else {
-        snprintf(nivelFalha, sizeof(nivelFalha), "falta %s", path);
-        Serial.printf("clawd: %s\n", nivelFalha);
-    }
-}
-
-void selecionarFundo(int n) {
-    if (n < 1)  n = 1;
-    if (n > 99) n = 99;
-    // 1..9 -> 0, 10..19 -> 1, ... 90..99 -> 9. A primeira dezena tem nove
-    // niveis e nao dez, e e por isso que o nome dela comeca em 001 e nao 000.
-    const int dez = n / 10;
-    // A orientacao faz parte da chave: os fundos em pe sao ARQUIVOS proprios
-    // (recorte central 2:3 da mesma arte), porque girar um cenario de paisagem
-    // deitaria a cena. Girar a tela recarrega no proximo poll.
-    const bool emPe = display::retrato();
-    if (dez == fundoDezena && emPe == fundoEmPe) return;
-
-    if (fundoBlob) { free(fundoBlob); fundoBlob = nullptr; }
-    fundoSp = Sprite();
-    fundoDezena = dez;           // marca antes de tentar: arquivo faltando nao
-    fundoEmPe   = emPe;          // pode virar releitura de SD a cada quadro
-
-    char path[56];
-    snprintf(path, sizeof(path), "/clawd/background_level_%03d_%03d%s.clw",
-             dez == 0 ? 1 : dez * 10, dez * 10 + 9, emPe ? "_v" : "");
-
-    size_t len = 0;
-    fundoBlob = storage::readFileToPsram(path, len);
-    if (!fundoBlob) { Serial.printf("fundo: FALTA %s\n", path); return; }
-
-    fundoSp = parseSprite(fundoBlob, len);
-    if (!fundoSp.valid) {
-        free(fundoBlob); fundoBlob = nullptr;
-        Serial.printf("fundo: ilegivel %s\n", path);
-        return;
-    }
-
-    // O buffer so cresce. Os dez fundos tem o mesmo tamanho, entao na pratica
-    // ele e alocado uma vez e reaproveitado por todas as trocas de dezena.
-    const size_t px = spriteBufPixels(fundoSp);
-    if (px > fundoBufPx) {
-        if (fundoBuf) free(fundoBuf);
-        fundoBuf = (uint16_t *)ps_malloc(px * sizeof(uint16_t));
-        fundoBufPx = fundoBuf ? px : 0;
-    }
-    if (!fundoBuf) {
-        free(fundoBlob); fundoBlob = nullptr;
-        Serial.printf("fundo: sem PSRAM para %u px\n", (unsigned)px);
-        return;
-    }
-    fundoQuadro = 0;
-    fundoNoBuf  = -1;      // o buffer tem o quadro do fundo ANTERIOR
-    Serial.printf("fundo: %s  %dx%d  %d quadros  buffer %u KB\n",
-                  path, spriteBufW(fundoSp), spriteBufH(fundoSp),
-                  fundoSp.frames, (unsigned)(px * 2 / 1024));
-}
-
-bool fundoPronto() { return fundoBuf && fundoSp.valid; }
-
-bool tickFundo(uint32_t nowMs) {
-    if (!fundoBuf || !fundoSp.valid) return false;
-    if ((nowMs - fundoUltimo) < fundoSp.frameMs) return false;
-    fundoUltimo = nowMs;
-    fundoQuadro = (fundoQuadro + 1) % fundoSp.frames;
-    return true;
-}
-
-bool drawFundoInto(Arduino_Canvas *g) {
-    if (!fundoBuf || !fundoSp.valid) return false;
-
-    // Decodifica SO quando o quadro mudou. O buffer guarda o ultimo, e um
-    // redesenho pedido pelo bicho (6 fps) nao precisa refazer o fundo (4 fps) —
-    // era a maior parte do custo desta pagina, gasta em refazer pixel identico.
-    //
-    // SEM cor-chave: e fundo, entao ele pinta tudo. Pular pixel aqui deixaria
-    // buraco do fundo da tela aparecendo no meio da arte.
-    if (fundoNoBuf != fundoQuadro) {
-        if (!decodeFrame(fundoSp, fundoQuadro, fundoBuf, fundoBufPx,
-                         fundoSp.key))
-            return false;
-        fundoNoBuf = fundoQuadro;
-    }
-
-    const int W = spriteBufW(fundoSp);
-    const int H = spriteBufH(fundoSp);
-
-    // Caminho RAPIDO: escreve direto no framebuffer, sem passar por
-    // `draw16bitRGBBitmap`.
-    //
-    // Aquele metodo faz um `writePixel` por pixel — 153.600 chamadas, cada uma
-    // com corte de limites e a conta da rotacao. MEDIDO nesta placa: 176 ms dos
-    // 268 ms do quadro, ou seja 65% do custo da pagina inteira gasto em
-    // chamada de funcao.
-    //
-    // A conta da rotacao sai do proprio Arduino_Canvas (rotacao 1):
-    //     indice = x * altura + (altura - 1 - y)
-    // com x e y no espaco de DESENHO. Aqui ela e feita UMA vez por coluna, e o
-    // laco interno vira escrita sequencial no destino.
-    //
-    // So vale quando o fundo cobre a tela exatamente. Qualquer outro tamanho
-    // cai no metodo da biblioteca, que sabe recortar — velocidade nao pode
-    // custar desenho errado.
-    // Tamanho errado e ORIENTACAO errada: acontece por um instante depois de
-    // girar, ate o poll recarregar o arquivo da orientacao nova. Nao desenhar
-    // nada e o certo — quem chama pinta o fundo liso.
-    if (W != g->width() || H != g->height()) return false;
-
-    uint16_t *fb = g->getFramebuffer();
-    if (fb && display::retrato()) {
-        // Em pe a rotacao e 0 e o framebuffer tem exatamente o layout do
-        // quadro decodificado: uma copia linear, sem conta nenhuma.
-        memcpy(fb, fundoBuf, (size_t)W * H * sizeof(uint16_t));
-    } else if (fb) {
-        for (int x = 0; x < W; x++) {
-            uint16_t       *dst = fb + (size_t)x * H;
-            const uint16_t *src = fundoBuf + x + (size_t)(H - 1) * W;
-            for (int y = 0; y < H; y++) { *dst++ = *src; src -= W; }
-        }
-    } else {
-        g->draw16bitRGBBitmap(0, 0, fundoBuf, W, H);
-    }
-    return true;
-}
-
 void matarKenny(bool v) { kennyCaido = v; }
 bool kennyEstaMorto()   { return kennyCaido && kennyMorto.buf && slotDoKenny() >= 0; }
 
@@ -1552,17 +1332,6 @@ bool drawOfflineInto(Arduino_Canvas *g, int x, int y) {
     return desenharIcone(offlineIc, g, x, y);
 }
 
-int  nivelEmCena() { return nivelCarregado; }
-int  nivelW() { return nivelIc.buf ? nivelIc.w : 0; }
-int  nivelH() { return nivelIc.buf ? nivelIc.h : 0; }
-bool tickNivel(uint32_t nowMs) { return tickIcone(nivelIc, nowMs); }
-bool drawNivelInto(Arduino_Canvas *g, int x, int y) {
-    return desenharIcone(nivelIc, g, x, y);
-}
-
-const char *nivelErro() { return nivelIc.buf ? "" : nivelFalha; }
-
-
 int crewW() {
     // Elenco fechado: a fileira e sempre a mesma, e nao depende do selo ter
     // carregado — ele nem aparece.
@@ -1638,24 +1407,17 @@ bool tick(uint32_t nowMs) {
     if (andar(atual,  quadroSelo,   ultimoSelo,   nowMs)) avancou = true;
     if (andar(grande, quadroGrande, ultimoGrande, nowMs)) avancou = true;
 
-    // Os DOIS candidatos a icone do cabecalho: o bicho do nivel, que aparece em
-    // quase toda pagina, e o mago, que fica so na quarta. Ambos moram na faixa
-    // do prefixo e saem no mesmo envio.
-    //
-    // Os dois andam SEMPRE, mesmo o que esta fora da pagina em cena — congelar
-    // o escondido faria a animacao dar um salto ao trocar de pagina, que e a
-    // mesma razao dos contadores do selo e do bicho grande.
-    if (tickIcone(nivelHdr, nowMs)) avancou = true;
     // O bicho sorteado do rodizio anda no ritmo do proprio arquivo. Ele esta na
     // faixa do prefixo, entao sai no mesmo envio dos outros — animar aqui custa
     // ~9 ms por quadro, e nao os ~64 de uma tela inteira. Sprite de um quadro so
     // simplesmente nao anda, sem caso especial.
+    //
+    // Anda SEMPRE, mesmo com o cabecalho fora da pagina em cena — congelar o
+    // escondido faria a animacao dar um salto ao trocar de pagina, que e a mesma
+    // razao dos contadores do selo e do bicho grande.
     if (tickIcone(rodizio, nowMs)) avancou = true;
-    // O mago NAO anda, de proposito. Ele so aparece na quarta pagina, e la o
-    // quadro custa um flush INTEIRO — animar um enfeite de canto pelo preco da
-    // tela toda, numa pagina que ja paga o bicho do nivel e o fundo, e o pior
-    // negocio do painel. Ele fica no quadro de maior area opaca, escolhido no
-    // carregamento.
+    // O mago NAO anda, de proposito: ele e a reserva de quando o rodizio nao
+    // carregou, e fica no quadro de maior area opaca escolhido no carregamento.
     if (!sozinho)
         for (int i = slot0(); i < SLOTS; i++)
             if (tickIcone(comp[i][cara], nowMs)) avancou = true;

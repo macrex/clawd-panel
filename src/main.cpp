@@ -1073,13 +1073,6 @@ void contarConvivio(uint32_t now, bool &redraw) {
             contatoSalvo = 0;      // marca nova: forca a proxima gravacao
             redraw = true;         // o numero do dia mudou na tela
         }
-
-        // Escolhido AQUI e nao no desenho da quarta pagina: o bicho do nivel
-        // agora tambem e o icone do cabecalho, que aparece em TODAS as telas.
-        // Deixar a carga a cargo da pagina faria o cabecalho ficar sem bicho
-        // ate alguem deslizar ate la — e voltar ao logo depois de cada boot.
-        clawd::selecionarNivel(n);
-        clawd::selecionarFundo(n);
     }
 
     // Grava a cada 60 s, e SO quando mudou. O cartao nao precisa de escrita a
@@ -1208,20 +1201,19 @@ void animarClawd(uint32_t now, bool dedoNaTela, bool &redraw) {
         const bool avancouFaixa = clawd::tick(now);
 
         if (page == 3) {
-            // A QUARTA PAGINA anima SO o bicho do nivel e o fundo.
+            // A QUARTA PAGINA nao anima NADA, e por isso este ramo esta
+            // vazio de proposito.
             //
-            // O mago e o bicho do clima ficam parados aqui de proposito.
-            // Cada quadro deles custaria um flush de tela INTEIRA para
-            // mexer um enfeite de canto — e esta pagina ja paga duas
-            // animacoes grandes, que sao as que a pagina existe para
-            // mostrar. O resultado de `tick` e ignorado pelo mesmo motivo:
-            // nada do que ele avanca aparece aqui.
+            // Ela animava o bicho do nivel e o fundo — as duas coisas que a
+            // pagina existia para mostrar —, e os dois sairam com os
+            // sprites que nao cabem na particao de flash. O que sobrou e
+            // texto e uma barra, que so mudam quando chega status novo.
             //
-            // O fundo tem cadencia propria (4 fps contra 6 do bicho), mas
-            // os dois pedem o MESMO redesenho inteiro — entao pedir junto e
-            // de graca.
-            if (clawd::tickNivel(now)) redraw = true;
-            if (clawd::tickFundo(now)) redraw = true;
+            // O mago e o bicho do clima continuam parados aqui pela razao
+            // de sempre: cada quadro deles custaria um flush de tela
+            // INTEIRA para mexer um enfeite de canto. O resultado de `tick`
+            // segue ignorado pelo mesmo motivo — nada do que ele avanca
+            // aparece nesta pagina.
         } else {
             // A saida da tela do Cartman pede a tela inteira de volta, e
             // pede ANTES de qualquer redesenho parcial deste ciclo.
@@ -1372,7 +1364,7 @@ void pulso(uint32_t now) {
         Serial.printf("pulso t=%lus voltas=%lu wifi=%d rssi=%d http=%d/%dms "
                       "motivo=%s "
                       "ciclos=%lu fetch=%lums contato=%lus "
-                      "spr(clima=%d nivel=%d fundo=%d) "
+                      "spr(clima=%d) "
                       "cap=%lu/%d "
                       "heap=%u min=%u psram=%u stale=%d pg=%d\n",
                       (unsigned long)(now / 1000), (unsigned long)voltas,
@@ -1392,8 +1384,7 @@ void pulso(uint32_t now) {
                       // de erro sai uma vez so, no primeiro desenho, e quem
                       // abre o monitor depois disso nunca a ve. Aqui o estado
                       // fica visivel o tempo todo.
-                      clawd::climaW() ? 1 : 0, clawd::nivelW() ? 1 : 0,
-                      clawd::fundoPronto() ? 1 : 0,
+                      clawd::climaW() ? 1 : 0,
                       // Fotos pedidas / codigo da ultima. 200 = a foto chegou
                       // no PC; -2000 = nao ha 300 KB contiguos de PSRAM;
                       // -2001 = o canvas nao devolveu o quadro. Sem isto, a

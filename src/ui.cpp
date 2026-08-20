@@ -2813,44 +2813,23 @@ void drawPageNivel(Arduino_Canvas *g, const Status &s, const nivel::Estado &e,
     // chegou. Um nivel que regride seria pior do que um numero otimista.
     if (n < e.nivelMax) n = e.nivelMax;
 
-    // Quem manda e o nivel que esta CARREGADO, escolhido no laco principal.
-    // Recalcular aqui daria dois numeros independentes que podem discordar — o
-    // sprite mostrando um nivel e o texto escrevendo outro.
-    if (clawd::nivelEmCena() > 0) n = clawd::nivelEmCena();
-
-    // ---- O bicho, CENTRADO, como na pagina do Clawd ----
-    // Em pe as colunas descem para baixo do bicho e o fundo animado NAO existe:
-    // ele e arte de paisagem (480x320), e girar ou recortar mentiria a cena.
     const bool emPe = display::retrato();
     const int  W    = display::telaW();
-    const int bw = clawd::nivelW();
-    if (bw) {
-        clawd::drawNivelInto(g, (W - bw) / 2,
-                             (emPe ? 270 : 238) - clawd::nivelH());
-    } else {
-        // Sprite ausente DIZ o que falta. A primeira versao ficava so vazia, e
-        // uma pagina vazia parece decisao de projeto em vez de arquivo faltando.
-        g->setTextColor(MUTED);
-        g->setTextSize(1);
-        const char *err = clawd::nivelErro();
-        const int lw = (int)strlen(err) * 6;
-        g->setCursor((W - lw) / 2, 150);
-        g->print(err);
-    }
 
     char buf[48];
 
-    // ---- O numero, centrado abaixo do bicho, onde a pagina 3 poe o estado ----
+    // ---- O numero, no alto, onde o bicho ficava ----
+    // Corpo 3 e nao 2: com o sprite fora, "NIVEL 66" e o unico elemento grande
+    // da pagina, e no corpo antigo ele boiava no vazio que o bicho deixou.
     snprintf(buf, sizeof(buf), "NIVEL %d", n);
     g->setTextColor(g_stale ? MUTED : LARANJA);
-    g->setTextSize(2);
-    g->setCursor((W - (int)strlen(buf) * 12) / 2, emPe ? 282 : 244);
+    g->setTextSize(3);
+    g->setCursor((W - (int)strlen(buf) * 18) / 2, emPe ? 150 : 96);
     g->print(buf);
 
     // Uma linha so, com o periodo e o que falta. Sao as duas coisas que dao
     // contexto ao numero de cima — desde quando conta, e quanto ainda falta —
-    // e o terco inferior da tela nao comporta duas linhas centradas alem do
-    // titulo sem encostar na fileira do rodape.
+    // e uma linha basta: ela e legenda do titulo, e nao um bloco de texto.
     {
         char per[24] = "";
         char fal[32] = "";
@@ -2868,16 +2847,14 @@ void drawPageNivel(Arduino_Canvas *g, const Status &s, const nivel::Estado &e,
                      per, (per[0] && fal[0]) ? "  -  " : "", fal);
             g->setTextColor(MUTED);
             g->setTextSize(1);
-            g->setCursor((W - (int)strlen(buf) * 6) / 2, emPe ? 308 : 266);
+            g->setCursor((W - (int)strlen(buf) * 6) / 2, emPe ? 192 : 138);
             g->print(buf);
         }
     }
 
-    // ---- As colunas que ladeiam o bicho, no mesmo TOPO da pagina 3 ----
-    // Margens fixas pela mesma razao de la: a moldura do sprite varia muito,
-    // mas o CORPO fica centrado e estreito, entao as colunas caem sobre o vazio
-    // transparente da moldura e nao sobre o caranguejo.
-    const int TOPO = emPe ? 330 : 118;
+    // ---- As colunas ----
+    // As colunas sobem: sem o bicho, o terco do meio da pagina esta livre.
+    const int TOPO = emPe ? 240 : 180;
 
     snprintf(buf, sizeof(buf), "%ld", s.vitalicio.turnos);
     rotuloValor(g, 14, TOPO, "TURNOS", buf, 2, false);
@@ -2942,11 +2919,12 @@ void drawStatus(const Status &s, int page, const std::string &selectedId,
             drawRetrato(g, s, staleSeconds, opcaoArmada, telaToken, telaReset,
                         telaOffline);
         } else {
-            // O fundo do nivel pinta a tela inteira; nas outras paginas (ou
-            // enquanto o arquivo da orientacao ainda nao carregou) fica o
-            // fundo liso.
-            const bool fundoPintou = (page == 3) && clawd::drawFundoInto(g);
-            if (!fundoPintou) g->fillScreen(BG);
+            // A limpeza e incondicional de novo. A quarta pagina pintava a
+            // tela inteira com o fundo animado do nivel e pulava o
+            // `fillScreen`; esse fundo saiu — era arte por faixa de dezena
+            // (20 arquivos), e a particao de flash so cabe o que o painel usa
+            // em toda tela. Ver src/assets.h.
+            g->fillScreen(BG);
             drawHeaderRetrato(g, s, staleSeconds, page == 2);
             // Bloqueio em qualquer pagina em pe vira a pergunta em tela
             // cheia: em pe o painel e de relance, e a pergunta e o unico
@@ -2977,13 +2955,13 @@ void drawStatus(const Status &s, int page, const std::string &selectedId,
         return;
     }
 
-    // O fundo da pagina do nivel vem ANTES de tudo: ele pinta a tela inteira,
-    // entao desenhado depois apagaria cabecalho, conteudo e rodape.
-    //
-    // E quando ele pinta, a limpeza NAO acontece: `fillScreen` custa 15,7 ms
-    // medidos para escrever pixel que o fundo cobre no instante seguinte.
-    const bool fundoPintou = (page == 3) && clawd::drawFundoInto(g);
-    if (!fundoPintou) g->fillScreen(BG);
+    // A limpeza e incondicional de novo. A quarta pagina pintava a tela inteira
+    // com o fundo animado do nivel e pulava o `fillScreen` para nao gastar os
+    // 15,7 ms medidos escrevendo pixel que o fundo cobria no instante seguinte;
+    // esse fundo saiu — era arte por faixa de dezena (20 arquivos), e a
+    // particao de flash so cabe o que o painel usa em toda tela. Ver
+    // src/assets.h.
+    g->fillScreen(BG);
     drawHeader(g, s, staleSeconds, page == 3);
 
     // Tela de OFFLINE so quando nao ha agente NENHUM. Com `online: false` mas
