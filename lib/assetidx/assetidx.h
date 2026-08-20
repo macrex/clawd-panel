@@ -9,7 +9,7 @@
 // lib/. Quem toca a particao e descomprime e src/assets.cpp.
 //
 // ZERO COPIA: `AssetIdx` aponta para dentro do buffer de quem chamou, que
-// precisa continuar vivo. A tabela do painel tem 86 entradas de 36 bytes — 3 KB
+// precisa continuar vivo. A tabela do painel tem 62 entradas de 36 bytes — 2 KB
 // que nao vale a pena duplicar.
 struct AssetEntry {
     uint32_t offset     = 0;   // do inicio do arquivo
