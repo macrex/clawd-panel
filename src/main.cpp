@@ -2,6 +2,7 @@
 #include <utility>
 #include "display.h"
 #include "storage.h"
+#include "assets.h"      // os sprites na flash; a flash manda, o cartao completa
 #include "configstore.h"   // a config guardada na NVS, para o cartao que falha
 #include "touch_axs.h"
 #include "net.h"
@@ -465,6 +466,11 @@ void setup() {
     // agentes na tela, em vez de um cartaz parado.
     const bool temCartao = storage::begin();
     if (!temCartao) Serial.println("sd: nao montou — tentando a reserva da NVS");
+
+    // Depois do cartao e nao antes: a serial ja disse se o cartao montou, e a
+    // linha dos assets ao lado dela deixa o boot dizendo de onde os sprites vao
+    // sair nesta ligada.
+    assets::begin();
 
     std::string raw;
     bool doCartao = false;
