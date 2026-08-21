@@ -1,4 +1,5 @@
 #include "ui.h"
+#include <math.h>
 #include "display.h"
 #include "board_pins.h"
 #include "view_model.h"
@@ -122,10 +123,25 @@ uint16_t misturar(uint16_t a, uint16_t b, int num, int den) {
 // fundo de quase toda linha; a tela em pe passa o SUBCARD, porque la a linha
 // tem um fundo proprio e misturar contra o CARD deixaria a marca mais ESCURA
 // que a linha que ela deveria realcar.
+// `raio` maior que zero = a linha e um CARTAO de canto redondo, e o realce tem
+// que ter o mesmo canto. Com `fillRect` dentro de um cartao arredondado a marca
+// vaza pelos quatro cantos, e o cartao perde a forma justamente no momento em
+// que ele quer chamar atencao — que e o oposto do que a marca serve para fazer.
+//
+// Com raio, o traco de margem tambem sai: naquela coluna mora a faixa de
+// estado, que ja e a marca da borda daquele cartao. Ele so existe na forma
+// reta, onde nao ha faixa nenhuma.
 void drawAvisoLinha(Arduino_Canvas *g, bool marcado,
-                    int x, int y, int w, int h, uint16_t base = CARD) {
+                    int x, int y, int w, int h, uint16_t base = CARD,
+                    int raio = 0) {
     if (!marcado || g_stale) return;
-    g->fillRect(x, y, w, h, misturar(base, H_DONE, AVISO_FUNDO_NUM, AVISO_FUNDO_DEN));
+    const uint16_t fundo = misturar(base, H_DONE, AVISO_FUNDO_NUM,
+                                    AVISO_FUNDO_DEN);
+    if (raio > 0) {
+        g->fillRoundRect(x, y, w, h, raio, fundo);
+        return;
+    }
+    g->fillRect(x, y, w, h, fundo);
     g->fillRect(x, y, AVISO_TRACO_W, h,
                 misturar(base, H_DONE, AVISO_TRACO_NUM, AVISO_TRACO_DEN));
 }
@@ -162,10 +178,17 @@ const uint16_t LARANJA = RGB565(217, 119, 87);   // laranja da marca, #D97757
 const int NOVO_FUNDO_NUM = 5, NOVO_FUNDO_DEN = 48;
 const int NOVO_TRACO_NUM = 4, NOVO_TRACO_DEN = 6;
 
+// `raio` como em drawAvisoLinha: a marca acompanha o canto do cartao.
 void drawNovoLinha(Arduino_Canvas *g, bool novo, int x, int y, int w, int h,
-                   uint16_t base = CARD) {
+                   uint16_t base = CARD, int raio = 0) {
     if (!novo || g_stale) return;
-    g->fillRect(x, y, w, h, misturar(base, LARANJA, NOVO_FUNDO_NUM, NOVO_FUNDO_DEN));
+    const uint16_t fundo = misturar(base, LARANJA, NOVO_FUNDO_NUM,
+                                    NOVO_FUNDO_DEN);
+    if (raio > 0) {
+        g->fillRoundRect(x, y, w, h, raio, fundo);
+        return;
+    }
+    g->fillRect(x, y, w, h, fundo);
     g->fillRect(x, y, AVISO_TRACO_W, h,
                 misturar(base, LARANJA, NOVO_TRACO_NUM, NOVO_TRACO_DEN));
 }
@@ -1382,13 +1405,13 @@ void drawCardSessoes(Arduino_Canvas *g, int x, int y, int w, int h,
         {
             // A TAG da maquina, primeiro chip da linha: e o dado que responde
             // "onde isto esta rodando", e vem antes do que o agente e.
-            const int cwo = drawChip(g, cx, ly + 20, tagDe(a.tag),
+            const int cwo = drawChip(g, cx, ly + 19, tagDe(a.tag),
                                      corDaTag(a.origem), xLim);
             if (cwo) cx += cwo + 4;
         }
-        int cw = drawChipCortando(g, cx, ly + 20, a.model, fgColor(), xLim);
+        int cw = drawChipCortando(g, cx, ly + 19, a.model, fgColor(), xLim);
         if (cw) cx += cw + 4;
-        drawChip(g, cx, ly + 20, effortCurto(a.effort), C_YELL, xLim);
+        drawChip(g, cx, ly + 19, effortCurto(a.effort), C_YELL, xLim);
 
         // Mini-barra de contexto embaixo dos chips: cor do nivel, preenchida
         // pelo context%. Fina (3 px) para nao roubar a linha da quarta sessao —
@@ -2221,15 +2244,45 @@ void drawColunaLimite(Arduino_Canvas *g, int x, int y, int w, int h,
 //
 // A cascata de corte e a mesma de la: cada chip so entra se couber ate o limite,
 // e o `xLimite` para aqui antes da barra, que e o elemento que nunca sai.
+// A FAIXA DE ESTADO na borda esquerda de um cartao arredondado.
+//
+// Um `fillRect` reto aqui era o defeito visivel: o cartao curva no canto e a
+// faixa nao, entao ela sobrava para fora em cima e embaixo e o cartao inteiro
+// lia como quadrado — justo do lado onde mora a unica cor forte da linha.
+//
+// A borda esquerda de um retangulo de canto redondo, na linha `i`, esta a
+// `r - sqrt(r^2 - dy^2)` pixels de x, onde `dy` e a distancia daquela linha ao
+// centro do arco. Fora dos arcos o deslocamento e zero e a faixa e reta, que e
+// a maior parte da altura.
+void drawFaixaEstado(Arduino_Canvas *g, int x, int y, int w, int h, int r,
+                     uint16_t cor) {
+    for (int i = 0; i < h; i++) {
+        int dy = -1;
+        if (i < r)          dy = r - 1 - i;
+        else if (i >= h - r) dy = i - (h - r);
+        int dx = 0;
+        if (dy >= 0) {
+            const float dentro = (float)(r * r - dy * dy);
+            dx = r - (int)(dentro > 0 ? sqrtf(dentro) + 0.5f : 0);
+            if (dx < 0) dx = 0;
+        }
+        g->drawFastHLine(x + dx, y + i, w, cor);
+    }
+}
+
+// SEM MOLDURA EXTERNA, e essa e a diferenca desta versao.
+//
+// Desde que cada sessao virou um cartao proprio, o cartao que os continha nao
+// fazia trabalho nenhum: desenhava uma borda em volta de objetos que ja tinham
+// borda, e a parte dele que sobrava era o vao vazio embaixo da lista — ~110 px
+// de moldura com nada dentro, que lia como erro. Sem ele o vazio e fundo, e
+// fundo vazio nao parece erro; de quebra os cartoes vao de margem a margem e
+// ganham 12 px de largura.
+//
+// SEM rotulo e SEM total, como antes: o que a lista e ja e obvio, e quantas
+// existem esta no "+N" do rodape somado ao que esta na tela.
 void drawSessoesRetrato(Arduino_Canvas *g, int x, int y, int w, int h,
                         const Status &s) {
-    g->fillRoundRect(x, y, w, h, 10, CARD);
-
-    // SEM rotulo e SEM total. Os 30 px que o "AGENTS 4" custava valem quase
-    // uma sessao inteira neste card — e ele dizia duas coisas
-    // que a lista ja diz de outro jeito: o que a lista e (obvio, sao nomes de
-    // repo com bolinha de estado) e quantas existem (o "+N" do rodape somado ao
-    // que esta na tela, e com grupos cada cabecalho traz a contagem dele).
     if (s.agents.empty()) {
         g->setTextColor(MUTED);
         g->setTextSize(2);
@@ -2267,15 +2320,21 @@ void drawSessoesRetrato(Arduino_Canvas *g, int x, int y, int w, int h,
     // A geometria do sub-cartao. `SC_X` e a margem dele dentro do card, e a
     // faixa de estado nasce nessa mesma coluna — a faixa E a borda esquerda do
     // cartao, e nao um enfeite encostado nela.
-    const int SC_X    = x + 6;
-    const int SC_W    = w - 12;
+    const int SC_X    = x;                     // sem moldura: margem a margem
+    const int SC_W    = w;
     const int SC_H    = passo - 4;             // 4 px de respiro entre cartoes
+    // 8, o MESMO raio dos cards de SESSAO e SEMANA logo acima. Era 6, e o
+    // degrau entre os dois aparecia: dois arredondamentos diferentes na mesma
+    // tela leem como descuido, nao como hierarquia.
+    const int SC_R    = 8;
     const int FAIXA_W = 3;
     const int TXT_X   = SC_X + 12;             // depois da faixa, com folga
-    const int DIR     = x + w - 14;            // a ponta direita util
-    const int PCT_W   = 26;                    // "100%" na grade
-    const int BAR_W   = 44;
-    const int BAR_X   = DIR - PCT_W - 6 - BAR_W;
+    const int DIR     = SC_X + SC_W - 8;       // a ponta direita util
+    // O trilho do contexto abre na MESMA coluna do conteudo, e nao 4 px antes.
+    // Na direita ele ja terminava alinhado com o percentual; na esquerda comecava
+    // colado na faixa de estado, e a barra parecia sair de dentro dela em vez de
+    // ser a base do cartao. Agora as duas pontas batem com o que esta acima.
+    const int TRILHO_X = TXT_X;
 
     int ly = y0;
     for (int i = 0; i < n; i++) {
@@ -2285,18 +2344,19 @@ void drawSessoesRetrato(Arduino_Canvas *g, int x, int y, int w, int h,
         // SUBCARD. Ele resolve o que a linha de dois andares deixava em aberto:
         // sem fundo proprio, o segundo andar de uma sessao se lia como o
         // primeiro da seguinte.
-        g->fillRoundRect(SC_X, ly, SC_W, SC_H, 6, SUBCARD);
+        g->fillRoundRect(SC_X, ly, SC_W, SC_H, SC_R, SUBCARD);
 
         // As marcas de turno novo e concluido misturam contra o SUBCARD, que e
         // o fundo real desta linha agora.
-        drawNovoLinha(g, a.novo, SC_X, ly, SC_W, SC_H, SUBCARD);
-        drawAvisoLinha(g, a.done, SC_X, ly, SC_W, SC_H, SUBCARD);
+        drawNovoLinha(g, a.novo, SC_X, ly, SC_W, SC_H, SUBCARD, SC_R);
+        drawAvisoLinha(g, a.done, SC_X, ly, SC_W, SC_H, SUBCARD, SC_R);
 
         // A FAIXA DE ESTADO substitui a bolinha. Sao 3x36 px contra os 10 de
         // diametro do ponto: a diferenca entre ambar e verde a dois metros
         // deixa de ser chute, e este painel vive a essa distancia. A cor e
         // exatamente a da bolinha da tela deitada (ver corDoEstado).
-        g->fillRect(SC_X, ly + 2, FAIXA_W, SC_H - 4, corDoEstado(a.state, a.done));
+        drawFaixaEstado(g, SC_X, ly, FAIXA_W, SC_H, SC_R,
+                        corDoEstado(a.state, a.done));
 
         // ANDAR DE CIMA: o nome, e o turno na ponta.
         //
@@ -2316,7 +2376,7 @@ void drawSessoesRetrato(Arduino_Canvas *g, int x, int y, int w, int h,
             if ((int)nw <= limNome) break;
             nome.pop_back();
         }
-        g->setCursor(TXT_X, ly + 18);
+        g->setCursor(TXT_X, ly + 15);
         g->print(nome.c_str());
         g->setFont();
 
@@ -2335,12 +2395,15 @@ void drawSessoesRetrato(Arduino_Canvas *g, int x, int y, int w, int h,
                                                                 : MUTED;
             g->setTextColor(g_stale ? MUTED : cor);
             g->setTextSize(1);
-            g->setCursor(DIR - (int)t.size() * 6, ly + 8);
+            g->setCursor(DIR - (int)t.size() * 6, ly + 6);
             g->print(t.c_str());
         }
 
         // ANDAR DE BAIXO: o icone da CLI, os chips, e o contexto na ponta.
-        const int xLim = BAR_X - 6;
+        // O percentual do contexto ocupa a ponta direita desta fileira; o
+        // trilho dele mora na base do cartao (ver abaixo), entao aqui o limite
+        // dos chips e so o numero.
+        const int xLim = DIR - 26 - 8;
         int cx = TXT_X;
 
         // O ICONE DO FORNECEDOR abre a linha — e o que sobrou do cabecalho de
@@ -2354,7 +2417,7 @@ void drawSessoesRetrato(Arduino_Canvas *g, int x, int y, int w, int h,
         {
             const provedores::Icone ic = provedores::iconeDe(a.agent);
             if (ic.w) {
-                drawIconeProvedor(g, cx, ly + 23 + (14 - ic.h) / 2, ic,
+                drawIconeProvedor(g, cx, ly + 19 + (14 - ic.h) / 2, ic,
                                   g_stale ? MUTED : provedores::corDe(a.agent),
                                   SUBCARD);
                 cx += ic.w + 8;
@@ -2368,36 +2431,66 @@ void drawSessoesRetrato(Arduino_Canvas *g, int x, int y, int w, int h,
         // custa 17 px — mais que os 8 px de borda de um chip inteiro. O texto
         // solto parecia mais limpo e era mais largo.
         {
-            const int cwo = drawChip(g, cx, ly + 23, tagDe(a.tag),
+            const int cwo = drawChip(g, cx, ly + 20, tagDe(a.tag),
                                      corDaTag(a.origem), xLim);
             if (cwo) cx += cwo + 4;
         }
-        const int cw = drawChipCortando(g, cx, ly + 23, a.model, fgColor(), xLim);
+        const int cw = drawChipCortando(g, cx, ly + 20, a.model, fgColor(), xLim);
         if (cw) cx += cw + 4;
         // O esforco POR EXTENSO enquanto couber. A abreviacao (XH, Mx, Hi)
         // existe para a linha de 26 px da tela deitada, onde o chip inteiro nao
         // entra; aqui "XHigh" e uma palavra que se le, enquanto "XH" precisa
         // ser decifrada. O drawChip devolve 0 quando nao cabe, entao a queda
         // para a forma curta e o proprio retorno.
-        if (!drawChip(g, cx, ly + 23, a.effort, C_YELL, xLim))
-            drawChip(g, cx, ly + 23, effortCurto(a.effort), C_YELL, xLim);
+        if (!drawChip(g, cx, ly + 19, a.effort, C_YELL, xLim))
+            drawChip(g, cx, ly + 20, effortCurto(a.effort), C_YELL, xLim);
 
-        // O contexto: a barrinha e o NUMERO ao lado dela. Sozinha, uma barra de
-        // 44 px nao separa 8% de 14% — sao dois tracinhos de comprimento
-        // parecido. O numero e o mesmo dado, so que legivel.
-        g->drawFastHLine(BAR_X, ly + 29, BAR_W, TRACK);
+        // O CONTEXTO ATRAVESSA O CARTAO. A barrinha de 44 px na ponta direita
+        // existia porque a barra precisa de posicao FIXA para as sessoes serem
+        // comparaveis entre si — e essa posicao fixa deixava ~40 px de vazio
+        // entre ela e os chips. Na base do cartao ela e as duas coisas: fixa
+        // (mesma origem e mesma largura em toda linha, entao ainda se comparam)
+        // e larga, e o vazio some porque nao ha mais o que ficar entre elas.
+        //
+        // De 44 para 252 px de resolucao. Antes, 8% e 34% eram dois tracinhos
+        // de comprimento parecido; agora as linhas alinhadas leem como um
+        // grafico de barras deitado, e a que esta enchendo o contexto acende
+        // sozinha — a cor continua sendo a do nivel que a API manda.
+        //
+        // 3 px de altura e o trilho bem apagado, de proposito: a faixa de
+        // estado ja e a cor forte do cartao, e duas cores fortes por cartao
+        // seria uma lista listrada.
+        // PILULA, como as barras dos cards de limite: `fillRoundRect` de raio
+        // metade da altura nas duas pontas, e nao uma linha reta. O piso e o
+        // mesmo de `drawBar` — preenchimento menor que a altura nao vira pilula
+        // e sumiria, entao 1% aparece como um ponto, e ponto e informacao.
+        // 2 px. E o trilho DO CONTEXTO, e nao as barras de SESSAO e SEMANA la em
+        // cima, que continuam em 8 — ali a barra e o assunto do card, aqui ela e
+        // o rodape de um cartao de 40 px que ja carrega nome e chips.
+        //
+        // A conta da altura: nome ate ~17, chips de 19 a 33, trilho em 35 e 36.
+        // Sobram 3 px ate a base. Foi de 4 para 3 e de 3 para 2 na placa — em 4
+        // o trilho encostava no pe do cartao e lia como a borda dele; em 3 ainda
+        // pesava mais que a linha de texto acima.
+        const int trilhoW = DIR - TRILHO_X;
+        const int TR_H    = 2;
+        const int TR_Y    = ly + 35;
+        g->fillRoundRect(TRILHO_X, TR_Y, trilhoW, TR_H, TR_H / 2, TRACK);
         if (a.hasContext && a.contextPct > 0) {
-            int fill = BAR_W * a.contextPct / 100;
-            if (fill < 2) fill = 2;
-            g->fillRect(BAR_X, ly + 28, fill, 3, colorOf(a.level));
+            int fill = trilhoW * a.contextPct / 100;
+            if (fill < TR_H) fill = TR_H;
+            g->fillRoundRect(TRILHO_X, TR_Y, fill, TR_H, TR_H / 2,
+                             colorOf(a.level));
         }
         {
+            // O numero sobe para a fileira dos chips: la ele nao disputa altura
+            // com nada, e o trilho fica inteiro.
             char buf[8];
             if (a.hasContext) snprintf(buf, sizeof(buf), "%d%%", a.contextPct);
             else              snprintf(buf, sizeof(buf), "-");
             g->setTextColor(a.hasContext ? MUTED : TRACK);
             g->setTextSize(1);
-            g->setCursor(DIR - (int)strlen(buf) * 6, ly + 25);
+            g->setCursor(DIR - (int)strlen(buf) * 6, ly + 22);
             g->print(buf);
         }
 
