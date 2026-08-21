@@ -38,10 +38,11 @@ def sessao(sid, pane_id=None, estado=api.WORKING, repo="proj", ts=None):
     return sid, rec
 
 
-def dele(pane, estado, agente="claude", repo="x"):
+def dele(pane, estado, agente="claude", repo="x", seq=None):
     """Um agente como o herdr o devolve, já passado por `parse_agentes`."""
     return {"pane_id": pane, "state": estado, "agent": agente,
-            "cwd": "/tmp/" + repo, "repo": repo, "focused": False, "name": ""}
+            "cwd": "/tmp/" + repo, "repo": repo, "focused": False, "name": "",
+            "seq": seq}
 
 
 class TesteIntegracaoStatus(unittest.TestCase):
@@ -93,6 +94,28 @@ class TesteIntegracaoStatus(unittest.TestCase):
         self.assertEqual(orfao["state"], api.IDLE)
         self.assertNotEqual(orfao["state"], "done")
         self.assertTrue(orfao["done"])
+
+    def test_orfao_ganha_state_age_depois_de_uma_transicao(self):
+        # O tempo de turno dos agentes que nao sao nossos: o herdr nao tem
+        # relogio, entao o carimbo vem da transicao que o sensor observou.
+        self.povoar(sessao("s1", pane_id=None, repo="nosso"))
+        herdr._aplicar([dele("w9:p9", "idle", agente="codex", seq=10)])
+        herdr._aplicar([dele("w9:p9", "working", agente="codex", seq=11)])
+
+        orfao = next(a for a in api.build_status()["labels"]
+                     if a["agent"] == "codex")
+        self.assertIsInstance(orfao["state_age"], int)
+        self.assertLess(orfao["state_age"], 5)      # acabou de virar
+
+    def test_orfao_sem_transicao_observada_nao_afirma_idade(self):
+        # Visto pela primeira vez ja trabalhando: nao ha como saber desde
+        # quando, e um numero pequeno seria mentira com cara de verdade.
+        self.povoar(sessao("s1", pane_id=None, repo="nosso"))
+        herdr._aplicar([dele("w9:p9", "working", agente="codex", seq=10)])
+
+        orfao = next(a for a in api.build_status()["labels"]
+                     if a["agent"] == "codex")
+        self.assertIsNone(orfao["state_age"])
 
     def test_contagem_done_do_topo_bate_com_os_itens_sinalizados(self):
         self.povoar(

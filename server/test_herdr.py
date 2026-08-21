@@ -49,11 +49,133 @@ class TesteParse(unittest.TestCase):
         self.assertEqual(len(ags), 1)
         self.assertEqual(ags[0]["pane_id"], "w1:p2")
 
+    def test_seq_de_mudanca_de_estado_e_guardado(self):
+        # `state_change_seq` e o unico sinal de transicao que o herdr da — ele
+        # nao tem timestamp nenhum (medido em `agent list`, `get` e `explain`).
+        s = ('{"result":{"agents":[{"pane_id":"w1:p1","agent_status":"working",'
+             '"state_change_seq":1167}]}}')
+        self.assertEqual(herdr.parse_agentes(s)[0]["seq"], 1167)
+
+    def test_sem_seq_ou_com_seq_estranho_vira_None(self):
+        # Herdr anterior a este campo, ou um formato que mudou: `carimbar` cai
+        # em comparar o estado em vez de confiar num valor que nao entende.
+        for cru in ('', ',"state_change_seq":"x"', ',"state_change_seq":null'):
+            s = ('{"result":{"agents":[{"pane_id":"w1:p1",'
+                 '"agent_status":"working"' + cru + '}]}}')
+            self.assertIsNone(herdr.parse_agentes(s)[0]["seq"], repr(cru))
+
     def test_repo_sai_do_cwd_nos_dois_separadores(self):
         self.assertEqual(herdr.repo_de(r"E:\OneDrive\projetos\esp32-s3"), "esp32-s3")
         self.assertEqual(herdr.repo_de("/home/x/proj/"), "proj")
         self.assertEqual(herdr.repo_de(""), "")
         self.assertEqual(herdr.repo_de(None), "")
+
+
+def _ag(pane, estado, seq=None, ts="ausente"):
+    """Um agente como `parse_agentes` devolve. `ts` ausente = ainda sem carimbo."""
+    a = {"pane_id": pane, "state": estado, "agent": "codex", "cwd": "",
+         "repo": "", "focused": False, "name": "", "seq": seq}
+    if ts != "ausente":
+        a["state_ts"] = ts
+    return a
+
+
+class TesteCarimbo(unittest.TestCase):
+    """O relogio dos agentes que nao sao nossos.
+
+    O herdr nao diz desde quando um agente esta trabalhando, entao quem carimba
+    somos nos: o sensor ja consulta a cada 2 s, e uma transicao entre duas
+    consultas e tudo o que ele precisa ver.
+    """
+
+    def test_pane_novo_nao_ganha_carimbo(self):
+        # Um Codex que ja estava rodando quando a API subiu: carimbar agora
+        # diria "5s" para um turno de dez minutos. `None` e a resposta honesta.
+        saida = herdr.carimbar([], [_ag("w1:p1", "working", 10)], now=100.0)
+        self.assertIsNone(saida[0]["state_ts"])
+
+    def test_seq_igual_herda_o_carimbo(self):
+        antes = [_ag("w1:p1", "working", 10, ts=100.0)]
+        saida = herdr.carimbar(antes, [_ag("w1:p1", "working", 10)], now=140.0)
+        self.assertEqual(saida[0]["state_ts"], 100.0)
+
+    def test_seq_diferente_carimba_agora(self):
+        antes = [_ag("w1:p1", "idle", 10, ts=100.0)]
+        saida = herdr.carimbar(antes, [_ag("w1:p1", "working", 11)], now=140.0)
+        self.assertEqual(saida[0]["state_ts"], 140.0)
+
+    def test_seq_muda_com_o_mesmo_estado_tambem_carimba(self):
+        # working -> idle -> working inteiro entre duas consultas: o estado
+        # parece o mesmo e o turno e OUTRO. So o seq conta essa historia.
+        antes = [_ag("w1:p1", "working", 10, ts=100.0)]
+        saida = herdr.carimbar(antes, [_ag("w1:p1", "working", 12)], now=140.0)
+        self.assertEqual(saida[0]["state_ts"], 140.0)
+
+    def test_sem_seq_cai_no_estado(self):
+        # Herdr anterior ao campo: o estado igual herda, o diferente carimba.
+        antes = [_ag("w1:p1", "working", None, ts=100.0)]
+        igual = herdr.carimbar(antes, [_ag("w1:p1", "working", None)], now=140.0)
+        self.assertEqual(igual[0]["state_ts"], 100.0)
+        outro = herdr.carimbar(antes, [_ag("w1:p1", "idle", None)], now=140.0)
+        self.assertEqual(outro[0]["state_ts"], 140.0)
+
+    def test_pane_sem_carimbo_ganha_um_na_primeira_transicao(self):
+        antes = [_ag("w1:p1", "idle", 10, ts=None)]
+        saida = herdr.carimbar(antes, [_ag("w1:p1", "working", 11)], now=140.0)
+        self.assertEqual(saida[0]["state_ts"], 140.0)
+
+    def test_None_herdado_continua_None(self):
+        antes = [_ag("w1:p1", "working", 10, ts=None)]
+        saida = herdr.carimbar(antes, [_ag("w1:p1", "working", 10)], now=140.0)
+        self.assertIsNone(saida[0]["state_ts"])
+
+    def test_cada_pane_tem_o_seu(self):
+        antes = [_ag("w1:p1", "working", 10, ts=100.0),
+                 _ag("w2:p1", "idle", 20, ts=50.0)]
+        saida = herdr.carimbar(antes, [_ag("w2:p1", "working", 21),
+                                       _ag("w1:p1", "working", 10)], now=140.0)
+        por_pane = {a["pane_id"]: a["state_ts"] for a in saida}
+        self.assertEqual(por_pane["w1:p1"], 100.0)
+        self.assertEqual(por_pane["w2:p1"], 140.0)
+
+    def test_pane_que_sumiu_nao_volta(self):
+        antes = [_ag("w1:p1", "working", 10, ts=100.0)]
+        saida = herdr.carimbar(antes, [], now=140.0)
+        self.assertEqual(saida, [])
+
+
+class TesteCarimboNoSensor(unittest.TestCase):
+    """O carimbo acontece na cadencia do sensor, dentro de `_aplicar`."""
+
+    def setUp(self):
+        self.original = herdr._retrato
+        herdr._retrato = {"online": False, "agents": [], "ts": 0.0}
+
+    def tearDown(self):
+        herdr._retrato = self.original
+
+    def test_duas_consultas_iguais_mantem_o_carimbo(self):
+        herdr._aplicar([_ag("w1:p1", "working", 10)])      # 1a vez: sem carimbo
+        herdr._aplicar([_ag("w1:p1", "working", 11)])      # transicao: carimba
+        carimbo = herdr.snapshot()["agents"][0]["state_ts"]
+        self.assertIsNotNone(carimbo)
+        herdr._aplicar([_ag("w1:p1", "working", 11)])      # mesmo seq: herda
+        self.assertEqual(herdr.snapshot()["agents"][0]["state_ts"], carimbo)
+
+    def test_transicao_move_o_carimbo(self):
+        herdr._aplicar([_ag("w1:p1", "idle", 10)])
+        herdr._aplicar([_ag("w1:p1", "working", 11)])
+        primeiro = herdr.snapshot()["agents"][0]["state_ts"]
+        time.sleep(0.01)
+        herdr._aplicar([_ag("w1:p1", "idle", 12)])
+        self.assertGreater(herdr.snapshot()["agents"][0]["state_ts"], primeiro)
+
+    def test_consulta_falha_nao_mexe_no_carimbo(self):
+        herdr._aplicar([_ag("w1:p1", "working", 10)])
+        herdr._aplicar([_ag("w1:p1", "working", 11)])
+        carimbo = herdr.snapshot()["agents"][0]["state_ts"]
+        herdr._aplicar(None)                                # herdr calou
+        self.assertEqual(herdr._retrato["agents"][0]["state_ts"], carimbo)
 
 
 class TesteConsulta(unittest.TestCase):

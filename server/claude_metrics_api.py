@@ -889,7 +889,12 @@ def build_agents(live_items, retrato=None):
             "state": estado,
             "done": a["state"] == "done",
             "agent": a["agent"],
-            "state_age": None,
+            # Ha quanto tempo ele esta neste estado. O herdr nao tem relogio: o
+            # carimbo vem da transicao que o sensor observou (herdr.carimbar), e
+            # e None ate a primeira delas — um agente que ja estava rodando
+            # quando a API subiu nao tem como saber desde quando.
+            "state_age": (int(now - a["state_ts"])
+                          if a.get("state_ts") else None),
             "event": "herdr",
             "stale": False,
             "proc_alive": None,

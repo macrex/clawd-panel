@@ -117,6 +117,15 @@ def parse_agentes(saida):
         if not isinstance(pane, str) or not isinstance(estado, str):
             continue
         cwd = a.get("cwd") or ""
+        # `state_change_seq`: contador monotonico do herdr que anda a cada
+        # transicao. E o UNICO sinal de tempo que ele da — nao ha timestamp em
+        # `agent list`, `agent get` nem `agent explain`. Serve para `carimbar`
+        # saber que houve mudanca mesmo quando o estado parece o mesmo
+        # (working -> idle -> working inteiro entre duas consultas). Tipo
+        # errado ou ausente vira None, e o carimbo cai em comparar o estado.
+        seq = a.get("state_change_seq")
+        if isinstance(seq, bool) or not isinstance(seq, int):
+            seq = None
         fora.append({
             "pane_id": pane,
             "state": estado,
@@ -125,8 +134,49 @@ def parse_agentes(saida):
             "repo": repo_de(cwd),
             "focused": bool(a.get("focused")),
             "name": a.get("name") or "",
+            "seq": seq,
         })
     return fora
+
+
+def carimbar(anteriores, novos, now):
+    """Preenche `state_ts` em cada agente: desde quando ele esta neste estado.
+
+    POR QUE O CARIMBO E NOSSO
+    O herdr nao tem relogio. Ele diz o estado e o `state_change_seq`, e nada
+    mais — entao "ha quanto tempo" so existe se alguem observar a transicao. O
+    sensor deste modulo ja consulta a cada 2 s, e e ele quem observa: chamar
+    isto de dentro do `_aplicar` amarra a resolucao do dado a CONSULTA_S, e nao
+    ao ritmo de quem pede o /status.
+
+    POR QUE PANE NOVO FICA `None`
+    Um Codex que ja estava rodando quando a API subiu nao tem historia aqui.
+    Carimbar `now` diria "5s" para um turno de dez minutos — uma mentira com
+    cara de verdade, que e o defeito que este projeto mais persegue. Sem
+    carimbo o painel simplesmente nao desenha numero, e o primeiro turno
+    seguinte ja aparece certo.
+
+    Nao guarda estado: a memoria e a propria lista anterior, o que mantem esta
+    funcao pura e o pane que sumiu morto junto com ela.
+    """
+    antes = {a["pane_id"]: a for a in anteriores}
+    saida = []
+    for a in novos:
+        novo = dict(a)
+        velho = antes.get(a["pane_id"])
+        if velho is None:
+            novo["state_ts"] = None
+        else:
+            # Com `seq` dos dois lados a comparacao e por ele; sem, pelo estado
+            # — que erra o turno reiniciado entre consultas, mas e o melhor que
+            # um herdr sem o campo permite.
+            seq_novo, seq_velho = a.get("seq"), velho.get("seq")
+            mudou = (seq_novo != seq_velho
+                     if seq_novo is not None and seq_velho is not None
+                     else a["state"] != velho["state"])
+            novo["state_ts"] = now if mudou else velho.get("state_ts")
+        saida.append(novo)
+    return saida
 
 
 def consultar(binario):
@@ -166,9 +216,13 @@ def _aplicar(agentes, ao_consultar=None):
         if agentes is None:
             _retrato["online"] = False
         else:
+            agora = time.time()
+            # O carimbo entra AQUI, e nao em quem le: a resolucao de "ha quanto
+            # tempo" passa a ser a do sensor (CONSULTA_S), e nao a do ritmo com
+            # que alguem pede o /status. A lista guardada e a memoria.
             _retrato["online"] = True
-            _retrato["agents"] = agentes
-            _retrato["ts"] = time.time()
+            _retrato["agents"] = carimbar(_retrato["agents"], agentes, agora)
+            _retrato["ts"] = agora
 
     # Avisa DEPOIS de gravar, e com o mesmo `online` que snapshot() devolveria:
     # quem escuta tem que ver a mesma verdade que quem le, guarda de frescor
