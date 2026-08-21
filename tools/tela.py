@@ -11,9 +11,16 @@ dois segundos; so entao ela copia o framebuffer e o devolve num POST. A volta
 inteira e o poll (ate 2 s) mais o envio de 300 KB pela pilha WiFi dela (0,5 a
 1,5 s), e este programa fica olhando `GET /tela` ate o quadro chegar.
 
-O prazo de 8 s e o dobro folgado dessa volta. Estourar nao cancela nada: o
-pedido continua armado ate o TTL da API, entao um quadro atrasado ainda e
-gravado — o que acaba e a espera, nao a captura.
+O prazo acompanha o TTL do pedido na API (30 s), e nao a volta tipica. Ele ja
+foi de 8 s — "o dobro folgado" de uma volta que se supunha de 4 —, e isso era
+uma conta errada: MEDIDO, o quadro leva ~10 s para chegar, porque a tarefa de
+rede da placa faz o poll, o clima e a tela do terminal antes de despachar os
+300 KB. O script desistia com a captura a caminho e imprimia "pendente", e o
+efeito era o pior possivel — a foto CHEGAVA e era gravada, so que depois de
+quem a pediu ja ter concluido que a placa nao respondeu.
+
+Estourar nao cancela nada: o pedido continua armado ate o TTL da API, entao um
+quadro atrasado ainda e gravado — o que acaba e a espera, nao a captura.
 
 So stdlib, como o resto do servidor: esta ferramenta acompanha uma API que roda
 no logon e nao pode depender de `pip install`.
@@ -26,7 +33,7 @@ import urllib.error
 import urllib.request
 
 API = "http://127.0.0.1:8787"
-ESPERA = 8.0        # teto da espera, em segundos
+ESPERA = 28.0       # teto da espera, em segundos: o TTL do pedido, menos folga
 INTERVALO = 0.25    # entre consultas: barato contra 127.0.0.1, e responde rapido
 
 
