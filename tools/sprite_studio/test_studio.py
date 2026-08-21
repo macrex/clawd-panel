@@ -381,7 +381,13 @@ class StudioTests(unittest.TestCase):
         catalog = build_catalog(DEFAULT_ASSETS, DEFAULT_MANIFEST)
         self.assertEqual(len(catalog), len(list(DEFAULT_ASSETS.glob("*.clw"))))
         by_name = {entry["name"]: entry for entry in catalog}
-        self.assertTrue(all(entry.get("source_url") for entry in catalog))
+        # A ARTE DE TERCEIROS NAO TEM MANIFESTO, e nao por esquecimento: ela nao
+        # entra no git (ver os prefixos em `.gitignore`) e mora so no cartao de
+        # quem a gera. Exigir `source_url` dela reprovava esta suite em toda
+        # maquina que tivesse o tema instalado — que e o caso de uso normal.
+        proprios = [e for e in catalog
+                    if not e["name"].startswith(("sp_", "sonic_"))]
+        self.assertTrue(all(entry.get("source_url") for entry in proprios))
         self.assertTrue(by_name["alert"]["used"])
         self.assertEqual(by_name["alert"]["frames"], 40)
         self.assertEqual(by_name["typing"]["screen_width"], 172)
