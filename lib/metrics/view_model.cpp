@@ -178,6 +178,11 @@ std::string textoVetustez(const Status &s, int staleSeconds, const char *motivo,
     return pre + formatAge(s.updated_ago);
 }
 
+std::string textoSincronia(const Status &s) {
+    if (s.limitesVisto.empty()) return "";
+    return "sync " + s.limitesVisto;
+}
+
 std::string textoVetustezCurto(const Status &s, int staleSeconds) {
     return prefixoDoMotor(s) + "S/CONTATO " +
            (staleSeconds < 3600 ? std::to_string(staleSeconds) + "s"

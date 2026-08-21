@@ -134,6 +134,18 @@ struct Metric {
     // vira: o PRAZO da janela nova so aparece depois que alguem chamar a API,
     // que pode demorar horas.
     bool        inferred = false;    // `session_inferred` da API
+    // O numero e LEMBRANCA e nao leitura: nenhuma sessao esta publicando, e a
+    // API republicou o ultimo snapshot bom que ela guardou desta janela.
+    //
+    // Os limites sao da CONTA e continuam correndo com todo terminal fechado —
+    // apagar a faixa quando o ultimo Claude Code fecha era esconder a unica
+    // coisa que ainda valia. Mas um numero de uma hora atras nao pode ter a
+    // mesma cara de um que acabou de chegar: e isto que faz a faixa sair
+    // esmaecida, com a hora da ultima leitura ao lado do titulo.
+    //
+    // Por JANELA, e nao um so para as duas: elas caem em ritmos diferentes, e a
+    // semana pode ser leitura viva enquanto a de 5h ja e lembranca.
+    bool        memoria = false;
 };
 
 // A hora dita pela API. Ela FOI a unica fonte de tempo do painel por muito
@@ -330,6 +342,11 @@ struct Status {
     Metric      context;
     Metric      session;
     Metric      week;
+    // A hora em que os limites lembrados foram lidos pela ultima vez ("11:15"),
+    // em 24h como o relogio do cabecalho. Vazia quando eles vem de leitura viva
+    // — e ai nao ha nada a dizer, porque a idade e a do payload inteiro.
+    // Uma so para as duas faixas: e o carimbo do conjunto (ver Metric::memoria).
+    std::string limitesVisto;
     int         updated_ago = 0;
     // Como a maquina que respondeu se chama. Vazia numa API antiga.
     std::string tag;

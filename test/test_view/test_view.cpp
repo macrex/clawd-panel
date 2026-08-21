@@ -317,6 +317,23 @@ void test_sem_motivo_o_texto_e_o_de_sempre(void) {
                              textoVetustez(s, 5, nullptr, false).c_str());
 }
 
+// ---- O carimbo dos limites, na outra ponta do rodape ----
+
+// A hora sai formatada pela API e o firmware so a apresenta: converter epoch
+// pede fuso, e a placa nao tem um.
+void test_limites_lembrados_viram_a_linha_de_sync(void) {
+    Status s;
+    s.limitesVisto = "11:15";
+    TEST_ASSERT_EQUAL_STRING("sync 11:15", textoSincronia(s).c_str());
+}
+
+// Leitura viva nao tem o que carimbar: a idade do payload ja esta do outro
+// lado do rodape, e repeti-la aqui seria dizer a mesma coisa duas vezes.
+void test_leitura_viva_nao_carimba_nada(void) {
+    Status s;
+    TEST_ASSERT_TRUE(textoSincronia(s).empty());
+}
+
 // O motor de reserva e prefixo, e vale nos tres ramos.
 void test_o_motor_de_reserva_prefixa_tudo(void) {
     Status s;
@@ -412,5 +429,7 @@ int main(int, char **) {
     RUN_TEST(test_reserva_sem_tag_tem_nome_generico);
     RUN_TEST(test_dado_velho_ganha_do_master_fora);
     RUN_TEST(test_a_forma_curta_cabe_onde_a_longa_nao_cabe);
+    RUN_TEST(test_limites_lembrados_viram_a_linha_de_sync);
+    RUN_TEST(test_leitura_viva_nao_carimba_nada);
     return UNITY_END();
 }

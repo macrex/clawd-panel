@@ -120,3 +120,13 @@ std::string textoVetustez(const Status &s, int staleSeconds, const char *motivo,
 // normal ("12s") nao tem como encostar em nada. Aqui o motivo se perde: com a
 // largura no limite, dizer HA QUANTO TEMPO vale mais do que dizer por que.
 std::string textoVetustezCurto(const Status &s, int staleSeconds);
+
+// "sync 11:15" — a hora em que os limites que estao na tela foram lidos pela
+// ultima vez. VAZIO quando eles vem de leitura viva.
+//
+// Ele mora no rodape, na ponta OPOSTA a da vetustez, e nao dentro da faixa do
+// limite: a faixa ja tem prazo e instante da virada, um em cada ponta, e o
+// carimbo ali seria a terceira informacao de tempo no mesmo lugar. No rodape
+// ele fica ao lado do seu par natural — de um lado quando os LIMITES foram
+// lidos, do outro quando o PAYLOAD chegou.
+std::string textoSincronia(const Status &s);

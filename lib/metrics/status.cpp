@@ -119,6 +119,20 @@ Status parseStatus(const char *json) {
     s.week.level     = levelFromColor(doc["colors"]["week"]);
     s.week.known     = weekKnown;
 
+    // De onde vieram os dois numeros acima. O bloco so aparece quando pelo
+    // menos uma das faixas e LEMBRANCA — ver Metric::memoria. Ausente numa
+    // leitura viva e numa API que nao o conhece, e ai nada muda.
+    //
+    // `memoria` manda no bloco inteiro: sem ele ligado, as chaves por janela
+    // nao esmaecem nada. Uma flag so para desligar o mecanismo vale mais do que
+    // duas verdades parciais em desacordo.
+    JsonVariantConst lim = doc["limites"];
+    if (lim["memoria"] | false) {
+        s.session.memoria = lim["session"] | false;
+        s.week.memoria    = lim["week"] | false;
+        s.limitesVisto    = strOr(lim["visto_hm"], "");
+    }
+
     // Relogio e tempo. Ausentes numa API antiga: `known` fica false e o
     // cabecalho simplesmente nao desenha o bloco, em vez de mostrar "00:00".
     JsonVariantConst ck = doc["clock"];

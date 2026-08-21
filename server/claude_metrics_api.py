@@ -206,6 +206,21 @@ BLOCKED, WORKING, IDLE, UNKNOWN = "blocked", "working", "idle", "unknown"
 _sessions = {}
 _lock = threading.Lock()
 
+# A MEMÓRIA DOS LIMITES DA CONTA, sob `_lock` como as sessões.
+#
+#   {"session": {"pct": int, "at": epoch, "ts": epoch}, "week": {...}}
+#
+# Os limites são da CONTA e não da sessão: a janela de 5h e a de 7 dias
+# continuam correndo com todo terminal fechado. Antes disto, fechar o último
+# Claude Code apagava os dois do painel — percentual e prazo viravam "-" — e a
+# tela ficava sem nada a dizer justamente sobre o que não parou de valer.
+#
+# Uma entrada POR JANELA, pelo mesmo motivo de `pick_window` escolher cada uma
+# sozinha: a semana pode continuar conhecida quando a de 5h já não é.
+#
+# É reserva, nunca fonte: com alguém publicando, a leitura viva ganha sempre.
+_limites_mem = {}
+
 # sid -> (inicio, avisado): memoria de divergencia entre nos e o herdr, para
 # que build_agents avise UMA vez por episodio em vez de a cada /status (ver
 # divergencia()). Fica no modulo, e nao em _sessions, porque nao e estado de
@@ -275,7 +290,10 @@ def save_state(force=False):
         # Escreve-e-renomeia: um crash no meio deixa o arquivo antigo intacto,
         # nunca um JSON pela metade que faria a próxima carga falhar.
         with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump({"sessions": _sessions}, fh)
+            # Os limites vão junto: a API sobe no logon, e sem eles a primeira
+            # meia hora do dia — antes de o primeiro terminal abrir — voltaria a
+            # ser a tela em branco que a memória existe para evitar.
+            json.dump({"sessions": _sessions, "limites": _limites_mem}, fh)
         os.replace(tmp, STATE_FILE)
     except (OSError, TypeError, ValueError):
         pass    # persistência é conveniência: nunca pode derrubar a API
@@ -285,10 +303,18 @@ def load_state():
     """Recarrega o estado salvo. Só no boot, antes de servir."""
     try:
         with open(STATE_FILE, encoding="utf-8") as fh:
-            saved = json.load(fh)["sessions"]
+            gravado = json.load(fh)
+        saved = gravado["sessions"]
     except (OSError, ValueError, KeyError, TypeError):
         return 0
     with _lock:
+        # Sem `limites` num arquivo gravado pela versão anterior: a memória
+        # nasce vazia e o primeiro poll com sessão viva já a preenche.
+        lembrados = gravado.get("limites")
+        if isinstance(lembrados, dict):
+            for janela, rec in lembrados.items():
+                if janela in ("session", "week") and isinstance(rec, dict):
+                    _limites_mem[janela] = rec
         for sid, rec in saved.items():
             if isinstance(rec, dict) and "ts" in rec:
                 # "waiting" era o nome antigo de "idle". Sem esta migração, uma
@@ -379,6 +405,17 @@ def fmt_clock(ts):
     return f"{h}:{t.tm_min:02d}{'pm' if t.tm_hour >= 12 else 'am'}"
 
 
+def fmt_hora24(ts):
+    """Carimbo absoluto -> "11:15", no fuso desta maquina.
+
+    Em 24h e nao no "7:20pm" de `fmt_clock`: este horario vai para o painel ao
+    lado do relogio do cabecalho, que e de 24h, e duas convencoes na mesma tela
+    fariam o leitor converter uma delas de cabeca.
+    """
+    t = time.localtime(ts)
+    return f"{t.tm_hour:02d}:{t.tm_min:02d}"
+
+
 def fmt_date(ts):
     """Carimbo absoluto -> "01/08/2026 (Sabado)".
 
@@ -434,6 +471,147 @@ def expired_window_seen(live, campo_ts, now):
         if isinstance(ts, (int, float)) and not isinstance(ts, bool) and 0 < ts <= now:
             return True
     return False
+
+
+def lembrar_limites(mem, janela, pct, resets_at, now):
+    """Guarda o snapshot que acabou de ser LIDO. Devolve True quando mudou.
+
+    O retorno existe para o disco: `save_state` roda a cada gravação e o painel
+    pede `/status` a cada dois segundos — persistir um snapshot idêntico 30 mil
+    vezes por dia gastaria escrita para não guardar nada. O percentual só muda
+    quando alguém fala com a API da Anthropic, que é raro na escala do poll.
+    """
+    velho = mem.get(janela) or {}
+    if velho.get("pct") == pct and velho.get("at") == int(resets_at):
+        return False
+    mem[janela] = {"pct": pct, "at": int(resets_at), "ts": now}
+    return True
+
+
+def limites_lembrados(mem, now):
+    """O que a memória ainda sustenta, no mesmo formato que a leitura produz.
+
+    Cada janela é resolvida SOZINHA, e as duas seguem regras diferentes porque
+    elas são diferentes:
+
+      - a de 5h é FIXA e VIRA. Um carimbo vencido não é lacuna, é a prova de que
+        o uso recomeçou do zero — a mesma conclusão de `expired_window_seen`,
+        pela mesma razão, só que sem ninguém vivo para carregar o carimbo.
+      - a de 7 dias DESLIZA. Vencida, ela não afirma nada: o percentual pode ter
+        caído (uso antigo saindo da janela) sem que ninguém tenha usado nada.
+
+    `visto` é o mais recente dos dois carimbos: é o que o painel mostra como
+    "quando isto foi visto", e o mais novo é o que descreve melhor a idade do
+    conjunto. Zero quando não há memória nenhuma.
+    """
+    fora = {"session_pct": 0, "session_resets_at": 0, "session_known": False,
+            "session_inferred": False, "week_pct": 0, "week_resets_at": 0,
+            "week_known": False, "visto": 0, "memoria": False}
+    if not isinstance(mem, dict):
+        return fora
+
+    sess = mem.get("session") or {}
+    week = mem.get("week") or {}
+    vistos = []
+
+    at = valid_reset(sess.get("at"), now, SESSION_HORIZON)
+    if at:
+        fora["session_pct"] = sess.get("pct") or 0
+        fora["session_resets_at"] = at
+        fora["session_known"] = True
+        fora["memoria"] = True
+        vistos.append(sess.get("ts") or 0)
+    elif isinstance(sess.get("at"), (int, float)) and 0 < sess["at"] <= now:
+        # A janela virou enquanto ninguém olhava. O PRAZO da nova não existe
+        # ainda — inventá-lo seria a mentira que o percentual zero não é.
+        fora["session_known"] = True
+        fora["session_inferred"] = True
+        fora["memoria"] = True
+        vistos.append(sess.get("ts") or 0)
+
+    at = valid_reset(week.get("at"), now, WEEK_HORIZON)
+    if at:
+        fora["week_pct"] = week.get("pct") or 0
+        fora["week_resets_at"] = at
+        fora["week_known"] = True
+        fora["memoria"] = True
+        vistos.append(week.get("ts") or 0)
+
+    fora["visto"] = max(vistos) if vistos else 0
+    return fora
+
+
+def campos_de_limites(lim, now):
+    """As duas janelas já resolvidas viram os campos que o painel lê.
+
+    Uma função só para os dois caminhos de `build_status` (com e sem sessão
+    viva): eles publicam os MESMOS campos, e manter duas cópias da formatação
+    foi como o retorno sem sessão acabou com `"-"` cravado em todos eles.
+    """
+    # Zero por si só significaria "reseta agora". O prazo da janela nova só
+    # existe depois que alguém usar, e inventar um horário seria a mentira que
+    # o percentual zero não é.
+    session_in = int(lim["session_resets_at"] - now) if lim["session_resets_at"] else 0
+    week_in = int(lim["week_resets_at"] - now) if lim["week_resets_at"] else 0
+    sess_pct = int(round(lim["session_pct"]))
+    wk_pct = int(round(lim["week_pct"]))
+    # "-" e nao "0h00m": zero leria como "reseta agora", que e diferente de
+    # "nao sei quando reseta".
+    sess_hm = fmt_hm(session_in) if lim["session_resets_at"] else "-"
+    wk_dh = fmt_dh(week_in) if lim["week_resets_at"] else "-"
+    # O MESMO carimbo, dito da outra forma. Sem prazo nao ha momento: "-" pelo
+    # mesmo motivo de cima.
+    sess_at = fmt_clock(lim["session_resets_at"]) if lim["session_resets_at"] else "-"
+    wk_at = fmt_date(lim["week_resets_at"]) if lim["week_resets_at"] else "-"
+    sess_label, wk_label = limits_labels(sess_pct, sess_hm, wk_pct, wk_dh,
+                                         lim["session_known"], lim["week_known"])
+    return {
+        "session_pct": sess_pct,
+        "session_resets_in": max(0, session_in),
+        "session_resets_hm": sess_hm,
+        # A hora do relogio em que a janela de 5h vira, e a data em que a de 7
+        # dias vira. Campos novos: uma placa antiga simplesmente nao os le.
+        "session_resets_clock": sess_at,
+        "week_pct": wk_pct,
+        "week_resets_in": max(0, week_in),
+        "week_resets_dh": wk_dh,
+        "week_resets_date": wk_at,
+        # Mantido para quem lê o campo antigo: só é verdade quando as DUAS
+        # janelas vêm de leitura real e viva. Número de memória não é fresco.
+        "limits_fresh": (lim["session_known"] and lim["week_known"]
+                         and not lim["session_inferred"] and not lim.get("memoria")),
+        # Uma flag por janela: elas expiram em ritmos diferentes e uma vencida
+        # nao pode mais apagar a outra.
+        "session_known": lim["session_known"],
+        "week_known": lim["week_known"],
+        # O percentual veio da virada da janela, e nao de leitura. O numero e
+        # confiavel; o PRAZO e que nao existe ainda.
+        "session_inferred": lim["session_inferred"],
+        # Limites sao da CONTA: ficam no topo, fora da lista de agentes.
+        "session_label": sess_label,
+        "week_label": wk_label,
+    }
+
+
+def bloco_limites(lembrado, now, sessao=False, semana=False):
+    """O campo `limites` do payload: de quando são os números que estão na tela.
+
+    `None` quando eles vêm de leitura viva — aí a idade já é a do payload
+    inteiro (`updated_ago`), e um segundo carimbo dizendo a mesma coisa só
+    ocuparia a faixa que o painel usa para o prazo.
+
+    `sessao` e `semana` dizem QUAL das duas faixas veio da memória, e não é
+    detalhe: as janelas caem em ritmos diferentes, então dá para a semana ainda
+    ser leitura viva enquanto a de 5h já é lembrança. Esmaecer as duas por causa
+    de uma marcaria de velho um número que acabou de chegar.
+    """
+    if not (sessao or semana) or not lembrado.get("visto"):
+        return None
+    return {"memoria": True,
+            "visto_hm": fmt_hora24(lembrado["visto"]),
+            "visto_ago": max(0, int(now - lembrado["visto"])),
+            "session": bool(sessao),
+            "week": bool(semana)}
 
 
 def resolver_sessao(sessions, sid):
@@ -1465,6 +1643,12 @@ def build_status():
         # publicando agora", e essa semantica nao muda so porque o herdr ve
         # outra coisa.
         agents = build_agents([], retrato)
+        # OS LIMITES NAO FECHAM COM O TERMINAL. A janela de 5h e a de 7 dias
+        # sao da CONTA e continuam correndo — publicar "-" aqui apagava da tela
+        # a unica coisa que ainda valia. Ver `limites_lembrados`.
+        with _lock:
+            lembrado = limites_lembrados(_limites_mem, now)
+        limites = campos_de_limites(lembrado, now)
         return {
             "online": False,
             "sessions": 0,
@@ -1480,21 +1664,14 @@ def build_status():
             "context_pct": 0,
             "context_repo": None,
             "context_branch": None,
-            "session_pct": 0,
-            "session_resets_in": 0,
-            "session_resets_hm": "-",
-            "session_resets_clock": "-",
-            "week_pct": 0,
-            "week_resets_in": 0,
-            "week_resets_dh": "-",
-            "week_resets_date": "-",
+            **limites,
+            # De quando sao os numeros de `limites`. Sai so quando eles vem da
+            # memoria: e o que o painel escreve ao lado do titulo da faixa para
+            # que um numero de uma hora atras nao se passe por atual.
+            "limites": bloco_limites(lembrado, now,
+                                     lembrado["session_known"],
+                                     lembrado["week_known"]),
             "updated_ago": 0,
-            "limits_fresh": False,
-            "session_known": False,
-            "week_known": False,
-            "session_inferred": False,
-            "session_label": "Session —",
-            "week_label": "Week —",
             "labels": agents,              # so nao vazio quando o herdr ve algo
             # Sem sessao NOSSA ainda pode haver bloqueado: um codex ou um
             # gemini que o herdr enxerga e nos nao. Omitir aqui esconderia a
@@ -1504,7 +1681,9 @@ def build_status():
             # continua desenhando, então continua havendo tela para capturar.
             "captura": captura,
             "arquivo": arq,
-            "colors": {"context": "green", "session": "green", "week": "green"},
+            "colors": {"context": "green",
+                       "session": pct_color(limites["session_pct"]),
+                       "week": pct_color(limites["week_pct"])},
             "herdr_online": retrato["online"],
             "done": sum(1 for a in agents if a.get("done")),
             # Sem sessao nossa nao ha limpeza nossa para relatar.
@@ -1620,33 +1799,49 @@ def build_status():
         week_resets_at = 0
         week_known = False
 
-    # Zero por si só significaria "reseta agora". O prazo da janela nova só
-    # existe depois que alguém usar, e inventar um horário seria a mentira que
-    # o percentual zero não é.
-    session_in = int(session_resets_at - now) if session_resets_at else 0
-    week_in = int(week_resets_at - now) if week_resets_at else 0
+    # O QUE FOI LIDO VIRA MEMÓRIA. Só a leitura de verdade: o zero da virada é
+    # conclusão, não snapshot, e guardá-lo apagaria o último percentual bom sem
+    # nada para pôr no lugar quando a sessão fechasse.
+    with _lock:
+        mudou = False
+        if janela_5h:
+            mudou |= lembrar_limites(_limites_mem, "session", session_pct,
+                                     session_resets_at, now)
+        if janela_7d:
+            mudou |= lembrar_limites(_limites_mem, "week", week_pct,
+                                     week_resets_at, now)
+        # A memória é RESERVA: só entra na janela que a leitura não conhece. O
+        # caso real é o terminal recém-aberto, que ainda não falou com a API e
+        # apagava da tela os números da conta enquanto não falasse.
+        lembrado = limites_lembrados(_limites_mem, now)
+        if mudou:
+            save_state()
 
-    # Mantido para quem lê o campo antigo: só é verdade quando as DUAS janelas
-    # vêm de leitura real.
-    limits_fresh = session_known and week_known and not session_inferred
+    sess_lembrada = week_lembrada = False
+    if not session_known and lembrado["session_known"]:
+        session_pct = lembrado["session_pct"]
+        session_resets_at = lembrado["session_resets_at"]
+        session_known = True
+        session_inferred = lembrado["session_inferred"]
+        sess_lembrada = True
+    if not week_known and lembrado["week_known"]:
+        week_pct = lembrado["week_pct"]
+        week_resets_at = lembrado["week_resets_at"]
+        week_known = True
+        week_lembrada = True
+    de_memoria = sess_lembrada or week_lembrada
+
+    limites = campos_de_limites(
+        {"session_pct": session_pct, "session_resets_at": session_resets_at,
+         "session_known": session_known, "session_inferred": session_inferred,
+         "week_pct": week_pct, "week_resets_at": week_resets_at,
+         "week_known": week_known, "memoria": de_memoria}, now)
 
     model = short_model(newest["data"].get("model"))
     effort = effort_label(newest["data"].get("effort"))
     ctx_pct = int(round(top_ctx["data"].get("context_pct") or 0))
     ctx_repo = top_ctx["data"].get("repo")
     ctx_branch = top_ctx["data"].get("branch")
-    sess_pct = int(round(session_pct))
-    wk_pct = int(round(week_pct))
-    # "-" e nao "0h00m": zero leria como "reseta agora", que e diferente de
-    # "nao sei quando reseta".
-    sess_hm = fmt_hm(session_in) if session_resets_at else "-"
-    wk_dh = fmt_dh(week_in) if week_resets_at else "-"
-    # O MESMO carimbo, dito da outra forma. Sem prazo nao ha momento: "-" pelo
-    # mesmo motivo de cima — zero leria como "reseta agora".
-    sess_at = fmt_clock(session_resets_at) if session_resets_at else "-"
-    wk_at = fmt_date(week_resets_at) if week_resets_at else "-"
-    sess_label, wk_label = limits_labels(sess_pct, sess_hm, wk_pct, wk_dh,
-                                         session_known, week_known)
 
     agents = build_agents(live_items, retrato)
     return {
@@ -1665,28 +1860,11 @@ def build_status():
         "context_pct": ctx_pct,
         "context_repo": ctx_repo,
         "context_branch": ctx_branch,
-        "session_pct": sess_pct,
-        "session_resets_in": max(0, session_in),
-        "session_resets_hm": sess_hm,
-        # A hora do relogio em que a janela de 5h vira, e a data em que a de 7
-        # dias vira. Campos novos: uma placa antiga simplesmente nao os le.
-        "session_resets_clock": sess_at,
-        "week_pct": wk_pct,
-        "week_resets_in": max(0, week_in),
-        "week_resets_dh": wk_dh,
-        "week_resets_date": wk_at,
+        **limites,
+        # Ver o comentario do mesmo campo no retorno sem sessao viva. Aqui ele
+        # so sai quando a leitura viva nao cobriu uma das janelas.
+        "limites": bloco_limites(lembrado, now, sess_lembrada, week_lembrada),
         "updated_ago": int(now - newest["ts"]),
-        "limits_fresh": limits_fresh,
-        # Uma flag por janela: elas expiram em ritmos diferentes e uma vencida
-        # nao pode mais apagar a outra.
-        "session_known": session_known,
-        "week_known": week_known,
-        # O percentual veio da virada da janela, e nao de leitura. O numero e
-        # confiavel; o PRAZO e que nao existe ainda.
-        "session_inferred": session_inferred,
-        # Limites sao da CONTA: ficam no topo, fora da lista de agentes.
-        "session_label": sess_label,
-        "week_label": wk_label,
         # Um agente por entrada: bloqueados primeiro, depois maior contexto.
         "labels": agents,
         # A pergunta que trava o primeiro bloqueado da lista, se houver — com as
@@ -1698,8 +1876,8 @@ def build_status():
         "arquivo": arq,
         "colors": {
             "context": pct_color(ctx_pct),
-            "session": pct_color(sess_pct),
-            "week": pct_color(wk_pct),
+            "session": pct_color(limites["session_pct"]),
+            "week": pct_color(limites["week_pct"]),
         },
         "herdr_online": retrato["online"],
         "done": sum(1 for a in agents if a.get("done")),

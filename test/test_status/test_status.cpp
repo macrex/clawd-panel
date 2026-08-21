@@ -670,6 +670,46 @@ void test_planos_do_tipo_errado_e_ignorado(void) {
     TEST_ASSERT_EQUAL_INT(0, (int)s.planos.size());
 }
 
+// ---- Limites que a API lembra, sem sessao nenhuma publicando ----
+//
+// A janela de 5h e a de 7 dias sao da CONTA e continuam correndo com todo
+// terminal fechado. A API republica o ultimo snapshot bom marcado como
+// lembranca, e a placa precisa saber disso para nao mostrar um numero de uma
+// hora atras com a mesma cara de um que acabou de chegar.
+void test_limites_lembrados_marcam_so_a_faixa_que_veio_da_memoria(void) {
+    const Status s = parseStatus(R"json({"online":false,"sessions":0,
+      "session_pct":41,"week_pct":75,"session_known":true,"week_known":true,
+      "limites":{"memoria":true,"visto_hm":"11:15","visto_ago":3600,
+                 "session":true,"week":false}})json");
+    TEST_ASSERT_TRUE(s.session.known);
+    TEST_ASSERT_EQUAL_INT(41, s.session.pct);
+    TEST_ASSERT_TRUE(s.session.memoria);
+    // A semana continua sendo leitura viva: esmaeca-la seria marcar de velho um
+    // numero que acabou de chegar.
+    TEST_ASSERT_FALSE(s.week.memoria);
+    TEST_ASSERT_EQUAL_STRING("11:15", s.limitesVisto.c_str());
+}
+
+// Sem o bloco (leitura viva, ou uma API anterior a ele) nada e lembranca — e a
+// placa desenha como sempre desenhou.
+void test_sem_bloco_limites_nada_vem_da_memoria(void) {
+    const Status s = parseStatus(R"json({"session_pct":25,"week_pct":28,
+      "limits_fresh":true})json");
+    TEST_ASSERT_FALSE(s.session.memoria);
+    TEST_ASSERT_FALSE(s.week.memoria);
+    TEST_ASSERT_TRUE(s.limitesVisto.empty());
+}
+
+// `memoria: false` desliga as duas mesmo com as chaves por janela presentes: o
+// bloco inteiro so vale quando ele proprio se declara lembranca.
+void test_bloco_limites_desligado_nao_esmaece_nada(void) {
+    const Status s = parseStatus(R"json({"session_pct":25,
+      "limites":{"memoria":false,"visto_hm":"11:15","session":true,"week":true}})json");
+    TEST_ASSERT_FALSE(s.session.memoria);
+    TEST_ASSERT_FALSE(s.week.memoria);
+    TEST_ASSERT_TRUE(s.limitesVisto.empty());
+}
+
 // A lista que as tres trancas compartilham. O teste existe para fixar QUAIS
 // caracteres estao nela: era escrita a mao em tres lugares, e acrescentar um
 // significava lembrar dos tres.
@@ -751,6 +791,9 @@ int main(int, char **) {
     RUN_TEST(test_planos_viram_pares);
     RUN_TEST(test_sem_planos_a_lista_fica_vazia);
     RUN_TEST(test_planos_do_tipo_errado_e_ignorado);
+    RUN_TEST(test_limites_lembrados_marcam_so_a_faixa_que_veio_da_memoria);
+    RUN_TEST(test_sem_bloco_limites_nada_vem_da_memoria);
+    RUN_TEST(test_bloco_limites_desligado_nao_esmaece_nada);
     RUN_TEST(test_quais_caracteres_movem_o_cursor);
     return UNITY_END();
 }

@@ -460,6 +460,16 @@ void drawFooter(Arduino_Canvas *g, const Status &s, int page, int staleSeconds) 
     g->setTextSize(1);
     g->setCursor(dotEsq - 12 - (int)txt.size() * 6, SCREEN_H - 30);
     g->print(txt.c_str());
+
+    // O CARIMBO DOS LIMITES (`textoSincronia`) NAO APARECE AQUI, so no rodape
+    // em pe. Deitado a ponta esquerda e da fileira de bichos, entao ele so
+    // caberia espremido entre ela e a vetustez — e some justamente quando o
+    // aviso de contato perdido cresce, ou seja, na hora em que uma linha some
+    // sem explicacao. Um dado que aparece e desaparece conforme o vizinho e
+    // pior do que um dado que mora num lugar so.
+    //
+    // As duas faixas de limite continuam esmaecendo aqui (ver Metric::memoria):
+    // o que nao existe deitado e o carimbo, nao o aviso.
 }
 
 // As duas janelas de limite, em segundos. Sao elas que transformam o prazo que
@@ -515,7 +525,11 @@ void drawBar(Arduino_Canvas *g, int x, int y, int w, int h, const Metric &m,
     const int fw = piso(barWidth(m.pct, w));
     const int rp = ritmoPct(m, janelaSeg);
     const int fr = rp < 0 ? -1 : piso(barWidth(rp, w));
-    const uint16_t cor = colorOf(m.level);
+    // LEMBRANCA APAGA A COR DO NIVEL, como o contato perdido ja fazia em
+    // `colorOf`. Um numero de uma hora atras com a barra vermelha de sempre
+    // grita uma urgencia que ninguem conferiu desde entao; cinza diz a mesma
+    // coisa que o resto do bloco: isto vale, mas nao e de agora.
+    const uint16_t cor = m.memoria ? MUTED : colorOf(m.level);
 
     // Sem ritmo conhecido, a barra de sempre e mais nada.
     if (fr < 0) {
@@ -614,7 +628,8 @@ void drawCard(Arduino_Canvas *g, int x, int y, int w, int h,
     const int util = w - 28;
     const std::string pct = pctText(m);
     const int tamPct = (4 * 6 * 5 <= util) ? 5 : 4;
-    g->setTextColor(m.known ? fgColor() : MUTED);
+    // Lembranca sai esmaecida, como todo dado velho aqui. Ver Metric::memoria.
+    g->setTextColor(m.known && !m.memoria ? fgColor() : MUTED);
     g->setTextSize(tamPct);
     g->setCursor(x + 14, y + 34);
     g->print(pct.c_str());
@@ -629,7 +644,7 @@ void drawCard(Arduino_Canvas *g, int x, int y, int w, int h,
     // resposta principal do card e precisa continuar mandando na hierarquia.
     // Com os dois no mesmo tamanho eles empatavam, e o card ficava sem foco.
     // "1d06h" em fonte 3 mede 90 px; o card comporta 191.
-    g->setTextColor(m.known ? fgColor() : MUTED);
+    g->setTextColor(m.known && !m.memoria ? fgColor() : MUTED);
     g->setTextSize(3);
     g->setCursor(x + 14, y + 116);
     g->print(m.known && !m.resets.empty() ? m.resets.c_str() : "-");
@@ -2070,7 +2085,9 @@ void drawFaixaLimite(Arduino_Canvas *g, int x, int y, int w, int h,
     g->print(titulo);
 
     const std::string pct = pctText(m);
-    g->setTextColor(m.known ? fgColor() : MUTED);
+    // Lembranca sai ESMAECIDA, como o dado velho do resto do painel: o numero
+    // continua valendo, mas nao pode se apresentar como leitura de agora.
+    g->setTextColor(m.known && !m.memoria ? fgColor() : MUTED);
     g->setTextSize(2);
     int16_t x1, y1; uint16_t tw, th;
     g->getTextBounds(pct.c_str(), 0, 0, &x1, &y1, &tw, &th);
@@ -2291,6 +2308,18 @@ void drawStatusRetrato(Arduino_Canvas *g, const Status &s, int staleSeconds) {
     g->setTextSize(1);
     g->setCursor(PANEL_W - R_MARG - (int)txt.size() * 6, R_STATUS_Y);
     g->print(txt.c_str());
+
+    // Na ponta OPOSTA, quando os limites sao lembranca: de um lado quando eles
+    // foram lidos, do outro quando o payload chegou. Ver `textoSincronia`.
+    //
+    // As bolinhas de pagina ficam no meio e nao entram nesta conta: a margem
+    // esquerda vai ate a primeira delas com folga de sobra para dez caracteres.
+    const std::string sync = textoSincronia(s);
+    if (!sync.empty()) {
+        g->setTextColor(MUTED);
+        g->setCursor(R_MARG, R_STATUS_Y);
+        g->print(sync.c_str());
+    }
 }
 
 // A tela do Token: um limite estourou, e abaixo do cabecalho fica so ele e os

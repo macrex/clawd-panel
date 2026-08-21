@@ -100,9 +100,14 @@ class TestNoStatus(unittest.TestCase):
     def setUp(self):
         self.agora = time.time()
         api._sessions.clear()
+        # A memoria dos limites e global como `_sessions`, e sobrevive ao
+        # fim de um teste: sem limpar, o snapshot de um caso vira a
+        # reserva do proximo e um "sem carimbo nenhum" sai com numero.
+        api._limites_mem.clear()
 
     def tearDown(self):
         api._sessions.clear()
+        api._limites_mem.clear()
 
     def povoar(self, session_at, week_at):
         api._sessions["s1"] = {
