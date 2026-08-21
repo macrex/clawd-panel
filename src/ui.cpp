@@ -17,6 +17,11 @@ const uint16_t CARD    = RGB565(26, 30, 38);
 const uint16_t FG      = RGB565(235, 238, 242);
 const uint16_t MUTED   = RGB565(130, 140, 155);
 const uint16_t TRACK   = RGB565(48, 54, 66);
+// UM degrau acima do CARD, e so um. E o fundo de cada sessao na lista em pe,
+// onde a linha virou um objeto proprio (ver drawSessoesRetrato). Mais claro que
+// isto e a linha comeca a competir com o card que a contem; menos, e o degrau
+// some na tela e o cartao deixa de existir.
+const uint16_t SUBCARD = RGB565(34, 39, 50);
 const uint16_t C_GREEN = RGB565(64, 200, 120);
 const uint16_t C_YELL  = RGB565(230, 190, 70);
 const uint16_t C_RED   = RGB565(235, 85, 85);
@@ -113,12 +118,16 @@ uint16_t misturar(uint16_t a, uint16_t b, int num, int den) {
 //
 // A faixa diz QUAL linha; o traco e o que ainda se ve de longe, porque 8% de
 // teal sobre o card e quase o card.
+// `base` e a cor sobre a qual a marca mistura. Por padrao e o CARD, que e o
+// fundo de quase toda linha; a tela em pe passa o SUBCARD, porque la a linha
+// tem um fundo proprio e misturar contra o CARD deixaria a marca mais ESCURA
+// que a linha que ela deveria realcar.
 void drawAvisoLinha(Arduino_Canvas *g, bool marcado,
-                    int x, int y, int w, int h) {
+                    int x, int y, int w, int h, uint16_t base = CARD) {
     if (!marcado || g_stale) return;
-    g->fillRect(x, y, w, h, misturar(CARD, H_DONE, AVISO_FUNDO_NUM, AVISO_FUNDO_DEN));
+    g->fillRect(x, y, w, h, misturar(base, H_DONE, AVISO_FUNDO_NUM, AVISO_FUNDO_DEN));
     g->fillRect(x, y, AVISO_TRACO_W, h,
-                misturar(CARD, H_DONE, AVISO_TRACO_NUM, AVISO_TRACO_DEN));
+                misturar(base, H_DONE, AVISO_TRACO_NUM, AVISO_TRACO_DEN));
 }
 
 uint16_t colorOf(Level l) {
@@ -153,11 +162,12 @@ const uint16_t LARANJA = RGB565(217, 119, 87);   // laranja da marca, #D97757
 const int NOVO_FUNDO_NUM = 5, NOVO_FUNDO_DEN = 48;
 const int NOVO_TRACO_NUM = 4, NOVO_TRACO_DEN = 6;
 
-void drawNovoLinha(Arduino_Canvas *g, bool novo, int x, int y, int w, int h) {
+void drawNovoLinha(Arduino_Canvas *g, bool novo, int x, int y, int w, int h,
+                   uint16_t base = CARD) {
     if (!novo || g_stale) return;
-    g->fillRect(x, y, w, h, misturar(CARD, LARANJA, NOVO_FUNDO_NUM, NOVO_FUNDO_DEN));
+    g->fillRect(x, y, w, h, misturar(base, LARANJA, NOVO_FUNDO_NUM, NOVO_FUNDO_DEN));
     g->fillRect(x, y, AVISO_TRACO_W, h,
-                misturar(CARD, LARANJA, NOVO_TRACO_NUM, NOVO_TRACO_DEN));
+                misturar(base, LARANJA, NOVO_TRACO_NUM, NOVO_TRACO_DEN));
 }
 
 const char *LOGO[LOGO_H] = {
@@ -704,6 +714,20 @@ void drawCard(Arduino_Canvas *g, int x, int y, int w, int h,
 // 140 ms (~45% de CPU) para animar 10 px, porque a bolinha fica fora da faixa
 // que o flush de prefixo alcanca. Quem puxa o olho e o selo do rodape, que
 // anima o alert por ~9 ms o quadro.
+// A cor de um estado, sem desenhar nada. Existe porque a tela em pe passou a
+// dizer o estado com uma FAIXA e nao com uma bolinha, e as duas formas nao
+// podem divergir de cor — a bolinha da tela deitada e a faixa da em pe sao a
+// mesma informacao.
+uint16_t corDoEstado(AgentState st, bool done) {
+    if (g_stale) return MUTED;
+    switch (st) {
+        case AgentState::Blocked: return H_BLOCKED;
+        case AgentState::Working: return H_WORKING;
+        case AgentState::Idle:    return done ? H_DONE : H_IDLE;
+        default:                  return TRACK;
+    }
+}
+
 void drawEstadoDot(Arduino_Canvas *g, int cx, int cy, AgentState st, bool done) {
     switch (st) {
         case AgentState::Blocked:
@@ -1157,13 +1181,17 @@ const int H_CAB = 16;
 // lados sao decompostos do MESMO jeito, do RGB565 de volta para 8 bits, para
 // que alfa 0 devolva exatamente TRACK — decompor so um deles deixava franja de
 // um degrau em volta de cada icone.
-uint16_t misturaNaFaixa(uint16_t cor, uint8_t a) {
+// `fundo` e a cor sobre a qual o icone assenta. Por padrao e o TRACK da faixa
+// de cabecalho; a lista em pe passa o SUBCARD, porque la o icone mora dentro do
+// cartao da sessao — misturar contra o fundo errado devolve exatamente a franja
+// de um degrau que este cuidado existe para evitar.
+uint16_t misturaNaFaixa(uint16_t cor, uint8_t a, uint16_t fundo = TRACK) {
     const int cr = ((cor   >> 11) & 0x1F) * 255 / 31;
     const int cg = ((cor   >>  5) & 0x3F) * 255 / 63;
     const int cb = ( cor          & 0x1F) * 255 / 31;
-    const int fr = ((TRACK >> 11) & 0x1F) * 255 / 31;
-    const int fg = ((TRACK >>  5) & 0x3F) * 255 / 63;
-    const int fb = ( TRACK        & 0x1F) * 255 / 31;
+    const int fr = ((fundo >> 11) & 0x1F) * 255 / 31;
+    const int fg = ((fundo >>  5) & 0x3F) * 255 / 63;
+    const int fb = ( fundo        & 0x1F) * 255 / 31;
     return RGB565((cr * a + fr * (255 - a)) / 255,
                   (cg * a + fg * (255 - a)) / 255,
                   (cb * a + fb * (255 - a)) / 255);
@@ -1171,7 +1199,8 @@ uint16_t misturaNaFaixa(uint16_t cor, uint8_t a) {
 
 // O icone de um fornecedor, na cor da marca, com o meio-tom da mascara.
 void drawIconeProvedor(Arduino_Canvas *g, int x, int y,
-                       const provedores::Icone &ic, uint16_t cor) {
+                       const provedores::Icone &ic, uint16_t cor,
+                       uint16_t fundo = TRACK) {
     for (int r = 0; r < ic.h; r++)
         for (int c = 0; c < ic.w; c++) {
             // Os arredondamentos da reducao deixam lixo de 1 ou 2 no fundo
@@ -1179,7 +1208,7 @@ void drawIconeProvedor(Arduino_Canvas *g, int x, int y,
             // volta para TRACK) e so custa chamada; o corte tambem garante que
             // o retangulo do icone nao pise no fundo da faixa.
             const uint8_t a = ic.alfa[r * ic.w + c];
-            if (a >= 8) g->drawPixel(x + c, y + r, misturaNaFaixa(cor, a));
+            if (a >= 8) g->drawPixel(x + c, y + r, misturaNaFaixa(cor, a, fundo));
         }
 }
 
@@ -1969,15 +1998,26 @@ const int R_TOPO_FIM   = 106;   // fim da faixa barata (e a segunda divisoria)
 const int R_MARG       = 14;
 const int R_CARD_W     = PANEL_W - R_MARG * 2;    // 292
 const int R_LIM_Y      = 114;
-// 70 e nao 54: a faixa cresceu junto com os corpos dela — tudo na DejaVu
-// (titulo ~10, percentual ~20, prazo ~10) e a barra em 12. O percentual em
-// corpo 3 da grade foi tentado e brigava com os nomes das sessoes, que sao o
-// texto mais importante da tela; a DejaVu dobrada e o degrau entre os dois. O
-// preco sai do card de agents, que perde uma linha (6 em vez de 7) e continua
-// sobrando para as cinco sessoes tipicas.
-const int R_LIM_H      = 70;
-const int R_LIM_GAP    = 6;
-const int R_SES_Y      = R_LIM_Y + (R_LIM_H + R_LIM_GAP) * 2;   // 258
+// OS DOIS LIMITES LADO A LADO, e nao empilhados.
+//
+// Empilhados eles custavam 146 px — 30% da tela em pe — para dizer dois
+// numeros, e a lista de sessoes, que e o que muda, ficava com um vao vazio
+// embaixo. Em coluna o par cabe em 98 px e devolve 48 para a lista.
+//
+// O que a coluna PERDE e largura: 143 px contra 292, e o rodape da coluna leva
+// dois textos (o prazo e o instante do reset) em 123 px uteis. O da SEMANA e o
+// apertado dos dois — "1d09h" e "Sabado (23h)" na mesma linha.
+//
+// O percentual continua na DejaVu dobrada (~20 px) e NAO sobe de corpo com a
+// coluna mais estreita: a regra e a de sempre, o texto que manda nesta tela sao
+// os nomes das sessoes (ver a calibracao por foto de 13/08).
+const int R_LIM_H      = 98;
+const int R_LIM_W      = 143;
+// O vao minimo entre o prazo e o instante no rodape da coluna. Abaixo
+// disso os dois se leem como uma palavra so, mesmo sem se tocarem.
+const int GAP_RODAPE   = 6;
+const int R_LIM_GAP    = 6;      // 14 + 143 + 6 + 143 + 14 = 320
+const int R_SES_Y      = R_LIM_Y + R_LIM_H + 8;                 // 220
 const int R_SES_FIM    = 456;
 const int R_STATUS_Y   = 462;
 
@@ -2065,23 +2105,23 @@ std::string horaDoReset(const Metric &m, const Clock *rel) {
     return buf;
 }
 
-void drawFaixaLimite(Arduino_Canvas *g, int x, int y, int w, int h,
-                     const char *titulo, const Metric &m, int janelaSeg = 0,
-                     const Clock *rel = nullptr) {
+void drawColunaLimite(Arduino_Canvas *g, int x, int y, int w, int h,
+                      const char *titulo, const Metric &m, int janelaSeg = 0,
+                      const Clock *rel = nullptr) {
     g->fillRoundRect(x, y, w, h, 8, CARD);
 
-    // A faixa inteira fala em DejaVu, em dois tamanhos: titulo e prazo na
-    // natural (~10 px) e o percentual dobrado (~20). E o meio-termo que a
-    // grade nao tem — o corpo 2 sumia ao lado da barra grossa, e o corpo 3
-    // brigava com os nomes das sessoes, que sao o texto mais importante da
-    // tela e ficam logo abaixo.
-    // Titulo e percentual CENTRADOS na altura entre o teto do card e a barra
-    // (0..38): cada um com a propria altura de texto, entao as baselines
-    // diferem — ~8 px de texto no titulo, ~20 no percentual dobrado.
+    // A coluna inteira fala em DejaVu, em dois tamanhos: titulo e rodape na
+    // natural (~10 px) e o percentual dobrado (~20). E o meio-termo que a grade
+    // nao tem — o corpo 2 sumia ao lado da barra, e o corpo 3 brigava com os
+    // nomes das sessoes, que sao o texto mais importante da tela.
+    //
+    // Empilhado, e nao deitado como na faixa larga: o titulo abre a coluna, o
+    // percentual e a linha grande logo abaixo, a barra separa, e o rodape leva
+    // o prazo e o instante em cada ponta.
     g->setFont(&DejaVuSans7pt7b);
     g->setTextSize(1);
     g->setTextColor(MUTED);
-    g->setCursor(x + 12, y + 23);
+    g->setCursor(x + 8, y + 22);
     g->print(titulo);
 
     const std::string pct = pctText(m);
@@ -2091,22 +2131,27 @@ void drawFaixaLimite(Arduino_Canvas *g, int x, int y, int w, int h,
     g->setTextSize(2);
     int16_t x1, y1; uint16_t tw, th;
     g->getTextBounds(pct.c_str(), 0, 0, &x1, &y1, &tw, &th);
-    g->setCursor(x + w - 12 - (int)tw, y + 29);
+    g->setCursor(x + w - 8 - (int)tw, y + 46);
     g->print(pct.c_str());
     g->setTextSize(1);
 
     g->setFont();
-    drawBar(g, x + 12, y + 38, w - 24, 8, m, janelaSeg);
+    drawBar(g, x + 8, y + 56, w - 16, 8, m, janelaSeg);
     g->setFont(&DejaVuSans7pt7b);
 
-    // Prazo e instante na MESMA linha, um em cada ponta — SO os valores. O
-    // "reseta em" saiu: com um prazo em cada faixa e o instante ao lado, o
-    // rotulo nao desambiguava nada, so gastava a largura. A fonte e
-    // proporcional, entao a ponta direita alinha por medida e nao por
-    // contagem de caracteres.
+    // Prazo e instante na MESMA linha, um em cada ponta — SO os valores. A
+    // linha respira 14 px abaixo da barra, e nao 7: colada, ela se lia como
+    // legenda da barra em vez de rodape do cartao, e os dois numeros do reset
+    // nao pertencem a barra — pertencem a janela inteira. O
+    // "reseta em" saiu: com um prazo em cada coluna e o instante ao lado, o
+    // rotulo nao desambiguava nada, so gastava a largura, que aqui e o que
+    // falta. A fonte e proporcional, entao a ponta direita alinha por medida.
     g->setTextColor(MUTED);
-    g->setCursor(x + 12, y + 63);
-    g->print(m.known && !m.resets.empty() ? m.resets.c_str() : "-");
+    const std::string prazo = m.known && !m.resets.empty() ? m.resets : "-";
+    uint16_t pw, ph;
+    g->getTextBounds(prazo.c_str(), 0, 0, &x1, &y1, &pw, &ph);
+    g->setCursor(x + 8, y + 86);
+    g->print(prazo.c_str());
 
     if (m.known && !m.at.empty() && m.at != "-") {
         // Da data por extenso, so o DIA DA SEMANA: "15/08/2026 (Sabado)" vira
@@ -2126,8 +2171,42 @@ void drawFaixaLimite(Arduino_Canvas *g, int x, int y, int w, int h,
             const std::string hora = horaDoReset(m, rel);
             if (!hora.empty()) at += " (" + hora + ")";
         }
+        // CASCATA DE CORTE, e nao um texto fixo: em 123 px uteis a SEMANA
+        // estourou na placa — "1d09h" e "Sabado (23h)" mediram 135 juntos e o
+        // prazo entrou por cima do dia. A SESSAO ("1h01m" e "2:40pm", 81 px)
+        // nunca chega perto, entao encurtar os dois seria pagar um preco que so
+        // uma das colunas deve.
+        //
+        // A ordem sacrifica o que menos custa: primeiro o dia por extenso vira
+        // as tres letras de sempre (Sab, Dom, Seg...), que ninguem le
+        // diferente; so depois cai a hora entre parenteses, que e informacao
+        // de verdade. A medida e a REAL (getTextBounds), porque a DejaVu e
+        // proporcional e contar caractere aqui mentiria.
+        //
+        // A MARGEM DA COLUNA E 8 E NAO 12 POR CAUSA DESTA LINHA. Somando o
+        // xAdvance da DejaVuSans7pt7b para as 28.224 combinacoes possiveis de
+        // prazo (0d00h..6d23h) e instante em hora redonda (Seg..Dom, 0h..23h):
+        // com margem 12 a hora cai em 2.352 delas (8%), e com 8 nao cai em
+        // nenhuma — a folga minima e de 1 px, no par "0d00h" com "Dom (10h)".
+        // Reset em hora quebrada ("Dom (23:45h)") nunca cabe e sempre degrada
+        // para so o dia; e o caso raro, e o dia e o que se le mesmo.
+        const int xFim  = x + w - 8;
+        const int xPraz = x + 8 + (int)pw;    // onde o prazo termina
         g->getTextBounds(at.c_str(), 0, 0, &x1, &y1, &tw, &th);
-        g->setCursor(x + w - 12 - (int)tw, y + 63);
+        if (xFim - (int)tw < xPraz + GAP_RODAPE && at.size() > 3) {
+            const size_t esp = at.find(' ');
+            const std::string resto = esp == std::string::npos
+                                          ? std::string()
+                                          : at.substr(esp);
+            at = at.substr(0, 3) + resto;
+            g->getTextBounds(at.c_str(), 0, 0, &x1, &y1, &tw, &th);
+        }
+        if (xFim - (int)tw < xPraz + GAP_RODAPE) {
+            const size_t esp = at.find(' ');
+            if (esp != std::string::npos) at = at.substr(0, esp);
+            g->getTextBounds(at.c_str(), 0, 0, &x1, &y1, &tw, &th);
+        }
+        g->setCursor(xFim - (int)tw, y + 86);
         g->print(at.c_str());
     }
     g->setFont();
@@ -2146,8 +2225,8 @@ void drawSessoesRetrato(Arduino_Canvas *g, int x, int y, int w, int h,
                         const Status &s) {
     g->fillRoundRect(x, y, w, h, 10, CARD);
 
-    // SEM rotulo e SEM total. Os 30 px que o "AGENTS 4" custava valem uma
-    // sessao inteira neste card, onde o passo e 26 — e ele dizia duas coisas
+    // SEM rotulo e SEM total. Os 30 px que o "AGENTS 4" custava valem quase
+    // uma sessao inteira neste card — e ele dizia duas coisas
     // que a lista ja diz de outro jeito: o que a lista e (obvio, sao nomes de
     // repo com bolinha de estado) e quantas existem (o "+N" do rodape somado ao
     // que esta na tela, e com grupos cada cabecalho traz a contagem dele).
@@ -2159,123 +2238,175 @@ void drawSessoesRetrato(Arduino_Canvas *g, int x, int y, int w, int h,
         return;
     }
 
-    const int passo = 26;
-    const int hCab  = H_CAB;
-    // UMA vez por desenho, e nunca dentro do laco: cada chamada aloca o vetor
-    // de linhas inteiro, e o card e redesenhado a cada poll.
-    const grupos::Lista lista = grupos::montarLista(s.agents, planosDe(s));
+    // 44 e nao 26: as colunas de limite devolveram 46 px a este card, e a linha
+    // passou a ser um OBJETO em vez de uma faixa. Em 26 px o nome, os chips e a
+    // ponta direita disputavam a mesma faixa horizontal de 292 px e o nome
+    // perdia — "kubernetes-ind..." era o resultado tipico. Em dois andares o
+    // nome tem 180 px so para ele e o esforco passa a caber sempre.
+    const int passo = 44;
 
-    // Com UM provedor so o card nao diz nem de quem sao as sessoes nem qual o
-    // plano: as duas informacoes so existem para SEPARAR, e nao ha o que
-    // separar. O plano da conta unica ja esta implicito no cabecalho da tela,
-    // que mostra SESSION e WEEK dela. O resultado e um card identico ao de
-    // antes desta leva, com todo o espaco de volta para as sessoes.
+    // SEM CABECALHO DE GRUPO nesta tela. O agrupamento por CLI existia para
+    // dizer de que ferramenta cada sessao e, e custava 16 px por grupo mais a
+    // quebra visual entre eles — com dois provedores, 32 px, quase uma sessao
+    // inteira. O icone do fornecedor no comeco da segunda linha diz a mesma
+    // coisa por sessao, em 12 px que ja estavam vazios, e a lista volta a ser
+    // uma lista: cinco cartoes iguais, sem degraus.
+    //
+    // O PLANO DA CONTA saiu junto — ele morava no cabecalho e nao tem por que
+    // se repetir em toda linha. Ele continua na tela deitada, que mantem os
+    // grupos.
+    //
+    // A ordem e a que a API manda. Sem grupos nao ha o que reordenar, e mexer
+    // na ordem faria as sessoes dancarem de lugar entre polls.
     const int y0 = y + 8;
 
-    int fora = 0;
-    const int n = grupos::cabemLinhas(lista.linhas, h - (y0 - y), hCab, passo,
-                                      fora);
-    const int bw   = 40;                       // barra de contexto, na direita
-    const int bx   = x + w - 6 - bw;
-    const int xLim = bx - 6;                   // ate onde os chips podem ir
+    const int cabem = (h - (y0 - y)) / passo;
+    const int n     = (int)s.agents.size() < cabem ? (int)s.agents.size() : cabem;
+    const int fora  = (int)s.agents.size() - n;
+
+    // A geometria do sub-cartao. `SC_X` e a margem dele dentro do card, e a
+    // faixa de estado nasce nessa mesma coluna — a faixa E a borda esquerda do
+    // cartao, e nao um enfeite encostado nela.
+    const int SC_X    = x + 6;
+    const int SC_W    = w - 12;
+    const int SC_H    = passo - 4;             // 4 px de respiro entre cartoes
+    const int FAIXA_W = 3;
+    const int TXT_X   = SC_X + 12;             // depois da faixa, com folga
+    const int DIR     = x + w - 14;            // a ponta direita util
+    const int PCT_W   = 26;                    // "100%" na grade
+    const int BAR_W   = 44;
+    const int BAR_X   = DIR - PCT_W - 6 - BAR_W;
 
     int ly = y0;
     for (int i = 0; i < n; i++) {
-        const grupos::Linha &linha = lista.linhas[i];
+        const Agent &a = s.agents[i];
 
-        if (linha.cabecalho) {
-            drawCabecalhoGrupo(g, x + 12, ly, w - 24, linha);
-            ly += hCab;
-            continue;
-        }
+        // O CARTAO DA SESSAO. Um degrau acima do card que o contem — ver
+        // SUBCARD. Ele resolve o que a linha de dois andares deixava em aberto:
+        // sem fundo proprio, o segundo andar de uma sessao se lia como o
+        // primeiro da seguinte.
+        g->fillRoundRect(SC_X, ly, SC_W, SC_H, 6, SUBCARD);
 
-        const Agent &a = s.agents[linha.agente];
+        // As marcas de turno novo e concluido misturam contra o SUBCARD, que e
+        // o fundo real desta linha agora.
+        drawNovoLinha(g, a.novo, SC_X, ly, SC_W, SC_H, SUBCARD);
+        drawAvisoLinha(g, a.done, SC_X, ly, SC_W, SC_H, SUBCARD);
 
-        // A marca de turno concluido, atras da linha inteira.
-        drawNovoLinha(g, a.novo, x + 2, ly - 3, w - 4, passo - 2);
-        drawNovoLinha(g, a.novo, x + 2, ly - 3, w - 4, passo - 2);
-        drawAvisoLinha(g, a.done, x + 2, ly - 3, w - 4, passo - 2);
+        // A FAIXA DE ESTADO substitui a bolinha. Sao 3x36 px contra os 10 de
+        // diametro do ponto: a diferenca entre ambar e verde a dois metros
+        // deixa de ser chute, e este painel vive a essa distancia. A cor e
+        // exatamente a da bolinha da tela deitada (ver corDoEstado).
+        g->fillRect(SC_X, ly + 2, FAIXA_W, SC_H - 4, corDoEstado(a.state, a.done));
 
-        drawEstadoDot(g, x + 13, ly + 11, a.state, a.done);
-
-        // Nome na DejaVu (~10 px): o unico degrau abaixo do corpo 2 da
-        // grade, que dominava a linha. Proporcional, entao cabem mais letras
-        // no mesmo vao — o corte e por MEDIDA ate a coluna dos chips, e nao
-        // por contagem.
+        // ANDAR DE CIMA: o nome, e o turno na ponta.
+        //
+        // A DejaVu da flash tem UM corpo (~10 px) e o Arduino_GFX so escala por
+        // inteiro, entao 13 px nao existe — o degrau seguinte seria 20, que
+        // dominaria o cartao. O que esta forma compra para o nome nao e corpo,
+        // e VAO: 180 px contra os 106 da faixa antiga, e o corte por medida
+        // passa a caber quase tudo.
         g->setFont(&DejaVuSans7pt7b);
         g->setTextSize(1);
         g->setTextColor(fgColor());
-        std::string nome = a.repo.substr(0, 16);
+        const int limNome = DIR - 40 - TXT_X;   // 40 px reservados ao turno
+        std::string nome = a.repo;
         int16_t nx1, ny1; uint16_t nw, nh;
         while (!nome.empty()) {
             g->getTextBounds(nome.c_str(), 0, 0, &nx1, &ny1, &nw, &nh);
-            if ((int)nw <= 106) break;
+            if ((int)nw <= limNome) break;
             nome.pop_back();
         }
-        g->setCursor(x + 24, ly + 16);
+        g->setCursor(TXT_X, ly + 18);
         g->print(nome.c_str());
         g->setFont();
 
-        // Coluna FIXA para os chips, e nao "logo depois do repo": com o inicio
-        // variavel os chips dancariam de linha para linha conforme o tamanho do
-        // nome, e a coluna deixaria de ser lida como coluna. O chip do AGENTE
-        // saiu — o cabecalho do grupo ja diz de que CLI a sessao e.
-        int cx = x + 136;
-        {
-            // A TAG da maquina abre a coluna de chips, como no card deitado.
-            const int cwo = drawChip(g, cx, ly + 5, tagDe(a.tag),
-                                     corDaTag(a.origem), xLim);
-            if (cwo) cx += cwo + 4;
-        }
-        const int cw = drawChipCortando(g, cx, ly + 5, a.model, fgColor(), xLim);
-        if (cw) cx += cw + 4;
-        drawChip(g, cx, ly + 5, effortCurto(a.effort), C_YELL, xLim);
-
-        // A ponta direita e a coluna de quem anda: enquanto a sessao roda (ou
-        // espera voce), o turno cronometrado entra ACIMA da barrinha de
-        // contexto — a barrinha nao sai, porque em pe ela e a unica fonte do
-        // contexto; ela so desce 3 px para abrir o andar do numero. O tempo e
-        // o mesmo contador do terminal do Claude Code — o zero dos dois e o
-        // UserPromptSubmit. O valor chega PRONTO do laco principal
-        // (last.agents[].turnoS): extrapolado entre polls e protegido contra
-        // andar para tras no sincronismo — ver turnoMonotonico.
+        // O turno cronometrado, alinhado a direita do cartao. Mesmo contador do
+        // terminal do Claude Code: o valor chega PRONTO do laco principal
+        // (last.agents[].turnoS), extrapolado entre polls e protegido contra
+        // andar para tras — ver turnoMonotonico.
         //
-        // Terminado o turno, o numero NAO some: ele para onde parou e fica em
-        // cinza, dizendo quanto durou a ultima execucao daquela sessao. E a
-        // mesma regra do resto do painel — cor viva e o que esta acontecendo,
-        // cinza e o que ja aconteceu.
-        const int turno = a.turnoS;
-        const bool cronometra = turno >= 0;
-        // `topoY` e o pixel de cima do preenchimento; o trilho fica 1 abaixo,
-        // no meio dos 3 px, como sempre foi.
-        auto barrinha = [&](int topoY) {
-            g->drawFastHLine(bx, topoY + 1, bw, TRACK);
-            if (a.hasContext && a.contextPct > 0) {
-                int fill = bw * a.contextPct / 100;
-                if (fill < 2) fill = 2;
-                g->fillRect(bx, topoY, fill, 3, colorOf(a.level));
-            }
-        };
-        if (cronometra) {
-            const std::string t = formatTurno(turno);
+        // Terminado o turno o numero NAO some: para onde parou e fica em cinza,
+        // dizendo quanto durou a ultima execucao. Cor viva e o que esta
+        // acontecendo, cinza e o que ja aconteceu.
+        if (a.turnoS >= 0) {
+            const std::string t = formatTurno(a.turnoS);
             const uint16_t cor = a.state == AgentState::Working ? H_WORKING
                                : a.state == AgentState::Blocked ? H_BLOCKED
                                                                 : MUTED;
             g->setTextColor(g_stale ? MUTED : cor);
             g->setTextSize(1);
-            // ly+3 e nao ly+5 (linha dos chips): os 2 px pagam o vao entre o
-            // numero e a barrinha de baixo, que fica em ly+14..16.
-            g->setCursor(x + w - 6 - (int)t.size() * 6, ly + 3);
+            g->setCursor(DIR - (int)t.size() * 6, ly + 8);
             g->print(t.c_str());
-            barrinha(ly + 14);
-        } else {
-            barrinha(ly + 11);
         }
+
+        // ANDAR DE BAIXO: o icone da CLI, os chips, e o contexto na ponta.
+        const int xLim = BAR_X - 6;
+        int cx = TXT_X;
+
+        // O ICONE DO FORNECEDOR abre a linha — e o que sobrou do cabecalho de
+        // grupo. Ele mistura contra o SUBCARD e nao contra o TRACK da faixa:
+        // com o fundo errado, o meio-tom da mascara deixa uma franja de um
+        // degrau em volta de cada icone (ver misturaNaFaixa).
+        //
+        // Sem arte para aquele identificador o icone vem com w == 0 e a linha
+        // simplesmente comeca nos chips — nao ha texto de reserva aqui, porque
+        // o nome da CLI escrito custaria os 36 px que o icone resolve em 12.
+        {
+            const provedores::Icone ic = provedores::iconeDe(a.agent);
+            if (ic.w) {
+                drawIconeProvedor(g, cx, ly + 23 + (14 - ic.h) / 2, ic,
+                                  g_stale ? MUTED : provedores::corDe(a.agent),
+                                  SUBCARD);
+                cx += ic.w + 8;
+            }
+        }
+
+        // CHIPS, e nao texto separado por pontos. A alternativa foi medida
+        // somando o xAdvance da DejaVu contra a grade: "WIN . Opus 5 (1M) .
+        // XHigh" sai em 189 px em texto e 146 px em chip. A grade gasta 6 px
+        // fixos por caractere, a proporcional gasta mais, e cada separador
+        // custa 17 px — mais que os 8 px de borda de um chip inteiro. O texto
+        // solto parecia mais limpo e era mais largo.
+        {
+            const int cwo = drawChip(g, cx, ly + 23, tagDe(a.tag),
+                                     corDaTag(a.origem), xLim);
+            if (cwo) cx += cwo + 4;
+        }
+        const int cw = drawChipCortando(g, cx, ly + 23, a.model, fgColor(), xLim);
+        if (cw) cx += cw + 4;
+        // O esforco POR EXTENSO enquanto couber. A abreviacao (XH, Mx, Hi)
+        // existe para a linha de 26 px da tela deitada, onde o chip inteiro nao
+        // entra; aqui "XHigh" e uma palavra que se le, enquanto "XH" precisa
+        // ser decifrada. O drawChip devolve 0 quando nao cabe, entao a queda
+        // para a forma curta e o proprio retorno.
+        if (!drawChip(g, cx, ly + 23, a.effort, C_YELL, xLim))
+            drawChip(g, cx, ly + 23, effortCurto(a.effort), C_YELL, xLim);
+
+        // O contexto: a barrinha e o NUMERO ao lado dela. Sozinha, uma barra de
+        // 44 px nao separa 8% de 14% — sao dois tracinhos de comprimento
+        // parecido. O numero e o mesmo dado, so que legivel.
+        g->drawFastHLine(BAR_X, ly + 29, BAR_W, TRACK);
+        if (a.hasContext && a.contextPct > 0) {
+            int fill = BAR_W * a.contextPct / 100;
+            if (fill < 2) fill = 2;
+            g->fillRect(BAR_X, ly + 28, fill, 3, colorOf(a.level));
+        }
+        {
+            char buf[8];
+            if (a.hasContext) snprintf(buf, sizeof(buf), "%d%%", a.contextPct);
+            else              snprintf(buf, sizeof(buf), "-");
+            g->setTextColor(a.hasContext ? MUTED : TRACK);
+            g->setTextSize(1);
+            g->setCursor(DIR - (int)strlen(buf) * 6, ly + 25);
+            g->print(buf);
+        }
+
         ly += passo;
     }
 
-    // `fora` conta AGENTES, e nunca cabecalhos — "+1" tem que significar uma
-    // sessao que voce nao esta vendo.
+    // `fora` conta sessoes que nao couberam — e agora ele conta certo por
+    // construcao, porque nao ha mais cabecalho nenhum na lista para ser somado
+    // por engano.
     if (fora > 0) {
         g->setTextColor(MUTED);
         g->setTextSize(1);
@@ -2799,11 +2930,11 @@ void drawRetrato(Arduino_Canvas *g, const Status &s, int staleSeconds,
         // funcao: a geometria dela ja sai de display::telaW/telaH.
         drawPerguntaP0(g, s, opcaoArmada);
     } else {
-        drawFaixaLimite(g, R_MARG, R_LIM_Y, R_CARD_W, R_LIM_H,
-                        "SESSAO", s.session, JANELA_5H);
-        drawFaixaLimite(g, R_MARG, R_LIM_Y + R_LIM_H + R_LIM_GAP,
-                        R_CARD_W, R_LIM_H, "SEMANA", s.week, JANELA_7D,
-                        &s.clock);
+        drawColunaLimite(g, R_MARG, R_LIM_Y, R_LIM_W, R_LIM_H,
+                         "SESSAO", s.session, JANELA_5H);
+        drawColunaLimite(g, R_MARG + R_LIM_W + R_LIM_GAP, R_LIM_Y,
+                         R_LIM_W, R_LIM_H, "SEMANA", s.week, JANELA_7D,
+                         &s.clock);
         drawSessoesRetrato(g, R_MARG, R_SES_Y, R_CARD_W,
                            R_SES_FIM - R_SES_Y, s);
     }
