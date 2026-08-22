@@ -12,7 +12,13 @@ Decisao noTerminal(GestureKind k, const Contexto &c) {
     switch (k) {
         case GestureKind::Tap:
         case GestureKind::DoubleTap:
-            return c.noSairTerminal ? so(Acao::TerminalFechar) : nada();
+            if (c.noSairTerminal) return so(Acao::TerminalFechar);
+            // A barra do rodape vem DEPOIS do sair: os dois nunca se encostam,
+            // mas a saida ganha qualquer disputa por principio — ela e a unica
+            // que nao pode falhar.
+            if (c.botaoTerminal >= 0)
+                return com(Acao::TerminalBotao, c.botaoTerminal);
+            return nada();
         // Arrastar para CIMA leva o texto para cima, ou seja, mostra o que esta
         // ABAIXO — e abaixo esta o mais recente. E a mesma direcao de qualquer
         // lista rolavel; inverter aqui brigaria com o dedo.
@@ -63,6 +69,16 @@ Decisao duploToque(const Contexto &c) {
     // unico controle daquela faixa: deitado o rodape so tem os bichos e as
     // bolinhas, e em pe a turma mora sozinha entre as duas divisorias.
     if (c.naTurma) return so(Acao::TrocarTema);
+
+    // O CARTAO DE UMA SESSAO, so na primeira tela em pe: abre o terminal dela.
+    //
+    // Fica DEPOIS do bloqueio (a pergunta em tela cheia toma o painel e o
+    // segundo toque ali e "confirmar", nao "abrir") e depois da turma, que e
+    // faixa propria. Antes dos alvos de pagina porque a lista ocupa metade da
+    // tela: com a pagina ganhando, qualquer toque na lista viraria navegacao.
+    if (c.retrato && c.page == 0 && c.haveLast && !c.temBloqueio &&
+        c.cartaoSessao >= 0)
+        return com(Acao::AbrirTerminalDoAgente, c.cartaoSessao);
 
     // Pergunta em tela cheia da P0: o segundo toque confirma, do mesmo jeito que
     // na aba de contexto.

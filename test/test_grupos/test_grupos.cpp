@@ -11,6 +11,15 @@ static Agent ag(const char *agente, const char *repo) {
     return a;
 }
 
+// O mesmo, com estado — para a ordem da lista em pe.
+static Agent agEstado(const char *repo, AgentState st) {
+    Agent a;
+    a.agent = "claude";
+    a.repo  = repo;
+    a.state = st;
+    return a;
+}
+
 static std::vector<grupos::Plano> tresPlanos() {
     return {{"claude", "Max 5x"}, {"codex", "Free"}, {"agy", "AI Pro"}};
 }
@@ -201,6 +210,69 @@ void test_altura_zero_nao_cabe_nada(void) {
     TEST_ASSERT_EQUAL_INT(1, fora);
 }
 
+
+// ---- A ordem da lista em pe ----
+
+// O caso comum: ninguem bloqueado, e a ordem da API atravessa intacta. Se esta
+// falhar, a lista se reembaralha a cada poll sem nada ter mudado.
+void test_sem_bloqueado_a_ordem_nao_muda(void) {
+    std::vector<Agent> as = {agEstado("a", AgentState::Working),
+                             agEstado("b", AgentState::Idle),
+                             agEstado("c", AgentState::Working)};
+    const auto o = grupos::ordemComBloqueadosNoTopo(as);
+    TEST_ASSERT_EQUAL_INT(3, (int)o.size());
+    for (int i = 0; i < 3; i++) TEST_ASSERT_EQUAL_INT(i, o[i]);
+}
+
+// A razao de a funcao existir: com a lista cortando em cinco, a bloqueada que
+// estava em sexto viraria "+1" e sumiria da tela.
+void test_o_bloqueado_sobe_para_o_topo(void) {
+    std::vector<Agent> as = {agEstado("a", AgentState::Working),
+                             agEstado("b", AgentState::Working),
+                             agEstado("c", AgentState::Working),
+                             agEstado("d", AgentState::Working),
+                             agEstado("e", AgentState::Working),
+                             agEstado("f", AgentState::Blocked)};
+    const auto o = grupos::ordemComBloqueadosNoTopo(as);
+    TEST_ASSERT_EQUAL_INT(5, o[0]);                  // o bloqueado, em primeiro
+    // Os cinco primeiros lugares — o que cabe na tela — incluem o bloqueado.
+    bool viu = false;
+    for (int i = 0; i < 5; i++) if (o[i] == 5) viu = true;
+    TEST_ASSERT_TRUE(viu);
+}
+
+// Estavel dos DOIS lados: os bloqueados entre si e os demais entre si mantem a
+// ordem da API. Sem isso, dois bloqueados trocariam de lugar entre polls.
+void test_a_ordem_relativa_e_preservada(void) {
+    std::vector<Agent> as = {agEstado("a", AgentState::Working),
+                             agEstado("b", AgentState::Blocked),
+                             agEstado("c", AgentState::Idle),
+                             agEstado("d", AgentState::Blocked),
+                             agEstado("e", AgentState::Working)};
+    const auto o = grupos::ordemComBloqueadosNoTopo(as);
+    const int esperado[] = {1, 3, 0, 2, 4};
+    TEST_ASSERT_EQUAL_INT(5, (int)o.size());
+    for (int i = 0; i < 5; i++) TEST_ASSERT_EQUAL_INT(esperado[i], o[i]);
+}
+
+// Nenhum indice se perde nem se repete: a lista desenhada tem que ter
+// exatamente as mesmas sessoes que a API mandou.
+void test_todos_os_indices_aparecem_uma_vez(void) {
+    std::vector<Agent> as = {agEstado("a", AgentState::Blocked),
+                             agEstado("b", AgentState::Working),
+                             agEstado("c", AgentState::Blocked)};
+    const auto o = grupos::ordemComBloqueadosNoTopo(as);
+    int visto[3] = {0, 0, 0};
+    TEST_ASSERT_EQUAL_INT(3, (int)o.size());
+    for (int i : o) { TEST_ASSERT_TRUE(i >= 0 && i < 3); visto[i]++; }
+    for (int v : visto) TEST_ASSERT_EQUAL_INT(1, v);
+}
+
+void test_lista_vazia_devolve_vazia(void) {
+    std::vector<Agent> as;
+    TEST_ASSERT_EQUAL_INT(0, (int)grupos::ordemComBloqueadosNoTopo(as).size());
+}
+
 int main(int, char **) {
     UNITY_BEGIN();
     RUN_TEST(test_um_provedor_nao_gera_cabecalho);
@@ -220,5 +292,10 @@ int main(int, char **) {
     RUN_TEST(test_cabecalho_orfao_nao_e_desenhado);
     RUN_TEST(test_card_deitado_cabe_quatro_e_a_quinta_vira_mais_um);
     RUN_TEST(test_altura_zero_nao_cabe_nada);
+    RUN_TEST(test_sem_bloqueado_a_ordem_nao_muda);
+    RUN_TEST(test_o_bloqueado_sobe_para_o_topo);
+    RUN_TEST(test_a_ordem_relativa_e_preservada);
+    RUN_TEST(test_todos_os_indices_aparecem_uma_vez);
+    RUN_TEST(test_lista_vazia_devolve_vazia);
     return UNITY_END();
 }

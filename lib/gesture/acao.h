@@ -28,6 +28,10 @@ enum class Acao {
     TerminalFechar,
     TerminalRolarCima,
     TerminalRolarBaixo,
+    // A barra de rolagem do rodape, que existe porque em pe o swipe vertical
+    // disputa com a troca de pagina. `Decisao::n` traz o botao: 0 topo,
+    // 1 uma tela para tras, 2 uma para frente, 3 fim.
+    TerminalBotao,
 
     // Navegacao entre as quatro paginas, nas duas orientacoes.
     PaginaProxima,
@@ -47,9 +51,14 @@ enum class Acao {
     ProximoAgente,
     TrocarTrabalho,
 
-    // Estas duas carregam um numero em `Decisao::n`.
+    // Estas tres carregam um numero em `Decisao::n`.
     TocarOpcao,          // n = a opcao tocada (1..4)
     SelecionarAgente,    // n = o indice na lista
+    // Duplo toque num cartao da lista da primeira tela EM PE: seleciona aquele
+    // agente e abre o terminal dele de uma vez. Deitado o terminal tem botao
+    // proprio; em pe nao havia como chegar nele, e o cartao era o unico alvo
+    // grande da tela que nao respondia a nada.
+    AbrirTerminalDoAgente,   // n = o indice na lista
 };
 
 struct Decisao {
@@ -78,6 +87,8 @@ struct Contexto {
     // Hit-tests ja resolvidos.
     bool noIconeCabecalho = false;
     bool noSairTerminal   = false;
+    // Qual botao da barra do terminal esta sob o dedo. -1 = nenhum.
+    int  botaoTerminal    = -1;
     bool noRotuloSemana   = false;
     bool noPctSessao      = false;
     bool noPctSemana      = false;
@@ -86,7 +97,9 @@ struct Contexto {
     bool noBotaoLimpeza   = false;
     int  opcaoP0          = 0;   // 0 = o dedo nao caiu em opcao nenhuma
     int  opcaoP1          = 0;
-    int  agenteIndex      = -1;  // -1 = fora da lista
+    int  agenteIndex      = -1;  // -1 = fora da lista (menu da pagina 1 em pe)
+    // O cartao da lista da PRIMEIRA tela em pe. -1 = o dedo caiu fora dela.
+    int  cartaoSessao     = -1;
 };
 
 Decisao decidirGesto(GestureKind k, const Contexto &c);

@@ -1332,15 +1332,24 @@ bool drawOfflineInto(Arduino_Canvas *g, int x, int y) {
     return desenharIcone(offlineIc, g, x, y);
 }
 
-int crewW() {
+int crewW(int faixaW) {
+    // Nenhum slot com arte = nada a desenhar, e a faixa pedida nao muda isso:
+    // devolver a largura cheia aqui faria o `fillRect` de limpeza apagar a
+    // divisoria do cabecalho sem nada tomar o lugar.
+    int presentes = 0;
+    for (int i = 0; i < SLOTS; i++) if (larguraSlot[i] > 0) presentes++;
+    if (!presentes) return 0;
+
     // Elenco fechado: a fileira e sempre a mesma, e nao depende do selo ter
     // carregado — ele nem aparece.
-    if (!tema().estadoNoSlot0) return rowWidth(larguraSlot, SLOTS, VAO);
+    if (!tema().estadoNoSlot0)
+        return faixaW > 0 ? faixaW : rowWidth(larguraSlot, SLOTS, VAO);
     if (!seloBuf || atual < 0) return 0;
     // Indo embora, ele vai sozinho — e o quadro dele e mais largo que o slot.
+    // Neste caso a faixa nao se aplica: nao ha fileira, ha um bicho so.
     if (sozinho)
         return spriteDownW(sprites[atual], seloDiv(sprites[atual], seloAlvo(atual)));
-    return rowWidth(larguraSlot, SLOTS, VAO);
+    return faixaW > 0 ? faixaW : rowWidth(larguraSlot, SLOTS, VAO);
 }
 
 int crewH() {
@@ -1351,7 +1360,29 @@ int crewH() {
     return alturaTrio;
 }
 
-bool drawCrewInto(Arduino_Canvas *g, int x, int chao) {
+bool drawCrewInto(Arduino_Canvas *g, int x, int chao, int faixaW) {
+    // Onde comeca o slot `i` e quanto ele mede. Com faixa, sao fatias iguais da
+    // largura pedida; sem ela, a fileira compacta de sempre.
+    //
+    // AS FATIAS CONTAM SO OS SLOTS QUE EXISTEM, e nao SLOTS fixo. Um slot sem
+    // arte na maquina (o Sonic do tema padrao, cujos .clw nunca entram no git
+    // por serem da SEGA) some da fileira compacta sem deixar buraco, porque
+    // `rowWidth` ignora largura zero. Dividir a faixa em quatro com tres bichos
+    // devolveria exatamente esse buraco, agora no fim da linha.
+    int presentes = 0, ordem[SLOTS];
+    for (int i = 0; i < SLOTS; i++) {
+        ordem[i] = presentes;
+        if (larguraSlot[i] > 0) presentes++;
+    }
+    auto slotX = [&](int i) {
+        return faixaW > 0 ? evenSlotX(faixaW, presentes, ordem[i], x)
+                          : rowSlotX(larguraSlot, SLOTS, VAO, i, x);
+    };
+    auto slotW = [&](int i) {
+        return faixaW > 0 ? evenSlotW(faixaW, presentes, ordem[i])
+                          : larguraSlot[i];
+    };
+
     if (tema().estadoNoSlot0) {
         if (!seloBuf || atual < 0) return false;
 
@@ -1365,7 +1396,7 @@ bool drawCrewInto(Arduino_Canvas *g, int x, int chao) {
             return false;
         // Base no chao, e nao centro: os quadros tem alturas diferentes e
         // centrar faria os bichos flutuarem em alturas distintas.
-        g->draw16bitRGBBitmapWithTranColor(centerIn(x, larguraSlot[0], w), chao - h,
+        g->draw16bitRGBBitmapWithTranColor(centerIn(slotX(0), slotW(0), w), chao - h,
                                            seloBuf, sp.key, w, h);
         if (sozinho) return true;
     }
@@ -1376,8 +1407,7 @@ bool drawCrewInto(Arduino_Canvas *g, int x, int chao) {
         // tick (esta morto), entao nao ha contador a mexer.
         Icone &ic = (i == kenny) ? kennyMorto : comp[i][cara];
         if (!ic.buf) continue;
-        const int sx = rowSlotX(larguraSlot, SLOTS, VAO, i, x);
-        desenharIcone(ic, g, centerIn(sx, larguraSlot[i], ic.w), chao - ic.h);
+        desenharIcone(ic, g, centerIn(slotX(i), slotW(i), ic.w), chao - ic.h);
     }
     return true;
 }

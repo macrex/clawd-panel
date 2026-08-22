@@ -40,10 +40,47 @@ int rowWidth(const int *widths, int count, int gap);
 // Onde comeca o slot `index`, contando de `x0`.
 int rowSlotX(const int *widths, int count, int gap, int index, int x0);
 
+// ---- Fileira de fatias IGUAIS ----
+// A fileira acima distribui por LARGURA DE SLOT com um vao fixo entre eles, e o
+// resultado nao e uniforme aos olhos: cada slot mede o maior sprite que ele pode
+// mostrar, o desenho fica centrado dentro dele, e o espaco visual entre dois
+// bichos vira "vao + sobra da esquerda + sobra da direita". Medido na placa com
+// a turma do South Park: 47, 45 e 27 px entre os quatro. O ultimo colava no
+// penultimo e sobrava faixa vazia na direita.
+//
+// Aqui a faixa inteira e dividida em `count` partes iguais e cada desenho e
+// centrado na SUA parte. Os centros ficam equidistantes por construcao, seja
+// qual for a largura de cada bicho.
+//
+// A conta e `index * faixaW / count`, e nao `index * (faixaW / count)`: com a
+// divisao por ultimo o resto se distribui entre as fatias, e a soma das larguras
+// fecha exatamente `faixaW` — sem isso a fileira encolhe alguns pixels e deixa
+// de encostar na margem direita, que e metade do defeito que ela veio corrigir.
+
+// Onde comeca a fatia `index` de uma faixa de `faixaW` dividida em `count`.
+int evenSlotX(int faixaW, int count, int index, int x0);
+
+// A largura da fatia `index`. As fatias diferem em no maximo 1 px entre si.
+int evenSlotW(int faixaW, int count, int index);
+
 // Onde comeca um desenho de largura `w` centrado num slot que comeca em `slotX`
 // e mede `slotW`. Desenho maior que o slot fica alinhado a esquerda em vez de
 // escapar para dentro do vizinho anterior.
 int centerIn(int slotX, int slotW, int w);
+
+// ---- Os cartoes da lista de sessoes, em pe ----
+// Qual cartao esta em `y`, ou -1 quando o dedo caiu fora da lista.
+//
+// POR QUE ELE EXISTE
+// O hit-test que ja havia (`ui::agentIndexAt`) mira a lista da PAGINA 1 em pe —
+// o menu de agentes da tela de contexto, com passo 26 a partir de outro topo. A
+// lista da primeira tela nunca teve alvo: tocar num cartao dela nao fazia nada,
+// e ele e o maior retangulo livre da tela (292x40, cinco deles).
+//
+// So o `y` importa: o cartao ocupa a largura util inteira, entao qualquer x
+// dentro das margens cai nele. O vao de 4 px entre cartoes NAO pertence a
+// ninguem — um dedo ali nao pode abrir a sessao de baixo por meio pixel.
+int cartaoSessaoAt(int y, int quantos);
 
 // ---- Quebra de linha ----
 // Quantos caracteres cabem na PRIMEIRA linha de `txt` numa caixa de `cols`
@@ -85,14 +122,24 @@ bool dentro(const Alvo &a, int x, int y);
 // 76, o excesso simplesmente nao gira, e o dedo continua tendo alvo de sobra.
 Alvo alvoIconeCabecalho();
 
-// O percentual da janela de 5h: metade DIREITA da primeira faixa. Duplo toque
-// ali ensaia a tela de reset.
+// ---- Os tres atalhos de ensaio ----
+// Os limites deixaram de ser duas faixas EMPILHADAS e viraram duas COLUNAS lado
+// a lado de 143x98. Os alvos seguiram: a regra continua "percentual a direita,
+// rotulo a esquerda", so que agora dentro da coluna de cada janela, e nao dentro
+// da largura do painel.
+//
+// A coluna da SESSAO tem a metade esquerda livre de proposito — o rotulo dela
+// nunca teve ensaio, e um alvo sem acao ali roubaria o toque de quem erra a mira
+// no percentual ao lado.
+
+// O percentual da janela de 5h: metade DIREITA da coluna da esquerda. Duplo
+// toque ali ensaia a tela de reset.
 Alvo alvoPctSessao();
 
-// O rotulo da janela de 7 dias: metade ESQUERDA da segunda faixa. Duplo toque
-// ali ensaia a morte do Kenny.
+// O rotulo da janela de 7 dias: metade ESQUERDA da coluna da direita. Duplo
+// toque ali ensaia a morte do Kenny.
 Alvo alvoRotuloSemana();
 
-// O percentual da janela de 7 dias: metade DIREITA da segunda faixa. Duplo
+// O percentual da janela de 7 dias: metade DIREITA da coluna da direita. Duplo
 // toque ali abre a tela do Token sem esperar o limite estourar.
 Alvo alvoPctSemana();

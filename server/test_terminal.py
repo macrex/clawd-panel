@@ -128,8 +128,11 @@ class TesteLer(unittest.TestCase):
         self.soltou += 1
 
     def ler_fn(self, saida):
-        def f(pane_id, linhas=50, source="recent"):
-            self.lidos.append((pane_id, linhas, source))
+        # `formato` entrou quando a tela de terminal passou a pedir cor: a
+        # leitura vai com "ansi" e o `sgr.py` cuida dos escapes. O default
+        # "text" e o do formulario, que casa regex e nao pode ver SGR.
+        def f(pane_id, linhas=50, source="recent", formato="text"):
+            self.lidos.append((pane_id, linhas, source, formato))
             return saida
         return f
 
@@ -146,7 +149,7 @@ class TesteLer(unittest.TestCase):
         # exatamente o que a trava existe para evitar.
         r = self.chamar("w0:p1", 78, 34)
         self.assertEqual(self.travas, [("w0:p1", 78, 34)])
-        self.assertEqual(self.lidos, [("w0:p1", 34, "visible")])
+        self.assertEqual(self.lidos, [("w0:p1", 34, "visible", "ansi")])
         self.assertTrue(r["travado"])
 
     def test_espera_a_tui_reflowar_na_primeira_leitura(self):

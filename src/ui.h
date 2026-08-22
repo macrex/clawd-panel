@@ -94,6 +94,14 @@ void drawMessage(const char *title, const char *detail);
 // Indice do item do menu de repos sob (x, y), ou -1 fora dele.
 int agentIndexAt(const Status &s, int x, int y);
 
+// Qual cartao da lista da PRIMEIRA tela em pe esta em (x,y). -1 fora dela.
+//
+// A geometria mora em lib/layout (`cartaoSessaoAt`, com teste nativo); aqui
+// entram as duas coisas que so a `ui` sabe: se a tela esta em pe sem pergunta
+// tomando o painel, e QUANTOS cartoes de fato couberam — o resto virou "+N" e
+// nao tem alvo.
+int cartaoSessaoRetratoAt(const Status &s, int x, int y);
+
 // O toque caiu no botao de limpeza de contexto? So existe na pagina 1, e quem
 // confere a pagina e quem chama.
 //
@@ -170,6 +178,14 @@ void drawTerminal(const std::vector<std::string> &linhas, const char *titulo,
 // O toque caiu no botao de sair? A area sensivel e MAIOR que o desenho: sair e
 // a acao desta tela que nao pode exigir pontaria.
 bool terminalSairAt(int x, int y);
+
+// Qual botao da barra de rolagem do terminal esta em (x,y). -1 fora dela.
+// 0 = topo, 1 = uma tela para tras, 2 = uma para frente, 3 = fim.
+int terminalBotaoAt(int x, int y);
+
+// Solta o grid de cor do terminal (PSRAM). Chamado ao sair da tela: ele so
+// existe enquanto ela esta aberta.
+void gridSoltar();
 
 // O toque caiu no botao que abre o terminal, na pagina de contexto? Falso
 // quando ele nao esta desenhado — inclusive quando o agente selecionado nao tem

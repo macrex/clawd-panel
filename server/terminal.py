@@ -41,6 +41,7 @@ import subprocess
 import threading
 import time
 
+import sgr as _sgr
 from texto import so_ascii
 
 # Sem isto, cada trava pisca uma janela de console: a API roda sob pythonw.exe,
@@ -51,6 +52,17 @@ _SEM_JANELA = 0x08000000 if os.name == "nt" else 0
 # pelo emulador na largura que travamos. Com "recent" viria o historico na
 # largura antiga, que e justamente o que a trava existe para evitar.
 SOURCE = "visible"
+
+# Em que formato pedir a tela. "ansi" traz o texto COM as sequencias de cor —
+# `herdr pane read --format ansi`, o mesmo que o herdr-assist usa. A placa
+# passou a saber interpretar SGR (ver lib/termparse), e sem cor a tela do Claude
+# Code perde a metade da informacao que ela usa para se explicar: o que e aviso,
+# o que e diff, o que e prompt e o que e so moldura.
+#
+# Quem quebra e reduz a ASCII sem destruir os escapes e o `sgr.py`; o `texto.py`
+# sozinho nao serve aqui, porque ele trata o proprio ESC como caractere de
+# controle e o troca por espaco.
+FORMATO = "ansi"
 
 # A resposta vai pela rede para uma placa com PSRAM contada. Os tetos existem
 # porque `cols` e `rows` chegam do painel, ou seja, da REDE: sem eles, um pedido
@@ -85,6 +97,11 @@ def esquecer():
 
 def preparar(bruto, cols):
     """Linhas prontas para desenhar: ASCII, sem padding, quebradas em `cols`.
+
+    SEM COR. A tela de terminal passou a usar `sgr.preparar`, que faz o mesmo
+    contando coluna visivel em vez de byte; esta continua aqui porque ela e a
+    que serve a quem le texto cru, e porque os testes dela documentam a regra da
+    quebra dura que a outra herdou.
 
     A quebra e DURA e nao por palavra. Conteudo de terminal e alinhado por
     coluna — quebrar na palavra desalinharia tabela, diff e barra de progresso,
@@ -307,8 +324,11 @@ def ler(pane_id, cols, rows, rolagem=0, ler=None, agora=None, dormir=None):
     if rolagem and rolar(pane_id, rolagem):
         dormir(ROLAGEM_ASSENTA_S)
 
-    bruto = ler(pane_id, rows, "visible")
-    linhas, _ = janela(preparar(bruto, cols), rows, 0)
+    bruto = ler(pane_id, rows, SOURCE, FORMATO)
+    # `sgr.preparar` e nao o `preparar` deste modulo: o de baixo conta BYTES e
+    # uma linha de 52 colunas visiveis pode trazer 400 bytes de escape. Ver
+    # sgr.py.
+    linhas, _ = janela(_sgr.preparar(bruto, cols), rows, 0)
     return {"pane_id": pane_id, "linhas": linhas, "cols": cols, "rows": rows,
             # O painel avisa quando a trava nao subiu: sem ela o texto vem na
             # largura do host e a tela fica ilegivel sem explicacao.

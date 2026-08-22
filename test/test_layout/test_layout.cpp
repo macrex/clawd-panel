@@ -113,6 +113,64 @@ void test_entradas_degeneradas_nao_estouram(void) {
     TEST_ASSERT_EQUAL_INT(0, breakAt("", 15));
 }
 
+
+// ---- Fatias iguais ----
+
+void test_fatias_iguais_repartem_a_faixa_inteira(void) {
+    // A faixa da turma em pe: 292 px a partir de x=14, quatro bichos.
+    const int FAIXA = 292, N = 4, X0 = 14;
+    int soma = 0;
+    for (int i = 0; i < N; i++) soma += evenSlotW(FAIXA, N, i);
+    TEST_ASSERT_EQUAL_INT(FAIXA, soma);          // nada se perde na divisao
+
+    // Cada fatia comeca onde a anterior termina.
+    for (int i = 0; i < N; i++)
+        TEST_ASSERT_EQUAL_INT(evenSlotX(FAIXA, N, i, X0) + evenSlotW(FAIXA, N, i),
+                              evenSlotX(FAIXA, N, i + 1 < N ? i + 1 : i, X0)
+                                  + (i + 1 < N ? 0 : evenSlotW(FAIXA, N, i)));
+    TEST_ASSERT_EQUAL_INT(X0, evenSlotX(FAIXA, N, 0, X0));
+    TEST_ASSERT_EQUAL_INT(X0 + FAIXA, evenSlotX(FAIXA, N, N - 1, X0)
+                                          + evenSlotW(FAIXA, N, N - 1));
+}
+
+void test_centros_das_fatias_sao_equidistantes(void) {
+    // O defeito que isto corrige: com slots de largura variavel os centros
+    // ficavam a 77, 73 e 55 px. Em fatias iguais o passo e sempre o mesmo.
+    const int FAIXA = 292, N = 4, X0 = 14;
+    int centro[4];
+    for (int i = 0; i < N; i++)
+        centro[i] = evenSlotX(FAIXA, N, i, X0) + evenSlotW(FAIXA, N, i) / 2;
+    const int passo = centro[1] - centro[0];
+    for (int i = 1; i + 1 < N; i++)
+        TEST_ASSERT_EQUAL_INT(passo, centro[i + 1] - centro[i]);
+}
+
+void test_resto_da_divisao_cai_dentro_das_fatias(void) {
+    // 293 nao divide por 4: uma fatia tem que ficar 1 px maior, e nenhuma pode
+    // sobrar de fora — era isso que fazia a fileira nao encostar na margem.
+    const int FAIXA = 293, N = 4;
+    int soma = 0, maior = 0, menor = 9999;
+    for (int i = 0; i < N; i++) {
+        const int w = evenSlotW(FAIXA, N, i);
+        soma += w;
+        if (w > maior) maior = w;
+        if (w < menor) menor = w;
+    }
+    TEST_ASSERT_EQUAL_INT(FAIXA, soma);
+    TEST_ASSERT_EQUAL_INT(1, maior - menor);
+}
+
+void test_fatias_degeneradas_nao_estouram(void) {
+    TEST_ASSERT_EQUAL_INT(14, evenSlotX(0, 4, 2, 14));      // faixa vazia
+    TEST_ASSERT_EQUAL_INT(14, evenSlotX(292, 0, 2, 14));    // sem fatias
+    TEST_ASSERT_EQUAL_INT(0,  evenSlotW(292, 0, 2));
+    TEST_ASSERT_EQUAL_INT(0,  evenSlotW(-5, 4, 1));
+    // indice fora da faixa e grampeado na ultima fatia, e nao vira lixo
+    TEST_ASSERT_EQUAL_INT(evenSlotX(292, 4, 3, 14), evenSlotX(292, 4, 99, 14));
+    TEST_ASSERT_EQUAL_INT(evenSlotW(292, 4, 3),     evenSlotW(292, 4, 99));
+    TEST_ASSERT_EQUAL_INT(14, evenSlotX(292, 4, -3, 14));
+}
+
 int main(int, char **) {
     UNITY_BEGIN();
     RUN_TEST(test_texto_que_cabe_nao_quebra);
@@ -130,5 +188,9 @@ int main(int, char **) {
     RUN_TEST(test_slot_vazio_some_da_fileira);
     RUN_TEST(test_fileira_degenerada);
     RUN_TEST(test_desenho_fica_centrado_no_slot);
+    RUN_TEST(test_fatias_iguais_repartem_a_faixa_inteira);
+    RUN_TEST(test_centros_das_fatias_sao_equidistantes);
+    RUN_TEST(test_resto_da_divisao_cai_dentro_das_fatias);
+    RUN_TEST(test_fatias_degeneradas_nao_estouram);
     return UNITY_END();
 }

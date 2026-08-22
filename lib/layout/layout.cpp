@@ -36,9 +36,44 @@ int rowSlotX(const int *widths, int count, int gap, int index, int x0) {
     return x0 + antes + (gap < 0 ? 0 : gap);
 }
 
+int evenSlotX(int faixaW, int count, int index, int x0) {
+    if (count <= 0 || faixaW <= 0) return x0;
+    if (index <= 0) return x0;
+    if (index >= count) index = count - 1;
+    return x0 + (int)((long)index * faixaW / count);
+}
+
+int evenSlotW(int faixaW, int count, int index) {
+    if (count <= 0 || faixaW <= 0) return 0;
+    if (index < 0) index = 0;
+    if (index >= count) index = count - 1;
+    // A diferenca entre o inicio da PROXIMA fatia e o desta, para que o resto da
+    // divisao caia dentro de alguma fatia em vez de sumir no fim da faixa.
+    const long ini = (long)index * faixaW / count;
+    const long fim = (long)(index + 1) * faixaW / count;
+    return (int)(fim - ini);
+}
+
 int centerIn(int slotX, int slotW, int w) {
     if (w >= slotW) return slotX;
     return slotX + (slotW - w) / 2;
+}
+
+// A geometria da lista da primeira tela em pe, espelhada de drawSessoesRetrato.
+// Duplicar tres numeros aqui e o preco de manter o hit-test testavel no PC — a
+// funcao que desenha precisa de canvas e fonte, e arrastar isso para a lib
+// traria o Arduino junto.
+const int LST_Y0    = 228;   // primeiro cartao (topo da lista + 8 de respiro)
+const int LST_PASSO = 44;
+const int LST_ALT   = 40;    // o cartao; os outros 4 px sao o vao
+
+int cartaoSessaoAt(int y, int quantos) {
+    if (quantos <= 0 || y < LST_Y0) return -1;
+    const int i = (y - LST_Y0) / LST_PASSO;
+    if (i >= quantos) return -1;
+    // Dentro do CARTAO, e nao do passo: o vao entre dois cartoes nao responde.
+    if ((y - LST_Y0) - i * LST_PASSO >= LST_ALT) return -1;
+    return i;
 }
 
 int breakAt(const char *txt, int cols) {
@@ -68,15 +103,15 @@ namespace {
 
 const int PAINEL_W  = 320;   // largura nativa do painel (retrato)
 const int MARG      = 14;
-const int CARD_W    = PAINEL_W - MARG * 2;   // 292
-const int LIM_Y     = 114;   // teto da faixa SESSAO
-const int LIM_H     = 70;
-const int LIM_GAP   = 6;
-const int FAIXA_ALT = 40;    // altura util do alvo dentro da faixa
+const int LIM_Y     = 114;   // teto das duas colunas de limite
+const int LIM_H     = 98;    // altura de cada coluna
+const int LIM_W     = 143;   // largura de cada coluna
+const int LIM_GAP   = 6;     // 14 + 143 + 6 + 143 + 14 = 320
 const int GIRO_W    = 76;
 const int GIRO_H    = 46;
 
-int topoDaSemana() { return LIM_Y + LIM_H + LIM_GAP; }   // 190
+// A SEMANA deixou de ficar ABAIXO da sessao e passou a ficar AO LADO dela.
+int xDaSemana() { return MARG + LIM_W + LIM_GAP; }       // 163
 
 }   // namespace
 
@@ -86,15 +121,19 @@ bool dentro(const Alvo &a, int x, int y) {
 
 Alvo alvoIconeCabecalho() { return Alvo{0, 0, GIRO_W, GIRO_H}; }
 
+// A ALTURA e a coluna INTEIRA, e nao um recorte dela como era nas faixas.
+// La o alvo pegava 40 dos 70 px porque duas faixas empilhadas dividiam a mesma
+// vertical e um alvo alto demais invadiria a vizinha. Em coluna as vizinhas
+// estao lado a lado: a divisao que importa e horizontal, e a vertical fica
+// inteira para o dedo — 98 px em vez de 40, num painel que se toca em pe.
 Alvo alvoPctSessao() {
-    return Alvo{MARG + CARD_W / 2, LIM_Y, CARD_W - CARD_W / 2, FAIXA_ALT};
+    return Alvo{MARG + LIM_W / 2, LIM_Y, LIM_W - LIM_W / 2, LIM_H};
 }
 
 Alvo alvoRotuloSemana() {
-    return Alvo{MARG, topoDaSemana(), CARD_W / 2, FAIXA_ALT};
+    return Alvo{xDaSemana(), LIM_Y, LIM_W / 2, LIM_H};
 }
 
 Alvo alvoPctSemana() {
-    return Alvo{MARG + CARD_W / 2, topoDaSemana(), CARD_W - CARD_W / 2,
-                FAIXA_ALT};
+    return Alvo{xDaSemana() + LIM_W / 2, LIM_Y, LIM_W - LIM_W / 2, LIM_H};
 }

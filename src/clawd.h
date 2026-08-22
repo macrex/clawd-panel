@@ -93,9 +93,17 @@ void area(int &x, int &y, int &w, int &h);
 // O rodape ja foi um selo unico e PARADO: cada quadro custava um redesenho de
 // tela inteira (~64 ms). O flush de prefixo derrubou o custo para ~21 ms com os
 // tres (ver display::flushPrefix), e tick() ainda limita a cadencia de envio.
-int  crewW();                                    // 0 se nao ha o que desenhar
+// `faixaW` maior que zero espalha a turma por uma faixa dessa largura, em
+// fatias IGUAIS, com cada bicho centrado na sua. Zero mantem a fileira compacta
+// de sempre — larguras de slot com um vao fixo entre elas.
+//
+// A tela em PE passa a largura do card (292): la a faixa da turma esta dentro do
+// prefixo de LINHAS, entao alargar nao custa quadro nenhum. A tela deitada
+// continua em zero, porque la o prefixo e de COLUNAS e cada pixel a mais na
+// fileira e enviado 14 vezes por segundo.
+int  crewW(int faixaW = 0);                      // 0 se nao ha o que desenhar
 int  crewH();                                    // caixa a limpar antes de blitar
-bool drawCrewInto(Arduino_Canvas *g, int x, int chao);   // alinhado pela BASE
+bool drawCrewInto(Arduino_Canvas *g, int x, int chao, int faixaW = 0);
 
 // ---- Icone do cabecalho ----
 // O wizard, recortado no personagem e reduzido para a altura do cabecalho. NAO

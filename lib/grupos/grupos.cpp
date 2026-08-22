@@ -119,4 +119,16 @@ int cabemLinhas(const std::vector<Linha> &l, int altura,
     return n;
 }
 
+std::vector<int> ordemComBloqueadosNoTopo(const std::vector<Agent> &agents) {
+    std::vector<int> ordem;
+    ordem.reserve(agents.size());
+    // Duas passadas, e nao um sort: a estabilidade sai de graca e nao ha
+    // comparador para errar. A primeira recolhe quem espera, a segunda o resto.
+    for (size_t i = 0; i < agents.size(); i++)
+        if (agents[i].state == AgentState::Blocked) ordem.push_back((int)i);
+    for (size_t i = 0; i < agents.size(); i++)
+        if (agents[i].state != AgentState::Blocked) ordem.push_back((int)i);
+    return ordem;
+}
+
 }   // namespace grupos

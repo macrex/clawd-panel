@@ -72,6 +72,23 @@ Lista montarLista(const std::vector<Agent> &agents,
 // conta com passos diferentes, e ela tem uma sutileza: um cabecalho cujo grupo
 // inteiro ficou de fora NAO e desenhado — um titulo sozinho sem nenhuma linha
 // embaixo dele parece defeito.
+// ---- A ordem da lista em pe ----
+// Devolve os INDICES de `agents` na ordem de desenho, com as sessoes BLOQUEADAS
+// no topo e todo o resto na ordem em que a API mandou.
+//
+// POR QUE SO O BLOQUEADO SOBE
+// A lista em pe corta no que cabe (cinco cartoes) e o resto vira "+N". Se a
+// sessao que sobrar for a bloqueada, o painel esconde a unica linha que pede
+// acao — e responder pergunta de agente parado e a razao de este painel
+// existir. Ordenar por estado inteiro faria as sessoes dancarem de lugar a cada
+// poll; promover so `Blocked` mantem a lista parada no caso comum, que e
+// nenhuma bloqueada.
+//
+// A ordem RELATIVA e preservada dentro de cada grupo (ordenacao estavel): duas
+// bloqueadas continuam entre si na ordem da API, e as demais tambem. Sem isso a
+// lista se reembaralharia a cada poll mesmo sem mudanca de estado.
+std::vector<int> ordemComBloqueadosNoTopo(const std::vector<Agent> &agents);
+
 int cabemLinhas(const std::vector<Linha> &l, int altura,
                 int hCabecalho, int hAgente, int &foraN);
 

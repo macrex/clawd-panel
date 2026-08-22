@@ -347,7 +347,7 @@ LER_LINHAS = 50
 TECLAS_OK = ("Up", "Down", "Enter")
 
 
-def ler_pane(pane_id, linhas=LER_LINHAS, source="recent"):
+def ler_pane(pane_id, linhas=LER_LINHAS, source="recent", formato="text"):
     """A tela de um pane, em texto cru. String vazia quando nao deu para ler.
 
     Vazio significa "nao consegui", e quem chama trata como "sem formulario" —
@@ -359,8 +359,10 @@ def ler_pane(pane_id, linhas=LER_LINHAS, source="recent"):
     "visible", que e o viewport — e o viewport e o que a trava de resolucao
     reflowou e o que a rolagem nativa move.
 
-    `--format text` porque o parser casa expressao regular, e os codigos de cor
-    no meio das linhas quebrariam o match.
+    `--format` default "text" porque o parser de formulario casa expressao
+    regular, e os codigos de cor no meio das linhas quebrariam o match. A tela
+    de terminal pede "ansi": la a cor E o conteudo, e quem a interpreta e o
+    `sgr.py` deste lado mais o `lib/termparse` da placa.
     """
     binario = _binario_ativo or achar_binario()
     if not binario or not pane_id:
@@ -368,7 +370,7 @@ def ler_pane(pane_id, linhas=LER_LINHAS, source="recent"):
     try:
         r = subprocess.run([binario, "pane", "read", pane_id,
                             "--source", source, "--lines", str(linhas),
-                            "--format", "text"],
+                            "--format", formato],
                            capture_output=True, text=True,
                            encoding="utf-8", errors="replace",
                            timeout=TIMEOUT_S, creationflags=SEM_JANELA)

@@ -14,12 +14,21 @@
 //
 // O que a foto mostrava, e onde:
 //
+// AS MEDIDAS FORAM REFEITAS em 21/08/2026, sobre uma foto nova: os limites
+// deixaram de ser duas faixas empilhadas de 70 px e viraram duas COLUNAS de
+// 143x98 lado a lado, e as coordenadas antigas apontavam para o vazio abaixo
+// delas. O teste seguiu a tela — nao o contrario.
+//
+// O que a foto de 21/08 mostrava, e onde:
+//
 //   fogo do nivel (canto superior esquerdo)   x 8..48    y 5..45
-//   turma do South Park                       x 14..200  y 55..100
-//   faixa SESSAO, rotulo a esquerda           x 22..75   y 128..145
-//   faixa SESSAO, "6%" a direita              x 265..300 y 128..148
-//   faixa SEMANA, rotulo a esquerda           x 22..80   y 200..218
-//   faixa SEMANA, "9%" a direita              x 278..300 y 200..222
+//   turma do South Park                       x 34..283  y 52..100
+//   coluna SESSAO, rotulo a esquerda          x 23..77   y 126..135
+//   coluna SESSAO, "20%" a direita            x 93..150  y 140..159
+//   coluna SEMANA, rotulo a esquerda          x 172..229 y 126..135
+//   coluna SEMANA, "81%" a direita            x 242..299 y 140..159
+//   coluna SESSAO, barra                      x 22..148  y 170..177
+//   coluna SESSAO, prazo (rodape)             x 23..51   y 190..199
 
 void setUp(void) {}
 void tearDown(void) {}
@@ -39,28 +48,29 @@ void test_o_icone_do_cabecalho_cobre_o_fogo_desenhado(void) {
 
 void test_o_alvo_da_sessao_cobre_o_percentual_desenhado(void) {
     const Alvo a = alvoPctSessao();
-    TEST_ASSERT_TRUE(dentro(a, 265, 128));
-    TEST_ASSERT_TRUE(dentro(a, 300, 148));
-    TEST_ASSERT_TRUE(dentro(a, 282, 138));   // meio do "6%"
+    TEST_ASSERT_TRUE(dentro(a, 93, 140));    // canto do "20%"
+    TEST_ASSERT_TRUE(dentro(a, 150, 159));   // canto oposto
+    TEST_ASSERT_TRUE(dentro(a, 121, 149));   // meio, onde o dedo cai
 }
 
 void test_o_alvo_da_semana_cobre_o_percentual_desenhado(void) {
     const Alvo a = alvoPctSemana();
-    TEST_ASSERT_TRUE(dentro(a, 278, 200));
-    TEST_ASSERT_TRUE(dentro(a, 300, 222));
-    TEST_ASSERT_TRUE(dentro(a, 289, 210));   // meio do "9%"
+    TEST_ASSERT_TRUE(dentro(a, 242, 140));
+    TEST_ASSERT_TRUE(dentro(a, 299, 159));
+    TEST_ASSERT_TRUE(dentro(a, 270, 149));   // meio do "81%"
 }
 
 void test_o_rotulo_da_semana_cobre_a_palavra_desenhada(void) {
     const Alvo a = alvoRotuloSemana();
-    TEST_ASSERT_TRUE(dentro(a, 22, 200));
-    TEST_ASSERT_TRUE(dentro(a, 80, 218));
+    TEST_ASSERT_TRUE(dentro(a, 172, 126));
+    TEST_ASSERT_TRUE(dentro(a, 229, 135));
+    TEST_ASSERT_TRUE(dentro(a, 200, 130));   // meio de "SEMANA"
 }
 
-// A divisao da faixa em duas metades e o que separa dois gestos diferentes:
+// A divisao da COLUNA em duas metades e o que separa dois gestos diferentes:
 // ensaiar a morte do Kenny (esquerda) e abrir a tela do Token (direita). Se as
 // metades se sobrepusessem, um deles nunca aconteceria.
-void test_as_duas_metades_da_faixa_nao_se_pisam(void) {
+void test_as_duas_metades_da_coluna_nao_se_pisam(void) {
     const Alvo esq = alvoRotuloSemana();
     const Alvo dir = alvoPctSemana();
 
@@ -69,18 +79,46 @@ void test_as_duas_metades_da_faixa_nao_se_pisam(void) {
 
     // E nenhum ponto pertence as duas.
     for (int x = esq.x; x < dir.x + dir.w; x += 7)
-        TEST_ASSERT_FALSE(dentro(esq, x, 205) && dentro(dir, x, 205));
+        TEST_ASSERT_FALSE(dentro(esq, x, 150) && dentro(dir, x, 150));
 }
 
-// As duas faixas sao janelas diferentes, e um toque na de 5h nao pode abrir a
-// tela da de 7 dias.
-void test_as_duas_faixas_nao_se_pisam(void) {
+// As duas janelas agora sao VIZINHAS DE LADO, e nao mais empilhadas: elas
+// dividem a mesma altura e o que as separa e o x. Um toque na coluna de 5h nao
+// pode abrir a tela da de 7 dias.
+void test_as_duas_colunas_nao_se_pisam(void) {
     const Alvo sessao = alvoPctSessao();
     const Alvo semana = alvoPctSemana();
 
-    TEST_ASSERT_TRUE(sessao.y + sessao.h <= semana.y);
-    TEST_ASSERT_FALSE(dentro(sessao, 289, 210));   // o "9%" nao e da sessao
-    TEST_ASSERT_FALSE(dentro(semana, 282, 138));   // nem o "6%" e da semana
+    TEST_ASSERT_TRUE(sessao.x + sessao.w <= semana.x);
+    TEST_ASSERT_FALSE(dentro(sessao, 270, 149));   // o "81%" nao e da sessao
+    TEST_ASSERT_FALSE(dentro(semana, 121, 149));   // nem o "20%" e da semana
+
+    // O vao de 6 px entre as colunas nao pertence a ninguem: um dedo ali nao
+    // pode disparar o ensaio errado.
+    const Alvo rotulo = alvoRotuloSemana();
+    TEST_ASSERT_FALSE(dentro(sessao, 159, 149));
+    TEST_ASSERT_FALSE(dentro(rotulo, 159, 149));
+}
+
+// A coluna da SESSAO tem a metade esquerda LIVRE — o rotulo dela nunca teve
+// ensaio. Um alvo ali roubaria o toque de quem erra a mira no percentual.
+void test_o_rotulo_da_sessao_nao_dispara_nada(void) {
+    const Alvo sessao = alvoPctSessao();
+    TEST_ASSERT_FALSE(dentro(sessao, 23, 130));    // canto do "SESSAO"
+    TEST_ASSERT_FALSE(dentro(sessao, 77, 130));    // fim da palavra
+    TEST_ASSERT_FALSE(dentro(alvoRotuloSemana(), 50, 130));
+    TEST_ASSERT_FALSE(dentro(alvoPctSemana(), 50, 130));
+}
+
+// A altura util cresceu de 40 para 98 px: a coluna inteira responde, do titulo
+// ao rodape. Era 40 porque duas faixas empilhadas dividiam a vertical.
+void test_o_alvo_cobre_a_coluna_inteira_em_altura(void) {
+    const Alvo a = alvoPctSemana();
+    TEST_ASSERT_EQUAL_INT(114, a.y);
+    TEST_ASSERT_EQUAL_INT(98, a.h);
+    TEST_ASSERT_TRUE(dentro(a, 270, 177));   // a altura da barra
+    TEST_ASSERT_TRUE(dentro(a, 270, 199));   // a altura do rodape
+    TEST_ASSERT_FALSE(dentro(a, 270, 212));  // e para onde a coluna acaba
 }
 
 // Os alvos ficam DENTRO da tela. Um retangulo que passa da borda responde a
@@ -103,15 +141,57 @@ void test_o_alvo_da_direita_termina_no_fim_do_card(void) {
     TEST_ASSERT_EQUAL_INT(320 - 14, a.x + a.w);
 }
 
+
+// ---- Os cartoes da lista de sessoes ----
+// Geometria em pe: primeiro cartao em y=228, passo 44, cartao de 40 px. O vao
+// de 4 px entre dois cartoes nao pertence a nenhum dos dois.
+
+void test_cada_cartao_responde_na_sua_faixa(void) {
+    TEST_ASSERT_EQUAL_INT(0, cartaoSessaoAt(228, 5));   // topo do primeiro
+    TEST_ASSERT_EQUAL_INT(0, cartaoSessaoAt(267, 5));   // ultima linha dele
+    TEST_ASSERT_EQUAL_INT(1, cartaoSessaoAt(272, 5));   // topo do segundo
+    TEST_ASSERT_EQUAL_INT(4, cartaoSessaoAt(404, 5));   // o quinto
+    TEST_ASSERT_EQUAL_INT(4, cartaoSessaoAt(443, 5));
+}
+
+void test_o_vao_entre_cartoes_nao_responde(void) {
+    // 268..271 sao os 4 px de respiro depois do primeiro cartao. Um dedo ali
+    // nao pode abrir o terminal da sessao de baixo por meio pixel.
+    for (int y = 268; y <= 271; y++)
+        TEST_ASSERT_EQUAL_INT(-1, cartaoSessaoAt(y, 5));
+}
+
+void test_fora_da_lista_nao_responde(void) {
+    TEST_ASSERT_EQUAL_INT(-1, cartaoSessaoAt(227, 5));   // acima do primeiro
+    TEST_ASSERT_EQUAL_INT(-1, cartaoSessaoAt(114, 5));   // na coluna de limite
+    TEST_ASSERT_EQUAL_INT(-1, cartaoSessaoAt(462, 5));   // no rodape
+}
+
+// O que virou "+N" nao esta na tela e nao pode responder ao dedo: com tres
+// sessoes desenhadas, o quarto e o quinto lugares sao fundo.
+void test_o_que_nao_coube_nao_tem_alvo(void) {
+    TEST_ASSERT_EQUAL_INT(2, cartaoSessaoAt(316, 3));    // o terceiro existe
+    TEST_ASSERT_EQUAL_INT(-1, cartaoSessaoAt(360, 3));   // o quarto nao
+    TEST_ASSERT_EQUAL_INT(-1, cartaoSessaoAt(404, 3));
+    TEST_ASSERT_EQUAL_INT(-1, cartaoSessaoAt(228, 0));   // lista vazia
+    TEST_ASSERT_EQUAL_INT(-1, cartaoSessaoAt(228, -2));
+}
+
 int main(int, char **) {
     UNITY_BEGIN();
     RUN_TEST(test_o_icone_do_cabecalho_cobre_o_fogo_desenhado);
     RUN_TEST(test_o_alvo_da_sessao_cobre_o_percentual_desenhado);
     RUN_TEST(test_o_alvo_da_semana_cobre_o_percentual_desenhado);
     RUN_TEST(test_o_rotulo_da_semana_cobre_a_palavra_desenhada);
-    RUN_TEST(test_as_duas_metades_da_faixa_nao_se_pisam);
-    RUN_TEST(test_as_duas_faixas_nao_se_pisam);
+    RUN_TEST(test_as_duas_metades_da_coluna_nao_se_pisam);
+    RUN_TEST(test_as_duas_colunas_nao_se_pisam);
+    RUN_TEST(test_o_rotulo_da_sessao_nao_dispara_nada);
+    RUN_TEST(test_o_alvo_cobre_a_coluna_inteira_em_altura);
     RUN_TEST(test_nenhum_alvo_escapa_da_tela);
     RUN_TEST(test_o_alvo_da_direita_termina_no_fim_do_card);
+    RUN_TEST(test_cada_cartao_responde_na_sua_faixa);
+    RUN_TEST(test_o_vao_entre_cartoes_nao_responde);
+    RUN_TEST(test_fora_da_lista_nao_responde);
+    RUN_TEST(test_o_que_nao_coube_nao_tem_alvo);
     return UNITY_END();
 }

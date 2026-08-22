@@ -1,5 +1,7 @@
 #include "ui.h"
 #include <math.h>
+#include "term_parse.h"
+#include "cp437.h"
 #include "display.h"
 #include "board_pins.h"
 #include "view_model.h"
@@ -2042,6 +2044,11 @@ const int GAP_RODAPE   = 6;
 const int R_LIM_GAP    = 6;      // 14 + 143 + 6 + 143 + 14 = 320
 const int R_SES_Y      = R_LIM_Y + R_LIM_H + 8;                 // 220
 const int R_SES_FIM    = 456;
+// O passo de um cartao de sessao. Constante, e nao numero solto, porque ele e
+// lido em DOIS lugares que precisam concordar: quem desenha a lista e o
+// hit-test que diz em qual cartao o dedo caiu. Divergirem significa abrir o
+// terminal da sessao errada, e nada na tela denunciaria.
+const int R_SES_PASSO  = 44;
 const int R_STATUS_Y   = 462;
 
 // O alvo do gesto de girar: o canto do bicho, com folga larga. Vale nas duas
@@ -2270,6 +2277,25 @@ void drawFaixaEstado(Arduino_Canvas *g, int x, int y, int w, int h, int r,
     }
 }
 
+// Um contador de linhas em no maximo CINCO caracteres, sinal incluso.
+//
+// MEDIDO, e nao estimado: a fileira de baixo do cartao e toda em grade (6 px
+// por caractere), e o pior caso real — chip "Opus 5 (1M)" mais "XHigh" — termina
+// em x=192 com o percentual do contexto comendo a ponta direita a partir de 264.
+// Sobram 72 px para os dois numeros. Sem abreviar, uma sessao de cinco digitos
+// de cada lado ("+12345 -1234") pede 76 e o `drawChip` do esforco simplesmente
+// nao desenha — o effort sumiria em silencio nas sessoes mais produtivas, que
+// sao justamente as que se quer olhar.
+//
+// Com o k, o teto e "+999k" / "-999k": 30 px cada, 64 com o vao, e sobra folga.
+void contadorCurto(char *buf, size_t cap, char sinal, int v) {
+    if (v < 0) v = 0;
+    if (v < 1000)        snprintf(buf, cap, "%c%d", sinal, v);
+    else if (v < 10000)  snprintf(buf, cap, "%c%d.%dk", sinal, v / 1000,
+                                  (v % 1000) / 100);
+    else                 snprintf(buf, cap, "%c%dk", sinal, v / 1000);
+}
+
 // SEM MOLDURA EXTERNA, e essa e a diferenca desta versao.
 //
 // Desde que cada sessao virou um cartao proprio, o cartao que os continha nao
@@ -2296,7 +2322,7 @@ void drawSessoesRetrato(Arduino_Canvas *g, int x, int y, int w, int h,
     // ponta direita disputavam a mesma faixa horizontal de 292 px e o nome
     // perdia — "kubernetes-ind..." era o resultado tipico. Em dois andares o
     // nome tem 180 px so para ele e o esforco passa a caber sempre.
-    const int passo = 44;
+    const int passo = R_SES_PASSO;
 
     // SEM CABECALHO DE GRUPO nesta tela. O agrupamento por CLI existia para
     // dizer de que ferramenta cada sessao e, e custava 16 px por grupo mais a
@@ -2309,13 +2335,19 @@ void drawSessoesRetrato(Arduino_Canvas *g, int x, int y, int w, int h,
     // se repetir em toda linha. Ele continua na tela deitada, que mantem os
     // grupos.
     //
-    // A ordem e a que a API manda. Sem grupos nao ha o que reordenar, e mexer
-    // na ordem faria as sessoes dancarem de lugar entre polls.
+    // A ordem e a da API, com UMA excecao: quem esta bloqueado sobe para o topo.
+    // A lista corta no que cabe e o resto vira "+N"; se a sessao que sobrar for
+    // a bloqueada, o painel esconde a unica linha que pede acao — e responder
+    // pergunta de agente parado e a razao de este painel existir. Ver
+    // `grupos::ordemComBloqueadosNoTopo`, que e estavel: nada mais muda de
+    // lugar, e no caso comum (nenhuma bloqueada) a lista fica exatamente como
+    // a API mandou.
     const int y0 = y + 8;
 
+    const std::vector<int> ordem = grupos::ordemComBloqueadosNoTopo(s.agents);
     const int cabem = (h - (y0 - y)) / passo;
-    const int n     = (int)s.agents.size() < cabem ? (int)s.agents.size() : cabem;
-    const int fora  = (int)s.agents.size() - n;
+    const int n     = (int)ordem.size() < cabem ? (int)ordem.size() : cabem;
+    const int fora  = (int)ordem.size() - n;
 
     // A geometria do sub-cartao. `SC_X` e a margem dele dentro do card, e a
     // faixa de estado nasce nessa mesma coluna — a faixa E a borda esquerda do
@@ -2338,7 +2370,7 @@ void drawSessoesRetrato(Arduino_Canvas *g, int x, int y, int w, int h,
 
     int ly = y0;
     for (int i = 0; i < n; i++) {
-        const Agent &a = s.agents[i];
+        const Agent &a = s.agents[ordem[i]];
 
         // O CARTAO DA SESSAO. Um degrau acima do card que o contem — ver
         // SUBCARD. Ele resolve o que a linha de dois andares deixava em aberto:
@@ -2400,10 +2432,31 @@ void drawSessoesRetrato(Arduino_Canvas *g, int x, int y, int w, int h,
         }
 
         // ANDAR DE BAIXO: o icone da CLI, os chips, e o contexto na ponta.
+        // O QUE A SESSAO PRODUZIU, entre os chips e o percentual do contexto.
+        //
+        // Tres sessoes abertas no mesmo modelo e no mesmo estado se desenhavam
+        // identicas, e duas delas tinham escrito ~2.400 linhas enquanto a
+        // terceira nao tinha escrito nenhuma. `state` diz o que a sessao esta
+        // fazendo AGORA; isto diz o que ela ja fez, e e a distincao que faltava
+        // numa tela de cinco.
+        //
+        // Verde e vermelho nao sao convencao nova: e a de todo diff. Sao
+        // contadores CUMULATIVOS da sessao (nao do dia), e o Codex nao os
+        // publica — `hasLines` falso deixa o vao vazio, como o contexto ausente
+        // ja deixa o "-" no lugar do numero.
+        char prod[12] = "", prodMenos[12] = "";
+        int prodW = 0, prodMenosW = 0;
+        if (a.hasLines) {
+            contadorCurto(prod, sizeof(prod), '+', a.linesAdded);
+            contadorCurto(prodMenos, sizeof(prodMenos), '-', a.linesRemoved);
+            prodW      = (int)strlen(prod) * 6;
+            prodMenosW = (int)strlen(prodMenos) * 6;
+        }
         // O percentual do contexto ocupa a ponta direita desta fileira; o
-        // trilho dele mora na base do cartao (ver abaixo), entao aqui o limite
-        // dos chips e so o numero.
-        const int xLim = DIR - 26 - 8;
+        // trilho dele mora na base do cartao (ver abaixo). Os chips param antes
+        // da producao, que por sua vez para antes do numero.
+        const int xProd = DIR - 26 - 8;
+        const int xLim  = prodW ? xProd - prodW - prodMenosW - 10 : xProd;
         int cx = TXT_X;
 
         // O ICONE DO FORNECEDOR abre a linha — e o que sobrou do cabecalho de
@@ -2482,6 +2535,16 @@ void drawSessoesRetrato(Arduino_Canvas *g, int x, int y, int w, int h,
             g->fillRoundRect(TRILHO_X, TR_Y, fill, TR_H, TR_H / 2,
                              colorOf(a.level));
         }
+        if (prodW) {
+            g->setTextSize(1);
+            g->setTextColor(g_stale ? MUTED : C_GREEN);
+            g->setCursor(xProd - prodMenosW - 4 - prodW, ly + 22);
+            g->print(prod);
+            g->setTextColor(g_stale ? MUTED : C_RED);
+            g->setCursor(xProd - prodMenosW, ly + 22);
+            g->print(prodMenos);
+        }
+
         {
             // O numero sobe para a fileira dos chips: la ele nao disputa altura
             // com nada, e o trilho fica inteiro.
@@ -2511,7 +2574,18 @@ void drawSessoesRetrato(Arduino_Canvas *g, int x, int y, int w, int h,
 // A turma e a linha de idade do dado. Nao ha bolinhas de pagina: em pe existe
 // uma pagina so, e um indicador de quatro com uma acesa seria mentira.
 void drawTurmaRetrato(Arduino_Canvas *g) {
-    if (!clawd::crewW() || !clawd::drawCrewInto(g, R_MARG, R_TURMA_CHAO))
+    // A turma se espalha pelos 292 px do card, em quatro fatias iguais, e nao
+    // na fileira compacta de larguras variaveis. Medido na placa antes: os vaos
+    // entre os quatro eram 47, 45 e 27 px — o ultimo colava no penultimo e
+    // sobravam 39 px vazios na direita contra 18 na esquerda. Cada slot mede o
+    // maior sprite que ele pode mostrar, entao o espaco visual entre dois
+    // bichos era "vao fixo + sobra de um + sobra do outro", que nao e constante.
+    //
+    // Em pe isto e de graca: a faixa da turma mora dentro do prefixo de LINHAS
+    // (ver drawRetrato), e alargar na horizontal nao muda quantas linhas o flush
+    // envia. Deitado seria caro, e por isso la a fileira continua compacta.
+    if (!clawd::crewW(R_CARD_W) ||
+        !clawd::drawCrewInto(g, R_MARG, R_TURMA_CHAO, R_CARD_W))
         drawLogo(g, R_MARG, R_TURMA_CHAO - logoH(3) - 4, 3,
                  g_stale ? MUTED : LARANJA);
     g->drawFastHLine(R_MARG, R_TOPO_FIM, R_CARD_W, TRACK);
@@ -3306,11 +3380,14 @@ void redrawBadge(const Status &s, int staleSeconds, bool semTurma) {
         // pertence a cabeca do bicho. Nas paginas normais em pe a turma mora
         // sempre no mesmo lugar, entao nao ha caso por pagina.
         if (!semTurma) {
-            const int cw = clawd::crewW();
+            // A MESMA faixa do desenho completo (ver drawTurmaRetrato): limpar
+            // a fileira compacta e redesenhar a espalhada deixaria resto do
+            // quadro anterior na direita.
+            const int cw = clawd::crewW(R_CARD_W);
             const int ch = clawd::crewH();
             if (cw && ch) {
                 g->fillRect(R_MARG, R_TURMA_CHAO - ch, cw, ch, BG);
-                clawd::drawCrewInto(g, R_MARG, R_TURMA_CHAO);
+                clawd::drawCrewInto(g, R_MARG, R_TURMA_CHAO, R_CARD_W);
             }
         }
         display::flushPrefix(semTurma ? R_HDR_LINHA + 2 : R_TOPO_FIM);
@@ -3399,6 +3476,19 @@ int agentIndexAt(const Status &s, int x, int y) {
     const int i = (y - MENU_Y0) / MENU_ROW;
     if (y < MENU_Y0 || i >= menuVisible((int)s.agents.size())) return -1;
     return i;
+}
+
+int cartaoSessaoRetratoAt(const Status &s, int x, int y) {
+    if (!display::retrato() || s.bloqueio.known || s.agents.empty()) return -1;
+    // Fora das margens do card nao ha cartao — o desenho vai de R_MARG a
+    // R_MARG + R_CARD_W, e o alvo acompanha o desenho.
+    if (x < R_MARG || x >= R_MARG + R_CARD_W) return -1;
+
+    // Quantos couberam de fato: o que virou "+N" nao esta na tela e nao pode
+    // responder ao dedo. A conta e a mesma de drawSessoesRetrato.
+    const int cabem = (R_SES_FIM - R_SES_Y - 8) / R_SES_PASSO;
+    const int n = (int)s.agents.size() < cabem ? (int)s.agents.size() : cabem;
+    return cartaoSessaoAt(y, n);
 }
 
 bool cleanButtonAt(const Status &s, const std::string &selectedId, int x, int y) {
@@ -3554,18 +3644,90 @@ const int TERM_Y     = TERM_BAR_H + 4;
 // quebra as linhas por eles — ver net::terminalAbrir.
 const int TERM_CW    = 6;
 const int TERM_CH    = 8;
+// A barra de rolagem, no rodape. Ela existe porque em pe o terminal nao tem
+// outro jeito de andar: deitado o swipe vertical rola, e em pe o mesmo gesto
+// disputa com a troca de pagina. Quatro alvos de 76 px, que e o tamanho do
+// alvo do bicho do cabecalho — a medida que ja foi calibrada para o dedo.
+const int TERM_BARRA_H = 34;
 
 // Botao de sair, no canto superior ESQUERDO. Ali porque e o canto que nao
 // compete com nada: o texto comeca abaixo dele, e sair e a unica acao desta
 // tela que nao pode falhar em ser encontrada.
 const int SAIR_X = 4, SAIR_Y = 2, SAIR_W = 62, SAIR_H = 20;
 
-int termCols() { return (SCREEN_W - TERM_X * 2) / TERM_CW; }
-int termRows() { return (SCREEN_H - TERM_Y) / TERM_CH; }
+// A GRADE, medida contra a tela QUE ESTA NA FRENTE.
+//
+// Estas duas linhas usavam SCREEN_W/SCREEN_H, que sao `#define` da paisagem e
+// NAO giram (include/board_pins.h). O terminal nasceu antes do modo em pe e
+// ficou pedindo 78 colunas para uma tela de 320 px: o `write` do Arduino_GFX
+// faz wrap sozinho ao passar da borda, entao a partir do 53o caractere cada
+// linha continuava EM CIMA da seguinte. Era isso que fazia a tela ilegivel, com
+// duas camadas de texto no mesmo lugar.
+//
+// Os dois numeros VIAJAM ate a API, que quebra as linhas por eles (ver
+// net::terminalAbrir e server/sgr.py) — errar aqui erra dos dois lados.
+int termCols() { return (display::telaW() - TERM_X * 2) / TERM_CW; }
+int termRows() { return (display::telaH() - TERM_Y - TERM_BARRA_H) / TERM_CH; }
+
+// A PALETA que o parser resolve. Sao as 16 cores do terminal em RGB888, mais o
+// par de frente e fundo padrao — o `term_parse` aplica bold, dim e reverse
+// sobre elas e devolve a cor final de cada run, entao o laco de desenho nao
+// precisa saber o que 38;5;9 significa.
+//
+// Os valores acompanham a paleta do painel (BG, FG e as cores do herdr): uma
+// tela de terminal com cor propria dentro de um painel que tem a sua brigaria
+// com tudo o resto, e o que se quer aqui e ler o que o agente escreveu.
+const term_palette_t TERM_PAL = {
+    {
+        0x0c0e12, 0xeb5555, 0x40c878, 0xe6be46,
+        0x6f9fd8, 0x9a7fd0, 0x5f9ea8, 0xebeef2,
+        0x303642, 0xff7b7b, 0x6fe89c, 0xffd76b,
+        0x93bdf0, 0xb9a1e0, 0x87c4cd, 0xffffff,
+    },
+    0xebeef2,   // default_fg — o FG do painel
+    0x0c0e12,   // default_bg — o BG do painel
+};
+
+// RGB888 (o que o parser devolve) para RGB565 (o que o canvas quer).
+uint16_t de888(uint32_t c) {
+    return RGB565((c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF);
+}
+
+// O grid vive na PSRAM e SO enquanto a tela de terminal esta aberta. Sao ~24 KB
+// com os tetos desta tela (ver lib/termparse/term_parse.h) — muito para a RAM
+// interna, que ja carrega o framebuffer, e desperdicio para ficar residente
+// numa tela que quase nunca esta aberta.
+term_grid_t *g_grid = nullptr;
+
+bool gridPronto() {
+    if (g_grid) return true;
+    g_grid = (term_grid_t *)ps_malloc(sizeof(term_grid_t));
+    if (!g_grid) Serial.println("terminal: sem PSRAM para o grid — tela sem cor");
+    return g_grid != nullptr;
+}
+
+void gridSoltar() {
+    if (!g_grid) return;
+    free(g_grid);
+    g_grid = nullptr;
+}
+
+// A barra de rolagem do rodape. Quatro alvos iguais, e o indice de cada um e o
+// que `terminalBotaoAt` devolve.
+const char *TERM_BOTOES[] = {"TOPO", "^", "v", "FIM"};
+const int   TERM_N_BOT    = 4;
+
+void terminalBotao(Arduino_Canvas *g, int i, int &bx, int &bw) {
+    const int W = display::telaW();
+    const int marg = 4, gap = 4;
+    bw = (W - marg * 2 - gap * (TERM_N_BOT - 1)) / TERM_N_BOT;
+    bx = marg + i * (bw + gap);
+}
 
 void drawTerminal(const std::vector<std::string> &linhas, const char *titulo,
                   bool travado) {
     Arduino_Canvas *g = display::canvas();
+    const int W = display::telaW(), H = display::telaH();
     g->fillScreen(BG);
 
     g->fillRoundRect(SAIR_X, SAIR_Y, SAIR_W, SAIR_H, 5, CARD);
@@ -3590,11 +3752,11 @@ void drawTerminal(const std::vector<std::string> &linhas, const char *titulo,
         const char *aviso = "SEM AJUSTE DE LARGURA";
         g->setTextColor(C_YELL);
         g->setTextSize(1);
-        g->setCursor(SCREEN_W - 8 - (int)strlen(aviso) * 6, SAIR_Y + 7);
+        g->setCursor(W - 8 - (int)strlen(aviso) * 6, SAIR_Y + 7);
         g->print(aviso);
     }
 
-    g->drawFastHLine(0, TERM_BAR_H, SCREEN_W, TRACK);
+    g->drawFastHLine(0, TERM_BAR_H, W, TRACK);
 
     if (linhas.empty()) {
         g->setTextColor(MUTED);
@@ -3605,18 +3767,125 @@ void drawTerminal(const std::vector<std::string> &linhas, const char *titulo,
         return;
     }
 
-    // Grid de largura fixa. A API ja cortou cada linha na largura pedida, entao
-    // aqui nao ha quebra nem medida: uma linha, uma fileira.
-    g->setTextColor(FG);
+    // O TEXTO, COM COR. Cada linha chega da API ja em ASCII, ja cortada em
+    // `termCols()` colunas e com o SGR reaberto no comeco (ver server/sgr.py),
+    // entao ela pode ser parseada sozinha — o que importa aqui, porque a janela
+    // rolada nao traz as linhas de cima.
+    //
+    // `setTextWrap(false)` e a segunda metade do conserto do estouro: com a
+    // grade certa nada deveria passar da borda, mas um caractere a mais fazia o
+    // Arduino_GFX pular de linha sozinho e escrever POR CIMA da seguinte. Sem o
+    // wrap, o que nao cabe simplesmente nao aparece — que e o comportamento
+    // certo para uma tela que ja foi cortada do outro lado.
     g->setTextSize(1);
+    g->setTextWrap(false);
     const int cols = termCols();
+    const bool comCor = gridPronto();
+
     for (size_t i = 0; i < linhas.size() && (int)i < rows; i++) {
         const std::string &l = linhas[i];
         if (l.empty()) continue;
-        g->setCursor(TERM_X, TERM_Y + (int)i * TERM_CH);
-        for (int c = 0; c < (int)l.size() && c < cols; c++) g->write(l[c]);
+        const int ly = TERM_Y + (int)i * TERM_CH;
+
+        if (!comCor) {
+            // Sem PSRAM para o grid: escreve cru, pulando os escapes. Feio, mas
+            // legivel — e melhor que uma tela preta.
+            int c = 0;
+            for (size_t k = 0; k < l.size() && c < cols; k++) {
+                if (l[k] == 0x1B) {                 // pula ESC [ ... letra
+                    while (++k < l.size() && !isalpha((unsigned char)l[k])) {}
+                    continue;
+                }
+                g->setTextColor(FG);
+                g->setCursor(TERM_X + c * TERM_CW, ly);
+                int gasto = 0;
+                const uint8_t b = cp437::proximo(l.c_str() + k, l.size() - k,
+                                                 gasto);
+                if (!b) break;
+                g->write((char)b);
+                k += gasto - 1;          // o `k++` do laco fecha a conta
+                c++;
+            }
+            continue;
+        }
+
+        if (term_parse(l.c_str(), g_grid, &TERM_PAL) < 1) continue;
+        const term_line_t &tl = g_grid->lines[0];
+        int col = 0;
+        for (int r = 0; r < tl.run_count && col < cols; r++) {
+            const term_run_t &run = g_grid->runs[tl.run_start + r];
+            const char *txt = &g_grid->text[run.text_off];
+            const int x = TERM_X + col * TERM_CW;
+            int n = run.cols;
+            if (col + n > cols) n = cols - col;
+
+            // O fundo vem ANTES do texto, e so quando ele difere do padrao: o
+            // parser marca isso na flag para o laco nao pintar a tela inteira
+            // de retangulos que ninguem ve.
+            if (run.flags & TERM_F_HAS_BG)
+                g->fillRect(x, ly, n * TERM_CW, TERM_CH, de888(run.bg));
+
+            g->setTextColor(de888(run.fg));
+            g->setCursor(x, ly);
+            // UMA COLUNA POR CARACTERE, e nao por byte: o desenho de caixa
+            // chega em UTF-8 de tres bytes e a fonte o tem em UM (ver
+            // lib/cp437). Escrever byte a byte aqui desenharia tres glifos de
+            // lixo e empurraria o resto da linha — que e exatamente o que a
+            // reducao a `-|+` existia para evitar, e agora nao precisa mais.
+            {
+                const size_t bytes = strlen(txt);
+                size_t k = 0;
+                for (int c = 0; c < n && k < bytes; c++) {
+                    int gasto = 0;
+                    const uint8_t b = cp437::proximo(txt + k, bytes - k, gasto);
+                    if (!b) break;
+                    g->write((char)b);
+                    k += gasto;
+                }
+            }
+
+            // Sublinhado e riscado a fonte da grade nao tem: viram um filete,
+            // que e o que a mesma fonte faria se tivesse o glifo.
+            if (run.flags & TERM_F_UNDERLINE)
+                g->drawFastHLine(x, ly + TERM_CH - 1, n * TERM_CW, de888(run.fg));
+            if (run.flags & TERM_F_STRIKE)
+                g->drawFastHLine(x, ly + TERM_CH / 2, n * TERM_CW, de888(run.fg));
+            col += n;
+        }
+    }
+    g->setTextWrap(true);
+
+    // A BARRA DE ROLAGEM. Em pe ela e o unico jeito de andar no texto: deitado
+    // o swipe vertical rola, e em pe o mesmo gesto disputa com a troca de
+    // pagina — a lista da primeira tela ja ensinou que quem perde essa disputa
+    // fica sem alvo nenhum.
+    g->drawFastHLine(0, H - TERM_BARRA_H, W, TRACK);
+    g->fillRect(0, H - TERM_BARRA_H + 1, W, TERM_BARRA_H - 1, CARD);
+    for (int i = 0; i < TERM_N_BOT; i++) {
+        int bx = 0, bw = 0;
+        terminalBotao(g, i, bx, bw);
+        const int by = H - TERM_BARRA_H + 5, bh = TERM_BARRA_H - 10;
+        g->fillRoundRect(bx, by, bw, bh, 5, BG);
+        g->drawRoundRect(bx, by, bw, bh, 5, TRACK);
+        const char *rot = TERM_BOTOES[i];
+        g->setTextColor(FG);
+        g->setTextSize(1);
+        g->setCursor(bx + (bw - (int)strlen(rot) * 6) / 2, by + (bh - 8) / 2);
+        g->print(rot);
     }
     display::flush();
+}
+
+// Qual botao da barra esta em (x,y). -1 fora dela.
+int terminalBotaoAt(int x, int y) {
+    const int H = display::telaH();
+    if (y < H - TERM_BARRA_H) return -1;
+    for (int i = 0; i < TERM_N_BOT; i++) {
+        int bx = 0, bw = 0;
+        terminalBotao(display::canvas(), i, bx, bw);
+        if (x >= bx && x < bx + bw) return i;
+    }
+    return -1;
 }
 
 bool terminalSairAt(int x, int y) {

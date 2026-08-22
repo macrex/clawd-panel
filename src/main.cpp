@@ -162,6 +162,9 @@ void abrirTerminal() {
 
 void fecharTerminal() {
     modoTerminal = false;
+    // O grid de cor sai da PSRAM junto com a tela: sao ~24 KB que so servem a
+    // ela, e ela quase nunca esta aberta.
+    ui::gridSoltar();
     termPane.clear();
     net::terminalFechar();
 }
@@ -619,6 +622,7 @@ void tratarToque(uint32_t now, const TouchPoint &t, bool &redraw) {
     if (g.kind != GestureKind::None) {
         ctx.noIconeCabecalho = ui::iconeCabecalhoAt(g.x, g.y);
         ctx.noSairTerminal   = ui::terminalSairAt(g.x, g.y);
+        ctx.botaoTerminal   = ui::terminalBotaoAt(g.x, g.y);
         ctx.noRotuloSemana   = ui::rotuloSemanaAt(g.x, g.y);
         ctx.noPctSessao      = ui::pctSessaoAt(g.x, g.y);
         ctx.noPctSemana      = ui::pctSemanaAt(g.x, g.y);
@@ -629,6 +633,7 @@ void tratarToque(uint32_t now, const TouchPoint &t, bool &redraw) {
             ctx.noBotaoTerminal = ui::terminalButtonAt(last, selectedId, g.x, g.y);
             ctx.noBotaoLimpeza  = ui::cleanButtonAt(last, selectedId, g.x, g.y);
             ctx.agenteIndex     = ui::agentIndexAt(last, g.x, g.y);
+            ctx.cartaoSessao    = ui::cartaoSessaoRetratoAt(last, g.x, g.y);
         }
     }
 
@@ -637,6 +642,20 @@ void tratarToque(uint32_t now, const TouchPoint &t, bool &redraw) {
         case Acao::Nada: break;
 
         case Acao::TerminalFechar: fecharTerminal(); redraw = true; break;
+
+        case Acao::TerminalBotao:
+            // 0 topo, 1 uma tela para tras, 2 uma para frente, 3 fim. O "topo"
+            // e um pedido GRANDE de rolagem para tras, e nao uma posicao: quem
+            // guarda onde o historico esta e o terminal do host, e fingir que
+            // este lado sabe produziria um numero que discorda da tela (ver o
+            // porque do delta em server/terminal.py).
+            switch (d.n) {
+                case 0: net::terminalRolar(+ui::termRows() * 8); break;
+                case 1: net::terminalRolar(+ui::termRows() / 2); break;
+                case 2: net::terminalRolar(-ui::termRows() / 2); break;
+                default: net::terminalRolar(-ui::termRows() * 8); break;
+            }
+            break;
         // Meia tela por gesto. Uma tela inteira nao deixa referencia nenhuma
         // entre um arrasto e o outro, e ler texto corrido assim e desconfortavel.
         case Acao::TerminalRolarCima:  net::terminalRolar(+ui::termRows() / 2); break;
@@ -700,6 +719,18 @@ void tratarToque(uint32_t now, const TouchPoint &t, bool &redraw) {
         case Acao::SelecionarAgente:
             selectedId = last.agents[d.n].id;
             redraw = true;
+            break;
+
+        case Acao::AbrirTerminalDoAgente:
+            // Seleciona e abre de uma vez: `abrirTerminal` le o pane a partir de
+            // `selectedId`, entao a selecao tem que vir primeiro. O indice ja
+            // veio validado contra o tamanho da lista pelo hit-test, mas a
+            // guarda fica — entre o toque e este ponto houve um poll.
+            if (d.n >= 0 && d.n < (int)last.agents.size()) {
+                selectedId = last.agents[d.n].id;
+                abrirTerminal();
+                redraw = true;
+            }
             break;
     }
 }
