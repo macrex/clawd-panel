@@ -21,7 +21,7 @@ from __future__ import annotations
 import pathlib
 import sys
 
-from PIL import Image
+from PIL import Image, ImageChops, ImageDraw
 from playwright.sync_api import sync_playwright
 
 RAIZ  = pathlib.Path(__file__).resolve().parent.parent
@@ -50,6 +50,13 @@ MARCAS = {
                    modo="alfa", alt=12, filtro=Image.LANCZOS),
     "codex":  dict(arquivo="codex.svg", nome="CODEX",
                    modo="escuro", alt=12, filtro=Image.BOX, contraste=1.6),
+    # O reserva: vale para TODA CLI que nao seja uma das tres de cima (ver o
+    # fallback de `iconeDe`). Unico com `modo="silhueta"` — a lhama e desenhada
+    # a traco, e traco de um terco de pixel nao sobrevive a reducao; o porque
+    # esta em `preencher`. A reducao e por MEDIA DE AREA pela mesma razao do
+    # Codex: LANCZOS cava halo, e aqui ele apagaria os olhos vazados.
+    "ollama": dict(arquivo="ollama.svg", nome="OLLAMA",
+                   modo="silhueta", alt=12, filtro=Image.BOX),
 }
 
 
@@ -89,7 +96,48 @@ def mascara(png: pathlib.Path, modo: str) -> Image.Image:
                 lum = (r * 299 + g * 587 + b * 114) // 1000
                 mp[x, y] = a if lum < 128 else 0
     caixa = m.getbbox()
-    return m.crop(caixa) if caixa else m
+    m = m.crop(caixa) if caixa else m
+    return preencher(m) if modo == "silhueta" else m
+
+
+def preencher(m: Image.Image) -> Image.Image:
+    """A area FECHADA por um desenho de contorno, com as ilhas de dentro vazadas.
+
+    Existe pela lhama do Ollama, que e line art: o traco tem 14 px em 512, ou
+    seja um TERCO de pixel na altura de 12 px em que o icone e desenhado. O
+    contorno some na reducao e sobra ruido — e nao adianta meio-tom, porque nao
+    ha traco para preservar. O que sobrevive nessa altura e a SILHUETA (as duas
+    orelhas dizem que e um bicho), e os olhos e o focinho vazados, que sao a
+    unica coisa que separa a silhueta de um retangulo com duas pontas.
+    """
+    b = m.point(lambda v: 255 if v >= 128 else 0)
+
+    # Folga so nos tres lados FECHADOS. A lhama e cortada em baixo pelo viewBox,
+    # entao o interior encosta na ultima linha: uma folga embaixo ligaria o
+    # fundo externo ao interior e o preenchimento vazaria (medido — foi o
+    # primeiro resultado, uma silhueta que voltou vazia).
+    def com_folga():
+        p = Image.new("L", (b.width + 4, b.height + 2), 0)
+        p.paste(b, (2, 2))
+        return p
+
+    fora = com_folga()
+    ImageDraw.floodfill(fora, (0, 0), 128)     # tudo que o fundo alcanca
+    cheia = fora.point(lambda v: 0 if v == 128 else 255)
+
+    # As ILHAS sao o desenho que nao faz parte do contorno externo: os olhos, o
+    # oval do focinho, a narina. O contorno e o que a linha do meio encontra
+    # primeiro vindo da esquerda.
+    ilhas = com_folga()
+    p = ilhas.load()
+    y = ilhas.height // 2
+    x = next((x for x in range(ilhas.width) if p[x, y] == 255), None)
+    if x is not None:
+        ImageDraw.floodfill(ilhas, (x, y), 128)
+    ilhas = ilhas.point(lambda v: 255 if v == 255 else 0)
+
+    return ImageChops.subtract(cheia, ilhas).crop(
+        (2, 2, cheia.width - 2, cheia.height))
 
 
 def por_grade(m: Image.Image, cols: int, linhas: int, escala: int):

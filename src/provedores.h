@@ -26,8 +26,10 @@ struct Icone {
     int            h;
 };
 
-// O icone de um agente do herdr ("claude", "codex", "agy"). Devolve um icone
-// com `w == 0` quando o nome nao tem arte — e ai quem desenha cai no texto.
+// O icone de um agente do herdr ("claude", "codex", "agy"). Qualquer outro
+// identificador — e o herdr reconhece dezenove — cai na lhama do Ollama, o
+// icone do grupo "uma CLI que este painel nao tem arte para distinguir".
+// Nunca devolve vazio; quem desenha ainda checa `w`, que custa nada.
 Icone iconeDe(const std::string &agente);
 
 // A cor da marca daquele fornecedor. Cinza para quem nao tem uma.

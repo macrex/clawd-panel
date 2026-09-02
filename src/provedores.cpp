@@ -95,6 +95,32 @@ const uint8_t CODEX[] = {
       0,   0,   0,   0,   3, 229, 250, 252,  66,   0,   0,   0,
 };
 
+// ---- Ollama (o reserva) ----
+// A lhama do Ollama vale por QUALQUER CLI que nao seja uma das tres de cima:
+// nao ha arte por marca para as dezenove que o herdr reconhece, e um grupo sem
+// icone nenhum lia como defeito do painel (medido com uma sessao do qwen).
+//
+// Aqui o que esta guardado nao e o desenho oficial, e a SILHUETA dele. A arte
+// do Ollama e line art: em 512 px o traco tem 14, ou seja um terco de pixel na
+// altura de 12 em que este icone vive — some inteiro na reducao e deixa
+// chuvisco. Preenchido, o mesmo desenho se le: as duas orelhas dizem bicho, e
+// os olhos e o focinho vazados (as ilhas que `preencher` mantem furadas)
+// dizem qual. Mesmo precedente do Antigravity, que ja entra so pela silhueta.
+const uint8_t OLLAMA[] = {
+      0, 156, 193,   1,   0,   1, 194, 156,   0,
+      1, 247, 255,  94, 117,  95, 255, 246,   1,
+      3, 253, 255, 255, 255, 255, 255, 253,   3,
+     82, 253, 255, 255, 255, 255, 255, 253,  82,
+    221, 255, 255, 255, 255, 255, 255, 255, 220,
+    247, 218, 119, 126, 136, 125, 119, 218, 247,
+    181, 255, 174, 207, 143, 207, 175, 255, 181,
+    216, 255, 240, 120, 134, 120, 240, 255, 215,
+    232, 255, 255, 255, 255, 255, 255, 255, 231,
+    172, 255, 255, 255, 255, 255, 255, 255, 172,
+    182, 255, 255, 255, 255, 255, 255, 255, 182,
+    207, 255, 255, 255, 255, 255, 255, 255, 206,
+};
+
 // Laranja da Anthropic (#D97757), azul do Google (#8AB4F8) e verde da OpenAI
 // (#10A37F). Sao as cores das proprias marcas, e nao a paleta do painel: e o
 // que faz o olho separar os grupos sem ler nada.
@@ -109,7 +135,10 @@ Icone iconeDe(const std::string &agente) {
     if (agente == "claude" || agente.empty()) return {CLAUDE, 16, 10};
     if (agente == "agy")                      return {AGY,    13, 12};
     if (agente == "codex")                    return {CODEX,  12, 12};
-    return {nullptr, 0, 0};
+    // Qualquer outra CLI: a lhama, e nao o vazio. Um grupo sem icone abria a
+    // linha num buraco, e quem olha nao tem como saber se aquilo e "uma CLI
+    // que o painel nao conhece" ou "o painel esqueceu de desenhar".
+    return {OLLAMA, 9, 12};
 }
 
 uint16_t corDe(const std::string &agente) {
