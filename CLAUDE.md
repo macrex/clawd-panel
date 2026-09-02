@@ -1,9 +1,10 @@
 # Clawd Panel — instruções para agentes
 
-Esta pasta é a **casa do projeto**. Todo trabalho novo acontece aqui: código,
-sprites, servidor e runbooks. Uma versão anterior do projeto viveu em outro
-diretório (`esp32-s3`, fork privado) e está **arquivada** — não edite nada lá,
-não puxe nada de lá sem pedido explícito.
+Esta pasta é a **casa do projeto** — e a única. Todo trabalho acontece aqui:
+código, sprites, servidor e runbooks. Uma versão anterior viveu em
+`D:\workspace\esp32\esp32-s3` (fork privado `macrex/esp32-s3`); essa pasta foi
+**apagada do disco em 02/09/2026** e a história ficou só no GitHub. Não a
+reclone nem puxe nada de lá sem pedido explícito.
 
 ## O que é
 
