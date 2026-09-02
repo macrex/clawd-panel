@@ -39,6 +39,9 @@ class ImportSpec:
 COLLECTION = (
     ImportSpec("eureka", "clawd-eureka.svg", 6.0, 100),
     ImportSpec("grooving", "clawd-grooving.svg", 1.6, 80),
+    # 3.0 s e o menor ciclo que fecha limpo: o pulo dura 1 s e as faiscas
+    # 1,5 — em 3 s cabem tres pulos e duas faiscas, sem engasgo no loop.
+    ImportSpec("happy", "clawd-happy.svg", 3.0, 100),
     ImportSpec("hat_mishap", "clawd-hat-mishap.svg", 7.0, 100),
     ImportSpec("low_battery", "clawd-idle-low-battery.svg", 8.0, 125),
     ImportSpec("wake", "clawd-wake.svg", 1.5, 100),

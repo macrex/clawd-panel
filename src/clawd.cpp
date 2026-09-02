@@ -340,6 +340,27 @@ const int ICONE_H = 36;
 // O mago: a reserva do cabecalho, para quando nenhum bicho do rodizio carregou.
 Icone mago;
 
+// O Clawd da COMEMORACAO — o centro da fileira da tela nova durante a festa.
+// Residente como os outros icones da faixa: ele anima, entao o blob inteiro
+// fica. Ausente no cartao/flash, o centro simplesmente nao troca.
+//
+// A ESCOLHA SAIU DE MEDIR O ELENCO INTEIRO, e nao de gosto. A fatia do centro
+// tem ~58x52 px, e o que decide o tamanho na tela nao e o arquivo: e quanto
+// dele e PERSONAGEM. O divisor da reducao e inteiro, entao um sprite com muito
+// vazio chega pequeno mesmo ocupando um quadro grande.
+//
+//   happy (o Clawd pulando)   124x89   64% de ar   ->  62x44, personagem ~16 px
+//   grooving                  110x60   12% de ar   ->  55x30, baixo demais
+//   eureka                    108x90   51% de ar   ->  54x45, personagem ~22 px
+//   marks_celebrate           192x166  28% de ar   ->  48x41, personagem ~30 px
+//
+// O `happy` foi a primeira tentativa e e o pior caso: o pulo e as faiscas
+// espalham o desenho pelo quadro todo, entao o bicho chegava com metade da
+// altura dos vizinhos — foi essa desproporcao que apareceu na tela. Nenhum
+// sprite do Clawd COMUM comemorando cabe proporcional aqui; o do Marx cabe, e
+// com 41 px ele fica na altura exata de Stan, Kenny e Kyle.
+Icone festaIc;
+
 // O Token da tela de limite estourado (retrato). Quatro poses de 900 ms — os
 // olhos giram, o corpo nao se mexe. O arquivo ja vem no tamanho da tela
 // (224x336), entao o divisor e 1 e o blob decodifica direto no buffer do
@@ -796,6 +817,11 @@ void begin() {
     carregarIcone("/clawd/sp_token.clw", 336, R_QUADRO, tokenIc);
     carregarIcone(RESET_ARQ[resetAtual], RESET_ALT_MAX, R_QUADRO, resetIc);
     carregarIcone("/clawd/sp_kenny_morto.clw", SELO_H, R_QUADRO, kennyMorto);
+    // 46 e nao SELO_H (42), e a diferenca de 4 px vale um degrau INTEIRO de
+    // reducao: com 42 o divisor sobe para 4 e a caixa cai para 48x41; com 46
+    // ele fica em 4 tambem, mas o alvo passa a ser a altura que os vizinhos
+    // tem de fato. Ver a tabela acima — o numero foi calibrado contra eles.
+    carregarIcone("/clawd/marks_celebrate.clw", 46, R_QUADRO, festaIc);
     carregarTurma();
 
     size_t maiorQuadro = 0, maiorNativo = 0;
@@ -1412,6 +1438,71 @@ bool drawCrewInto(Arduino_Canvas *g, int x, int chao, int faixaW) {
     return true;
 }
 
+int crewComCentroH() {
+    int h = crewH();
+    Icone &centro = iconeDoCabecalho(false);
+    if (centro.buf && centro.h > h) h = centro.h;
+    if (festaIc.buf && festaIc.h > h) h = festaIc.h;
+    return h;
+}
+
+bool drawCrewComCentroInto(Arduino_Canvas *g, int x, int chao, int faixaW) {
+    // As fatias sao as da fileira normal MAIS UMA, e o centro fica na do meio:
+    // com os quatro do elenco, Cartman e Stan de um lado, Kenny e Kyle do
+    // outro. A conta reusa `evenSlot*` para o vao entre bichos continuar sendo
+    // um so — a fileira nao pode ter dois ritmos de espacamento.
+    int presentes = 0, ordem[SLOTS];
+    for (int i = 0; i < SLOTS; i++) {
+        ordem[i] = presentes;
+        if (larguraSlot[i] > 0) presentes++;
+    }
+    if (!presentes) return false;
+
+    const int fatias = presentes + 1;
+    const int meio   = presentes / 2;
+    auto fatiaDe = [&](int i) {
+        const int o = ordem[i];
+        return o >= meio ? o + 1 : o;
+    };
+
+    // Durante a festa o centro e o Clawd pulando; fora dela, o bicho que morava
+    // no cabecalho. Sem nenhum dos dois carregado a fatia fica vazia — melhor
+    // um vao no meio do que a fileira inteira sumir.
+    Icone &centro = (cara == C_VITORIA && festaIc.buf)
+                        ? festaIc : iconeDoCabecalho(false);
+    if (centro.buf)
+        desenharIcone(centro, g,
+                      centerIn(evenSlotX(faixaW, fatias, meio, x),
+                               evenSlotW(faixaW, fatias, meio), centro.w),
+                      chao - centro.h);
+
+    // O selo do estado (tema padrao) entra na fatia dele como na fileira
+    // normal; o elenco fechado nem passa por aqui.
+    if (tema().estadoNoSlot0) {
+        if (!seloBuf || atual < 0) return centro.buf != nullptr;
+        const Sprite &sp = sprites[atual];
+        const int div = seloDiv(sp, seloAlvo(atual));
+        const int w = spriteDownW(sp, div), h = spriteDownH(sp, div);
+        if (decodeFrameDown(sp, quadroSelo, div, seloBuf, seloCap, sp.key))
+            g->draw16bitRGBBitmapWithTranColor(
+                centerIn(evenSlotX(faixaW, fatias, fatiaDe(0), x),
+                         evenSlotW(faixaW, fatias, fatiaDe(0)), w),
+                chao - h, seloBuf, sp.key, w, h);
+        if (sozinho) return true;
+    }
+
+    const int kenny = kennyEstaMorto() ? slotDoKenny() : -1;
+    for (int i = slot0(); i < SLOTS; i++) {
+        Icone &ic = (i == kenny) ? kennyMorto : comp[i][cara];
+        if (!ic.buf) continue;
+        desenharIcone(ic, g,
+                      centerIn(evenSlotX(faixaW, fatias, fatiaDe(i), x),
+                               evenSlotW(faixaW, fatias, fatiaDe(i)), ic.w),
+                      chao - ic.h);
+    }
+    return true;
+}
+
 // Avanca um contador no ritmo do proprio arquivo. Devolve true se andou.
 static bool andar(int slot, int &quadro, uint32_t &ultimo, uint32_t nowMs) {
     if (!carregado || slot < 0) return false;
@@ -1446,6 +1537,10 @@ bool tick(uint32_t nowMs) {
     // escondido faria a animacao dar um salto ao trocar de pagina, que e a mesma
     // razao dos contadores do selo e do bicho grande.
     if (tickIcone(rodizio, nowMs)) avancou = true;
+    // O Clawd pulando so anda durante a festa: fora dela ele nao esta em cena
+    // em lugar nenhum, e andar escondido nao compraria nada — o pulo recomeca
+    // de onde parou, que num loop de um segundo nao se percebe.
+    if (cara == C_VITORIA && tickIcone(festaIc, nowMs)) avancou = true;
     // O mago NAO anda, de proposito: ele e a reserva de quando o rodizio nao
     // carregou, e fica no quadro de maior area opaca escolhido no carregamento.
     if (!sozinho)

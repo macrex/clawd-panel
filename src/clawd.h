@@ -105,6 +105,16 @@ int  crewW(int faixaW = 0);                      // 0 se nao ha o que desenhar
 int  crewH();                                    // caixa a limpar antes de blitar
 bool drawCrewInto(Arduino_Canvas *g, int x, int chao, int faixaW = 0);
 
+// A MESMA fileira com o bicho do cabecalho no MEIO — e a turma da tela nova em
+// pe, onde o canto superior esquerdo passou a ser do nome e o bicho desceu para
+// o centro do elenco. Durante a comemoracao o centro troca para o Clawd PULANDO
+// (happy.clw) e volta sozinho: e o unico slot que muda de cara na festa, porque
+// os quatro do elenco fechado ja tem a propria pose de vitoria.
+//
+// `crewComCentroH` e a caixa a limpar — o centro pode ser mais alto que o trio.
+int  crewComCentroH();
+bool drawCrewComCentroInto(Arduino_Canvas *g, int x, int chao, int faixaW);
+
 // ---- Icone do cabecalho ----
 // O wizard, recortado no personagem e reduzido para a altura do cabecalho. NAO
 // depende do estado: e enfeite, do mesmo jeito que o logo da marca.

@@ -5,8 +5,14 @@
 
 namespace ui {
 
-// 0 = limites, 1 = contexto por agente, 2 = Clawd, 3 = nivel.
-const int PAGES = 4;
+// 0 = tela nova, 1 = limites, 2 = contexto por agente, 3 = Clawd, 4 = nivel.
+//
+// A TELA NOVA existe nas DUAS orientacoes e ocupa a MESMA posicao nas duas —
+// e e isso que mantem o giro 1:1. Em pe ela tem o nome digitando, a fileira
+// com o bicho no centro, os aneis e a lista de sessoes; deitada perde os
+// bichos (o espaco deles vira tamanho de anel) e a lista vira uma fileira de
+// cartoes. A tela principal continua inteira na pagina 1: as duas convivem.
+const int PAGES = 5;
 
 // staleSeconds > 0 desenha o mesmo conteudo esmaecido, com aviso de "sem
 // contato ha Ns" — o dado antigo continua util, so precisa parecer velho.
@@ -73,6 +79,21 @@ bool limiteEstourado(const Status &s);
 // `semTurma` e a tela do Token no ar: o cabecalho continua animando, mas a
 // faixa da turma pertence a cabeca do bicho e nao pode ser redesenhada.
 void redrawBadge(const Status &s, int staleSeconds, bool semTurma = false);
+
+// O relogio da animacao do nome da tela nova: o CLAUDINHO se escreve letra a
+// letra, o cursor pisca sobre o nome completo e o ciclo recomeca. Devolve true
+// quando o quadro mudou — e ai o topo precisa ser reenviado.
+//
+// Anda SEMPRE que chamado, mesmo com a tela nova fora de cena: congelar o
+// escondido faria a animacao saltar ao voltar para ela (a mesma regra dos
+// contadores da turma em clawd::tick).
+bool tickNome(uint32_t nowMs);
+
+// Um quadro do TOPO da tela nova — nome digitando, hora e a fileira com o
+// bicho no centro — enviado pelo prefixo barato (as primeiras 106 linhas).
+// E o irmao do redrawBadge para a pagina 0 em pe, onde o canto esquerdo e do
+// nome e a turma tem uma fatia a mais.
+void redrawTopoNova(const Status &s, int staleSeconds);
 
 // Um quadro do bicho da tela de RESET, sem repintar o resto dela.
 //

@@ -266,162 +266,7 @@ int drawTemp(Arduino_Canvas *g, int x, int y, int temp, uint16_t cor, int sz = 2
     return nw + sz * 9 / 2 + cw;
 }
 
-// Quantos caracteres cabem na linha de baixo do bloco de tempo. Serve de
-// criterio, e nao de corte: a maxima e minima do dia so entram quando a
-// descricao e curta o bastante para as tres coisas caberem juntas.
-const int TEMPO_MAX_CH = 16;
 
-// O instante em que o limite vira, pronto para a tela. Vazio quando nao se sabe.
-//
-// Sai o ANO da data semanal: a API manda "15/08/2026 (Sabado)" e o ano nao
-// informa nada num limite que vira em no maximo sete dias. Sao 30 px que valem
-// mais como espaco para o bicho do clima.
-//
-// `curto` tira tambem o dia da semana. A data sozinha ja responde QUANDO; o
-// nome do dia e conforto, e e o primeiro a sair quando o cabecalho aperta.
-//
-// Cai na contagem regressiva quando a API nao manda o instante — uma versao
-// anterior dela so tinha "1h44m". Dado antigo vale mais do que linha vazia.
-std::string quandoVira(const Metric &m, bool curto) {
-    if (!m.known) return "";
-    std::string q = (!m.at.empty() && m.at != "-") ? m.at : m.resets;
-
-    const size_t b1 = q.find('/');
-    if (b1 != std::string::npos) {
-        const size_t b2 = q.find('/', b1 + 1);
-        if (b2 != std::string::npos && q.size() >= b2 + 5) q.erase(b2, 5);
-    }
-    if (curto) {
-        const size_t par = q.find(" (");
-        if (par != std::string::npos) q.erase(par);
-    }
-
-    // "3:00pm" vira "3:00PM": nesta fonte de 6 px o par de minusculas some ao
-    // lado do numero em corpo dobrado.
-    const size_t n = q.size();
-    if (n >= 2 && (q[n - 1] == 'm' || q[n - 1] == 'M')
-               && (q[n - 2] == 'a' || q[n - 2] == 'p')) {
-        q[n - 2] = (char)toupper((unsigned char)q[n - 2]);
-        q[n - 1] = 'M';
-    }
-    return q;
-}
-
-void drawHeader(Arduino_Canvas *g, const Status &s, int staleSeconds,
-                bool paginaDoNivel) {
-    const int hs     = 2;
-    const int marcaY = 14;      // logo da marca e os limites da conta
-    // Corpo 3 (24 px de altura), na mesma proporcao da hora e da temperatura,
-    // centrado na faixa de 42 px do cabecalho.
-    const int tituloY = 9;
-
-    // O MAGO fica aqui, na borda esquerda, e nao e escolha estetica: a faixa do
-    // flush de prefixo e uma tira de altura inteira (x=0..92), entao este canto
-    // e o rodape sao enviados JUNTOS. Aqui ele anima de graca; ao lado do
-    // relogio custaria ~26% de CPU. Ver display::flushPrefix.
-    //
-    // Sem o cartao (ou sem o wizard nele) cai no logo da marca, para o
-    // cabecalho nunca comecar com um buraco.
-    const int iw = clawd::iconW(paginaDoNivel);
-    if (iw) clawd::drawIconInto(g, 14, 40 - clawd::iconH(paginaDoNivel),
-                                paginaDoNivel);
-    else    drawLogo(g, 14, marcaY + (8 * 2 - logoH(hs)) / 2, hs, LARANJA);
-
-    const int tituloX = 14 + (iw ? iw : logoW(hs)) + 12;
-    // O titulo e o corpo dele saem daqui, e a largura e MEDIDA a partir dos dois
-    // (ver `limFim`, abaixo). Escrever a medida a mao ja custou: ela dizia
-    // `7 * 12` — sete letras a doze pixels — para uma palavra de nove letras
-    // desenhada em corpo 3, que mede 18 px por letra. Eram 84 px contra 162
-    // reais, e os 78 de diferenca liberavam o clima e o selo VIA a escreverem
-    // por cima do proprio titulo.
-    const char *TITULO   = "CLAUDINHO";
-    const int   TITULO_SZ = 3;
-    // Laranja da marca, e nao a cor do texto: o titulo e marca, nao dado. Nao
-    // esmaece com o resto quando o contato cai, pelo mesmo motivo do logo.
-    g->setTextColor(LARANJA);
-    g->setTextSize(TITULO_SZ);
-    g->setCursor(tituloX, tituloY);
-    g->print(TITULO);
-
-    // ---- Direita: relogio e tempo, MEDIDOS antes de qualquer coisa ----
-    // A ordem inverteu, e por um motivo concreto. Antes os limites da conta
-    // tinham largura fixa e o bloco do tempo encolhia para caber ao lado deles;
-    // agora a data da virada e que tem duas formas, e ela precisa saber quanto
-    // espaco existe para escolher uma. Medir a direita primeiro e o que permite
-    // a linha da esquerda encolher em vez de atropelar o resto.
-    //
-    // O bicho do clima e o ULTIMO da fila deste cabecalho e o primeiro a sumir
-    // em silencio quando algo cresce — ja custou uma investigacao inteira. Aqui
-    // ele entra na conta antes de o texto ser escolhido.
-    // Direita: HORA e TEMPERATURA, ambas grandes (corpo 3). A data ("TER 11/08")
-    // e a previsao em texto ("estrelado 20-29") sairam a pedido; a hora e a
-    // temperatura cresceram para ocupar o espaco, centradas na faixa de 42 px.
-    const int GRANDE = 3;                    // corpo 3 = 24 px de altura
-    const int GY     = 9;                    // (42 - 24) / 2, centra na vertical
-    int esq = SCREEN_W - 14;
-    int hx  = 0;
-    if (s.clock.known) {
-        hx  = esq - (int)s.clock.hm.size() * 6 * GRANDE;
-        esq = hx;
-    }
-
-    // Porcentagens de sessao/semana REMOVIDAS do cabecalho a pedido; o resumo
-    // permanente saiu daqui e segue na pagina dedicada (card "5 HORAS").
-    // Onde o titulo ACABA, mais um respiro. E o piso de tudo o que vem da
-    // direita: o clima e o selo VIA so desenham quando o passam por 8 px.
-    // A largura sai da string e do corpo dela, e nao de dois numeros escritos a
-    // mao que a proxima troca de nome deixaria mentindo.
-    const int limFim = tituloX + (int)strlen(TITULO) * 6 * TITULO_SZ + 20;
-
-    if (s.clock.known) {
-        g->setTextColor(fgColor());
-        g->setTextSize(GRANDE);
-        g->setCursor(hx, GY);
-        g->print(s.clock.hm.c_str());
-    }
-
-    if (s.weather.known) {
-        // So a temperatura (numero + grau + "C"), tambem em corpo 3, a esquerda
-        // da hora. A previsao em texto saiu. Largura calculada como drawTemp
-        // devolve, para alinhar o bloco a direita antes de desenhar.
-        char tn[8];
-        snprintf(tn, sizeof(tn), "%d", s.weather.temp);
-        const int tempW = (int)strlen(tn) * 6 * GRANDE + GRANDE * 9 / 2 + 6 * GRANDE;
-        int wx = esq - 16 - tempW;
-        if (wx > limFim + 8) {
-            drawTemp(g, wx, GY, s.weather.temp, fgColor(), GRANDE);
-            esq = wx;
-        }
-    }
-
-    if (s.viaSlave) {
-        const int sw = (s.tag.empty() ? 11 : (int)s.tag.size() + 4) * 6 + 10;
-        const int sx = esq - 16 - sw;
-        // So quando cabe: o cabecalho deitado ja disputa espaco, e o rodape do
-        // retrato conta a mesma historia por extenso.
-        if (sx > limFim + 8) drawSeloVia(g, sx, (42 - 16) / 2, s.tag);
-    }
-
-    // AQUI NAO VAI MAIS O LOGO. Ele ficou deste lado desde que trocou de lugar
-    // com o mago, condicionado a sobrar largura — e essa condicao ficou num
-    // empate perverso: os limites conhecidos ("5H 63%  14:00") ocupam ~78 px e
-    // desconhecidos ("5H -") ~24, uma diferenca de 54 px. O logo precisa de
-    // 34 + 12 + 8 = 54. Exatamente a folga que sobra quando os limites somem.
-    //
-    // O resultado era um enfeite que nunca aparecia na operacao normal e
-    // materializava do nada quando a placa perdia os limites da conta — um
-    // terceiro bicho laranja brotando ao lado do bicho do clima, sem causa
-    // visivel. Ele custou uma investigacao para descobrir que nao era bicho.
-    //
-    // E ele nao informava nada: a marca ja esta escrita em laranja a poucos
-    // pixels dali, no titulo. Aparecer SO no estado degradado e o contrario do
-    // util — ensina o olho a associar a marca com defeito.
-    //
-    // `drawLogo` continua vivo nos dois lugares onde e substituto de algo que
-    // faltou: o canto esquerdo sem o icone do nivel, e o rodape sem a turma.
-
-    g->drawFastHLine(14, 42, SCREEN_W - 28, staleSeconds > 0 ? C_YELL : TRACK);
-}
 
 void drawFooter(Arduino_Canvas *g, const Status &s, int page, int staleSeconds) {
     // A turma no lugar do logo: tres bichos animados, so o da esquerda falando
@@ -436,7 +281,11 @@ void drawFooter(Arduino_Canvas *g, const Status &s, int page, int staleSeconds) 
     // Fora das paginas de bicho grande: nelas o caranguejo ja ocupa a tela
     // inteira e o trio seria o mesmo desenho de novo. Na do nivel o rodape
     // ainda e usado — pela barra de XP, que precisa da largura toda.
-    if (page != 2 && page != 3) {
+    //
+    // A TELA NOVA TEM a fileira, no mesmo canto inferior esquerdo das outras.
+    // Ela saiu do MIOLO — que era onde ela morava em pe, e onde deitado ela
+    // custaria caro e roubaria o espaco dos aneis —, nao do painel.
+    if (page != 3 && page != 4) {
         const int fs = 3;
         if (!clawd::crewW() || !clawd::drawCrewInto(g, 14, chao))
             drawLogo(g, 14, chao - logoH(fs) - 6, fs, g_stale ? MUTED : LARANJA);
@@ -470,7 +319,8 @@ void drawFooter(Arduino_Canvas *g, const Status &s, int page, int staleSeconds) 
     // x=14 para caber na faixa do flush de prefixo (ver display::flushPrefix).
     // So o aviso de contato perdido chega a esse tamanho; a idade normal ("12s")
     // nao tem como encostar em nada.
-    const int trioFim = (page != 2 && clawd::crewW()) ? 14 + clawd::crewW() : 14;
+    const int trioFim = (page != 3 && page != 4 && clawd::crewW())
+                            ? 14 + clawd::crewW() : 14;
     if (staleSeconds > 0 && dotEsq - 12 - (int)txt.size() * 6 < trioFim + 8)
         txt = textoVetustezCurto(s, staleSeconds);
     // O AVISO DE CARTAO AUSENTE SAIU DAQUI, e a razao dele e que sumiu.
@@ -1264,7 +1114,7 @@ void drawCabecalhoGrupo(Arduino_Canvas *g, int x, int y, int w,
     const uint16_t cor = provedores::corDe(l.cli);
 
     // O icone centrado na faixa pela ALTURA DELE, e nao por um numero fixo: as
-    // tres artes tem alturas diferentes (o Claude e 5, os outros 12, porque cada
+    // artes tem alturas diferentes (o Claude e 5, as outras 12, porque cada
     // logotipo tem a proporcao que tem), e centrar todas pelo mesmo valor
     // cortava a mais alta contra a borda de cima.
     int cx = x;
@@ -2464,9 +2314,9 @@ void drawSessoesRetrato(Arduino_Canvas *g, int x, int y, int w, int h,
         // com o fundo errado, o meio-tom da mascara deixa uma franja de um
         // degrau em volta de cada icone (ver misturaNaFaixa).
         //
-        // Sem arte para aquele identificador o icone vem com w == 0 e a linha
-        // simplesmente comeca nos chips — nao ha texto de reserva aqui, porque
-        // o nome da CLI escrito custaria os 36 px que o icone resolve em 12.
+        // Identificador sem arte propria cai na lhama do Ollama (ver
+        // provedores::iconeDe) — nao ha texto de reserva aqui, porque o nome da
+        // CLI escrito custaria os 36 px que o icone resolve em 12.
         {
             const provedores::Icone ic = provedores::iconeDe(a.agent);
             if (ic.w) {
@@ -3049,6 +2899,389 @@ void drawPageContextRetrato(Arduino_Canvas *g, const Status &s, int selected,
     (void)opcaoArmada;
 }
 
+// ====================================================================
+//  A TELA NOVA (pagina 0 em pe)
+// ====================================================================
+//
+// A primeira tela do painel, escolhida em prancheta (ver o canvas "Tela 1 do
+// Claudinho"): o nome DIGITANDO no lugar do bicho do cabecalho, a fileira com
+// o bicho no CENTRO, os limites em ANEIS e a mesma lista de sessoes da
+// principal. A principal continua inteira na pagina 1 — as duas convivem.
+//
+// A geometria REUSA as constantes da principal de proposito: topo em
+// R_TOPO_FIM, aneis na faixa R_LIM_Y..R_LIM_Y+R_LIM_H e lista em R_SES_Y.
+// E isso que faz os hit-tests (cartao de sessao, atalhos de percentual,
+// turma) valerem nas duas paginas sem geometria dobrada.
+
+// ---- O nome digitando ----
+// Corpo 3 da grade (18 px por letra), o degrau proporcional abaixo da hora em
+// corpo 4 — "CLAUDINHO" mede 162 px e a hora 120, cabendo nos 292 uteis.
+const char NOME_PAINEL[]   = "CLAUDINHO";
+const int  NOME_SZ         = 3;
+const int  NOME_LEN        = 9;
+// Uma letra a cada 320 ms; nome completo, o cursor pisca por ~2,5 s e o ciclo
+// recomeca. Todos os quadros saem pelo prefixo barato (~11 ms), entao a
+// animacao custa o mesmo que a turma ja paga.
+const uint32_t NOME_LETRA_MS  = 320;
+const uint32_t NOME_CURSOR_MS = 400;
+const int      NOME_PISCADAS  = 6;      // 6 meias-fases = ~2,4 s de pausa
+
+int      g_nomeLetras  = 0;     // quantas letras ja estao na tela
+int      g_nomeFase    = 0;     // piscadas do cursor na pausa
+bool     g_nomeCursor  = true;
+uint32_t g_nomeMs      = 0;
+
+// `xLimite` e onde comeca o que vier a direita (a hora). O CURSOR RESPEITA ESSE
+// limite e o nome nao precisa: "CLAUDINHO" em corpo 3 mede 162 px e cabe nos
+// 164 que sobram, mas o cursor da celula seguinte pediria mais 12 e escrevia
+// por cima do primeiro digito do relogio.
+//
+// Isto so apareceu na FOTO da placa. A conta dizia que cabia porque media o
+// nome, e o cursor e um decimo elemento que nenhuma das duas larguras previa —
+// e a colisao de 4 px nao aparece em nenhum teste, porque o painel nao recorta:
+// ele simplesmente desenha um por cima do outro.
+//
+// Cortar o cursor em vez de encolher o nome e a escolha certa: o corpo do nome
+// e proporcional ao da hora de proposito, e o cursor e enfeite da digitacao. Na
+// pratica ele pisca ate a oitava letra e some na nona, o que le como "terminou
+// de escrever".
+void drawNomeCabecalho(Arduino_Canvas *g, int xLimite) {
+    // Centrado na faixa do cabecalho como a hora (ver drawHeaderRetrato).
+    const int y = (R_HDR_LINHA - 8 * NOME_SZ) / 2;
+    g->setTextColor(LARANJA);
+    g->setTextSize(NOME_SZ);
+    g->setCursor(R_MARG, y);
+    for (int i = 0; i < g_nomeLetras; i++) g->print(NOME_PAINEL[i]);
+
+    // O cursor e um bloco cheio na celula seguinte, como o de terminal.
+    if (g_nomeCursor) {
+        const int cx = R_MARG + g_nomeLetras * 6 * NOME_SZ + 2;
+        const int cw = 4 * NOME_SZ;
+        if (cx + cw <= xLimite)
+            g->fillRect(cx, y, cw, 8 * NOME_SZ, LARANJA);
+    }
+}
+
+// Onde o cabecalho da tela nova deixa de ser do nome. E o inicio da hora menos
+// um respiro; sem relogio conhecido, a margem direita.
+int limiteDoNome(const Status &s) {
+    if (!s.clock.known) return PANEL_W - R_MARG;
+    return PANEL_W - R_MARG - (int)s.clock.hm.size() * 6 * 4 - 6;
+}
+
+// ---- Os aneis de limite ----
+// A mesma faixa das colunas da principal (R_LIM_Y, altura R_LIM_H): e isso que
+// mantem os atalhos de toque (alvoPctSessao/alvoPctSemana) valendo aqui.
+// 38 e nao 40, e o preco veio de MEDIDA e nao de gosto: a coluna tem 143 px e o
+// texto ao lado precisa de 61 para o pior prazo real ("12h05m", 59 px somando o
+// xAdvance da DejaVu). Com o anel em 80 sobravam 55, e o instante saia cortado
+// no meio — "12:09a" apareceu na foto da placa. Quatro pixels de anel compram a
+// linha inteira de volta.
+const int ANEL_R1 = 38;                 // raio externo: diametro 76
+const int ANEL_R2 = 29;                 // 9 px de espessura
+
+// O centro dos aneis sai do VAO REAL — da divisoria do topo (R_TOPO_FIM) ao
+// PRIMEIRO CARTAO da lista, e o cartao e nao o `R_SES_Y`, porque o que o olho
+// mede e a borda que ele ve. NAO se herda o meio da faixa de limites da tela
+// principal (`R_LIM_Y + R_LIM_H / 2`): aquela faixa foi dimensionada para
+// colunas de card, mais altas do que um anel.
+//
+// E A BARRA DO FABLE ENTRA NA CONTA. Ela e fina e apagada, e a primeira versao
+// a tratou como enfeite que nao pesa — com a barra ainda invisivel (a API viva
+// nao publicava o campo), centrar so o anel era de fato o certo. Assim que ela
+// acendeu, virou conteudo embaixo dos aneis, e o centro sem ela empurrava o par
+// contra a lista. O bloco que se centra e anel MAIS barra.
+const int ANEL_TETO  = R_TOPO_FIM;                  // 106
+const int ANEL_CHAO  = R_SES_Y + 8;                 // 228, o topo do 1o cartao
+const int FABLE_ALT  = 24;                          // a linha do Fable, com o vao
+const int ANEL_CY    = (ANEL_TETO + ANEL_CHAO - FABLE_ALT) / 2;   // 155
+
+// Um trecho do anel em "graus de percentual": 0..100 vira 0..360 a partir do
+// topo, em sentido horario. O fillArc do Arduino_GFX conta graus do leste,
+// entao o topo e 270.
+void arcoPct(Arduino_Canvas *g, int cx, float dePct, float atePct,
+             uint16_t cor) {
+    if (atePct <= dePct) return;
+    g->fillArc(cx, ANEL_CY, ANEL_R1, ANEL_R2,
+               270.0f + dePct * 3.6f, 270.0f + atePct * 3.6f, cor);
+}
+
+// A largura real de um texto na DejaVu. Proporcional: contar caractere aqui
+// mentiria, e foi contando que a coluna estourou.
+// CUIDADO, ELA MEXE NA FONTE DO CANVAS: mede na DejaVu e devolve a EMBUTIDA,
+// que e o estado padrao — nao o que estava antes, porque `gfxFont` e protegido
+// e nao ha como ler a fonte corrente para restaura-la. Chamar isto no meio de
+// um bloco que ja esta na DejaVu derruba o texto seguinte para a grade (ver
+// drawAnelDeitado, onde isso custou o alinhamento de uma linha inteira).
+int larguraDejaVu(Arduino_Canvas *g, const std::string &t) {
+    if (t.empty()) return 0;
+    int16_t x1, y1; uint16_t w, h;
+    g->setFont(&DejaVuSans7pt7b);
+    g->setTextSize(1);
+    g->getTextBounds(t.c_str(), 0, 0, &x1, &y1, &w, &h);
+    g->setFont();
+    return (int)w;
+}
+
+// O instante do reset, no formato que cabe em `maxW`. Vazio quando nao ha o que
+// dizer.
+//
+// SEMPRE EM 24H, inclusive na sessao, e isso e conserto e nao gosto: a API
+// manda "12:09am" e o relogio do cabecalho, dois centimetros acima, diz "21:47".
+// Duas convencoes de hora na mesma tela e uma conta que quem olha tem que fazer
+// de cabeca. Em 24h a mesma informacao cai de 64 para 50 px, que e o que faz ela
+// caber ao lado do anel.
+//
+// A cascata e a mesma do rodape da tela principal, e sacrifica na mesma ordem:
+// primeiro o dia por extenso vira as tres letras de sempre, depois cai a HORA,
+// que e informacao de verdade mas e a segunda pergunta — "cai no sabado" decide
+// mais do que "as 23h".
+std::string instanteCurto(Arduino_Canvas *g, const Metric &m, const Clock *rel,
+                          int maxW) {
+    if (!m.known || m.at.empty() || m.at == "-") return "";
+
+    const std::string hora = horaDoReset(m, rel);
+    const size_t abre = m.at.find('(');
+    if (abre == std::string::npos) {
+        // Janela de HORAS: a API manda relogio ("12:09am"). A conta da placa
+        // devolve o mesmo instante em 24h; sem relogio na placa, o texto da API
+        // e melhor do que nada.
+        return hora.empty() ? m.at : hora;
+    }
+
+    // Janela de DIAS: a API manda data com o dia por extenso.
+    std::string dia = m.at;
+    const size_t fecha = dia.find(')', abre);
+    if (fecha != std::string::npos && fecha > abre + 1)
+        dia = dia.substr(abre + 1, fecha - abre - 1);
+    if (dia.size() > 3) dia = dia.substr(0, 3);
+
+    if (!hora.empty()) {
+        const std::string completo = dia + " " + hora;
+        if (larguraDejaVu(g, completo) <= maxW) return completo;
+    }
+    return dia;
+}
+
+// UM limite, dentro da coluna `colX`..`colX+colW`: o anel a esquerda e os dois
+// numeros a direita, o CONJUNTO centrado na coluna.
+//
+// SEM ROTULO. "SESSAO" e "SEMANA" sairam a pedido, e a coluna precisava dos
+// dois: o percentual mora no miolo do anel e o rotulo repetia, em corpo 1, o
+// que a posicao ja dizia — a esquerda e a janela curta, a direita e a semana.
+// O que ele custava era largura, e largura era exatamente o que faltava.
+//
+// O conjunto e CENTRADO e nao encostado na margem: com o anel colado na
+// esquerda, o texto sobrava para dentro da coluna vizinha e o instante da
+// sessao encostava no anel da semana (visto na foto da placa, nao na conta).
+void drawAnelLimite(Arduino_Canvas *g, int colX, int colW, const Metric &m,
+                    int janelaSeg = 0, const Clock *rel = nullptr) {
+    const int GAP    = 6;
+    const int maxTxt = colW - ANEL_R1 * 2 - GAP;      // 61 px
+
+    // Os dois textos primeiro: e a largura deles que decide onde o anel comeca.
+    // O instante ja nasce cortado na medida — a cascata dele escolhe QUE parte
+    // sai, o que e sempre melhor do que perder a ultima letra.
+    const std::string prazo = m.known && !m.resets.empty() ? m.resets : "-";
+    const std::string inst  = instanteCurto(g, m, rel, maxTxt);
+
+    const int pw = larguraDejaVu(g, prazo);
+    const int iw = larguraDejaVu(g, inst);
+    int txtW = pw > iw ? pw : iw;
+    if (txtW > maxTxt) txtW = maxTxt;
+
+    const int total = ANEL_R1 * 2 + GAP + txtW;
+    const int x0    = colX + (colW - total) / 2;
+    const int cx    = x0 + ANEL_R1;
+    const int txtX  = x0 + ANEL_R1 * 2 + GAP;
+    // O trilho inteiro primeiro; os trechos coloridos por cima. E o mesmo
+    // desenho da barra reta (ver drawBar), dobrado em circulo: gasto na cor do
+    // nivel, folga ate o ritmo na cor apagada, fresta de trilho quando o gasto
+    // passou do ritmo.
+    g->fillArc(cx, ANEL_CY, ANEL_R1, ANEL_R2, 0, 360, TRACK);
+
+    if (m.known) {
+        const uint16_t cor = colorOf(m.level);
+        const int rp = ritmoPct(m, janelaSeg);
+        const float pct = (float)(m.pct < 0 ? 0 : (m.pct > 100 ? 100 : m.pct));
+        if (rp < 0) {
+            arcoPct(g, cx, 0, pct, cor);
+        } else if (pct > (float)rp) {
+            // PASSOU DO RITMO: a fresta de ~2 graus de trilho cravada na
+            // posicao do ritmo, como a da barra reta — quem diz "passou" e so
+            // ela, sem cor nova.
+            arcoPct(g, cx, 0, pct, cor);
+            const float fr = (float)rp;
+            g->fillArc(cx, ANEL_CY, ANEL_R1, ANEL_R2,
+                       270.0f + fr * 3.6f - 2.0f, 270.0f + fr * 3.6f, TRACK);
+        } else {
+            arcoPct(g, cx, 0, (float)rp, misturar(TRACK, cor, RITMO_FOLGA, 100));
+            arcoPct(g, cx, 0, pct, cor);
+        }
+    }
+
+    // O percentual no MIOLO, corpo 2 da grade na cor do nivel — e o numero que
+    // esta tela inteira existe para dizer de longe.
+    const std::string pct = pctText(m);
+    g->setTextColor(!m.known || m.memoria
+                        ? MUTED : (g_stale ? MUTED : colorOf(m.level)));
+    g->setTextSize(2);
+    g->setCursor(cx - (int)pct.size() * 6, ANEL_CY - 8);
+    g->print(pct.c_str());
+
+    // Os dois numeros ao LADO do anel, centrados na altura dele: o prazo em
+    // cima, na cor do texto, e o instante embaixo, apagado. Sem rotulo — a
+    // posicao ja diz qual janela e, e o percentual mora no miolo do anel.
+    //
+    // O corte e por MEDIDA contra `txtW`, e nao por contagem: a DejaVu e
+    // proporcional, entao contar caractere deixaria uns curtos e outros
+    // invadindo o anel vizinho — que foi exatamente o defeito da foto.
+    auto cortar = [&](std::string t) {
+        int16_t x1, y1; uint16_t tw, th;
+        while (!t.empty()) {
+            g->getTextBounds(t.c_str(), 0, 0, &x1, &y1, &tw, &th);
+            if ((int)tw <= txtW) break;
+            t.pop_back();
+        }
+        return t;
+    };
+
+    g->setFont(&DejaVuSans7pt7b);
+    g->setTextSize(1);
+    g->setTextColor(m.known && !m.memoria ? fgColor() : MUTED);
+    g->setCursor(txtX, ANEL_CY - 2);
+    g->print(cortar(prazo).c_str());
+
+    if (!inst.empty()) {
+        g->setTextColor(MUTED);
+        g->setCursor(txtX, ANEL_CY + 16);
+        g->print(cortar(inst).c_str());
+    }
+    g->setFont();
+}
+
+// ---- A barra do FABLE ----
+// Discreta DE PROPOSITO: cinza, sem cor de nivel, na fresta entre os aneis e a
+// lista. E consumo informativo, nao limite que pede acao — foi o pedido.
+// So aparece quando a API publica o campo; contra uma API antiga a fresta fica
+// vazia e nada na tela denuncia que falta algo.
+// Abaixo do anel, e e ela que fecha o bloco centrado (ver ANEL_CY). O rotulo
+// tem 8 px de altura e a barra de 3 fica centrada nessa mesma linha, entao o
+// bloco vai de FABLE_Y-1 a FABLE_Y+7.
+//
+// 16 px de vao e nao 8: colada no anel ela lia como legenda dele, e nao como
+// uma terceira medida. O respiro sai do proprio bloco (FABLE_ALT sobe junto),
+// entao o conjunto continua centrado e o anel apenas sobe os mesmos 4 px.
+const int FABLE_Y = ANEL_CY + ANEL_R1 + 16;     // 209
+
+// A linha inteira mede 204 px e fica CENTRADA, em vez de ir de margem a margem
+// como as barras dos limites. Sao 30% a menos de largura, 15% recolhidos de
+// cada lado: de margem a margem ela tinha o mesmo peso horizontal dos aneis
+// logo acima, e competia com eles — o Fable e informacao de canto de olho, e o
+// tamanho tem que dizer isso antes de o texto dizer.
+const int FABLE_W    = 204;
+const int FABLE_ROT  = 5 * 6;      // "FABLE" na grade de 6 px
+const int FABLE_NUM  = 4 * 6;      // reservado para "100%", o pior caso
+const int FABLE_GAP  = 8;
+
+void drawFableRetrato(Arduino_Canvas *g, const Status &s) {
+    if (!s.fableKnown) return;
+
+    // A COR e a do nivel, como nos aneis e nas barras dos limites: verde ate
+    // 50%, amarela ate 80, vermelha acima. Ela vem resolvida do servidor (ver
+    // `colors.fable`), entao a placa nao tem limiar proprio para discordar.
+    //
+    // O ROTULO fica apagado de proposito, e so a barra e o numero pegam cor: o
+    // que muda aqui e a medida, nao o nome dela — e a mesma divisao de papeis
+    // dos cartoes de limite.
+    const uint16_t cor = colorOf(s.fableLevel);
+
+    const int x0 = (PANEL_W - FABLE_W) / 2;
+    g->setTextColor(MUTED);
+    g->setTextSize(1);
+    g->setCursor(x0, FABLE_Y - 1);
+    g->print("FABLE");
+
+    // O numero e alinhado a DIREITA dentro de uma coluna de largura fixa: assim
+    // a barra nao muda de tamanho quando o percentual passa de uma casa para
+    // duas, e as duas leituras seguidas ficam comparaveis.
+    char pb[8];
+    snprintf(pb, sizeof(pb), "%d%%", s.fablePct);
+    const int numX = x0 + FABLE_W - FABLE_NUM;
+    g->setTextColor(cor);
+    g->setCursor(numX + FABLE_NUM - (int)strlen(pb) * 6, FABLE_Y - 1);
+    g->print(pb);
+
+    const int bx = x0 + FABLE_ROT + FABLE_GAP;
+    const int bw = numX - FABLE_GAP - bx;
+    g->fillRoundRect(bx, FABLE_Y + 1, bw, 3, 1, CARD);
+    int fill = bw * (s.fablePct < 0 ? 0 : (s.fablePct > 100 ? 100 : s.fablePct)) / 100;
+    if (fill > 0 && fill < 3) fill = 3;
+    if (fill > 0) g->fillRoundRect(bx, FABLE_Y + 1, fill, 3, 1, cor);
+}
+
+void drawTurmaNova(Arduino_Canvas *g) {
+    if (!clawd::crewW(R_CARD_W) ||
+        !clawd::drawCrewComCentroInto(g, R_MARG, R_TURMA_CHAO, R_CARD_W))
+        drawLogo(g, R_MARG, R_TURMA_CHAO - logoH(3) - 4, 3,
+                 g_stale ? MUTED : LARANJA);
+    g->drawFastHLine(R_MARG, R_TOPO_FIM, R_CARD_W, TRACK);
+}
+
+void drawHeaderNova(Arduino_Canvas *g, const Status &s, int staleSeconds) {
+    drawNomeCabecalho(g, limiteDoNome(s));
+
+    // A hora e o selo VIA sao os mesmos do cabecalho da principal — e a mesma
+    // informacao no mesmo lugar, so o canto esquerdo mudou de dono.
+    if (s.clock.known) {
+        const int sz = 4;
+        const int w  = (int)s.clock.hm.size() * 6 * sz;
+        g->setTextColor(fgColor());
+        g->setTextSize(sz);
+        g->setCursor(PANEL_W - R_MARG - w, (R_HDR_LINHA - 8 * sz) / 2);
+        g->print(s.clock.hm.c_str());
+    }
+    if (s.viaSlave) {
+        const int rw = s.clock.known ? (int)s.clock.hm.size() * 6 * 4 + 10 : 0;
+        const int sw = (s.tag.empty() ? 11 : (int)s.tag.size() + 4) * 6 + 10;
+        drawSeloVia(g, PANEL_W - R_MARG - rw - sw, (R_HDR_LINHA - 16) / 2, s.tag);
+    }
+    g->drawFastHLine(R_MARG, R_HDR_LINHA, R_CARD_W,
+                     staleSeconds > 0 ? C_YELL : TRACK);
+}
+
+void drawRetratoNova(Arduino_Canvas *g, const Status &s, int staleSeconds,
+                     int opcaoArmada) {
+    g->fillScreen(BG);
+    drawHeaderNova(g, s, staleSeconds);
+    drawTurmaNova(g);
+
+    if (!s.online && s.agents.empty() && !s.doCache) {
+        g->setTextColor(MUTED);
+        g->setTextSize(2);
+        g->setCursor(20, 200);
+        g->print("CLAUDIO OFFLINE");
+        g->setTextSize(1);
+        g->setCursor(20, 226);
+        g->print("nenhuma sessao ativa");
+    } else if (s.bloqueio.known) {
+        drawPerguntaP0(g, s, opcaoArmada);
+    } else {
+        // As colunas sao as mesmas da tela principal (143 px com vao de 6),
+        // entao os atalhos de toque continuam batendo. Cada uma centra o
+        // proprio conjunto anel+numeros.
+        drawAnelLimite(g, R_MARG, R_LIM_W, s.session, JANELA_5H, &s.clock);
+        drawAnelLimite(g, R_MARG + R_LIM_W + R_LIM_GAP, R_LIM_W,
+                       s.week, JANELA_7D, &s.clock);
+        drawFableRetrato(g, s);
+        drawSessoesRetrato(g, R_MARG, R_SES_Y, R_CARD_W,
+                           R_SES_FIM - R_SES_Y, s);
+    }
+
+    drawBolinhasRetrato(g, 0);
+    drawStatusRetrato(g, s, staleSeconds);
+}
+
 void drawRetrato(Arduino_Canvas *g, const Status &s, int staleSeconds,
                  int opcaoArmada, bool telaToken, const char *telaReset,
                  bool telaOffline) {
@@ -3106,7 +3339,8 @@ void drawRetrato(Arduino_Canvas *g, const Status &s, int staleSeconds,
                            R_SES_FIM - R_SES_Y, s);
     }
 
-    drawBolinhasRetrato(g, 0);
+    // Pagina 1 agora: a tela nova tomou a bolinha da frente.
+    drawBolinhasRetrato(g, 1);
     drawStatusRetrato(g, s, staleSeconds);
 }
 }  // namespace
@@ -3259,6 +3493,355 @@ void drawPageNivel(Arduino_Canvas *g, const Status &s, const nivel::Estado &e,
     g->fillRect(14, barY, (int)(barW * frac), barH, g_stale ? MUTED : LARANJA);
 }
 
+// ====================================================================
+//  A TELA NOVA DEITADA (pagina 0 em paisagem)
+// ====================================================================
+//
+// A irma da tela nova em pe, e o que muda entre as duas e o que a orientacao
+// permite. SEM A FILEIRA DE BICHOS: deitado a faixa barata do flush e de
+// COLUNAS, entao um bicho no meio da tela custaria o quadro inteiro (~64 ms)
+// em vez dos ~9 do prefixo — e o espaco deles vira tamanho de anel, que era o
+// pedido. O que sobra do topo cabe a temperatura, que em pe nao tinha largura.
+//
+// Os cartoes de sessao viram uma FILEIRA de cinco em vez de uma pilha: deitado
+// ha 480 px de largura e 320 de altura, o inverso do retrato, e empilhar
+// deixaria uma coluna estreita com sobra dos dois lados.
+const int L_MARG    = 14;
+const int L_HDR_H   = 42;
+// 70 e o maior raio que cabe, e ele nao serve: cada metade tem 226 px e o
+// grupo (anel + vao + texto) mediria 232 — o anel sairia 3 px por fora da
+// margem, dos DOIS lados. 70 com texto de 72 fecharia em 222, mas ai o
+// instante da semana ("Sab 23h", 58 px) fica sem folga nenhuma. 70/76 fecha
+// exatamente em 226, com folga ZERO entre os dois grupos, que na tela lê como
+// aneis se tocando.
+const int L_ANEL_R1 = 68;                  // diametro 136, contra os 128 de antes
+const int L_ANEL_R2 = 52;                  // 16 px de espessura
+// O VERTICAL INTEIRO, de cima para baixo, e ele e apertado de proposito:
+//
+//   0..42     cabecalho (nome, temperatura, hora)
+//   50..186   os dois aneis (CY 118, raio 68)
+//   195..203  a linha do Fable
+//   210..252  a fileira de cartoes
+//   267..312  a turma, no canto inferior esquerdo
+//
+// A turma pisa em SCREEN_H-8 e mede ~45 px de altura no tema South Park, entao
+// os cartoes tem que terminar antes de 267 — e e por isso que eles perderam
+// altura quando os bichos voltaram para o rodape.
+const int L_ANEL_CY = 118;
+const int L_FABLE_Y = 196;
+const int L_CARD_Y  = 210;
+// 42 e nao 52: os aneis cresceram e a turma voltou ao rodape, e o espaco saiu
+// daqui nas duas vezes. O cartao deitado tem dois andares (nome em cima,
+// provedor e turno embaixo) mais o trilho na base, e 42 e onde os tres ainda
+// cabem sem se encostar.
+const int L_CARD_H  = 42;
+// O TETO de cartoes na fileira, e nao a divisao dela: a largura sai da
+// quantidade REAL de sessoes (ver drawDeitadaNova), entao com tres na tela cada
+// uma leva um terco da linha. Este numero so decide onde comeca o "+N".
+const int L_CARD_MAX = 6;
+// A coluna de texto ao lado do anel. 76 px comportam o pior prazo real
+// ("12h05m", 59 px) e o instante em 24h com o dia ("Sab 23h", 58 px); acima
+// disso a cascata do `instanteCurto` corta a hora e sobra o dia.
+const int L_TXT_W   = 76;
+const int L_ANEL_GAP = 10;
+
+void drawAnelDeitado(Arduino_Canvas *g, int cx, int txtX, const char *titulo,
+                     const Metric &m, int janelaSeg, const Clock *rel) {
+    g->fillArc(cx, L_ANEL_CY, L_ANEL_R1, L_ANEL_R2, 0, 360, TRACK);
+
+    if (m.known) {
+        const uint16_t cor = colorOf(m.level);
+        const int rp = ritmoPct(m, janelaSeg);
+        const float pct = (float)(m.pct < 0 ? 0 : (m.pct > 100 ? 100 : m.pct));
+        auto arco = [&](float de, float ate, uint16_t c) {
+            if (ate > de)
+                g->fillArc(cx, L_ANEL_CY, L_ANEL_R1, L_ANEL_R2,
+                           270.0f + de * 3.6f, 270.0f + ate * 3.6f, c);
+        };
+        if (rp < 0) {
+            arco(0, pct, cor);
+        } else if (pct > (float)rp) {
+            arco(0, pct, cor);
+            g->fillArc(cx, L_ANEL_CY, L_ANEL_R1, L_ANEL_R2,
+                       270.0f + rp * 3.6f - 2.0f, 270.0f + rp * 3.6f, TRACK);
+        } else {
+            arco(0, (float)rp, misturar(TRACK, cor, RITMO_FOLGA, 100));
+            arco(0, pct, cor);
+        }
+    }
+
+    // O INSTANTE E ESCOLHIDO ANTES DE A FONTE MUDAR, e a ordem e o conserto:
+    // a cascata dele mede com `larguraDejaVu`, que devolve o canvas a fonte
+    // EMBUTIDA no fim. Chamada no meio do bloco da DejaVu, ela derrubava a
+    // fonte no instante seguinte — e so na SEMANA, que e o unico ramo que
+    // chega a medir. Na tela, o "Sab 23h" saia em corpo de grade e 10 px mais
+    // baixo que o "12:20h" do anel vizinho, porque na embutida o cursor e o
+    // TOPO e na DejaVu e a BASELINE. E o mesmo cuidado que drawAnelLimite ja
+    // tomava sem dizer por que.
+    const std::string inst = instanteCurto(g, m, rel, L_TXT_W);
+
+    // TUDO CENTRADO NA LINHA DO ANEL, e as alturas sao as UTEIS: a fonte
+    // embutida deixa a ultima linha da celula vazia (corpo 4 pinta 28 px, e nao
+    // 32) e a DejaVu e posicionada pela baseline, com 11 px de glifo acima
+    // dela. Escritas a mao, essas duas diferencas punham o miolo 2 px abaixo do
+    // centro e o par lateral 1 acima — pouco em cada item, visivel no conjunto.
+    const int PCT_H  = 7 * 4;      // corpo 4: 7 linhas de glifo, 4 px cada
+    const int ROT_H  = 7;          // corpo 1
+    const int DEJA_H = 11;         // glifo da DejaVu acima da baseline
+    const int VAO    = 9;
+    const int mioloY = L_ANEL_CY - (PCT_H + VAO + ROT_H) / 2;
+    const int latY   = L_ANEL_CY - (DEJA_H + VAO + DEJA_H) / 2 + DEJA_H;
+
+    // O percentual e o ROTULO moram os dois no miolo: deitado o anel tem 98 px
+    // de vao interno, e o rotulo ali dentro dispensa a linha que em pe tinha de
+    // ficar ao lado. O corpo 4 e o degrau que se le do outro lado da sala, que
+    // e a distancia deste painel deitado.
+    const std::string pct = pctText(m);
+    g->setTextColor(!m.known || m.memoria
+                        ? MUTED : (g_stale ? MUTED : colorOf(m.level)));
+    g->setTextSize(4);
+    g->setCursor(cx - (int)pct.size() * 12, mioloY);
+    g->print(pct.c_str());
+    g->setTextSize(1);
+    g->setTextColor(MUTED);
+    g->setCursor(cx - (int)strlen(titulo) * 3, mioloY + PCT_H + VAO);
+    g->print(titulo);
+
+    // Prazo e instante ao lado, empilhados e centrados na altura do anel. As
+    // duas linhas nascem na MESMA altura nos dois aneis (L_ANEL_CY e comum),
+    // entao "3h15m" e "1d13h" ficam na mesma linha da tela, e os instantes
+    // logo abaixo — ler os dois limites vira uma comparacao horizontal.
+    g->setFont(&DejaVuSans7pt7b);
+    g->setTextSize(1);
+    g->setTextColor(m.known && !m.memoria ? fgColor() : MUTED);
+    g->setCursor(txtX, latY);
+    g->print(m.known && !m.resets.empty() ? m.resets.c_str() : "-");
+
+    if (!inst.empty()) {
+        g->setTextColor(MUTED);
+        g->setCursor(txtX, latY + VAO + DEJA_H);
+        g->print(inst.c_str());
+    }
+    g->setFont();
+}
+
+// Um cartao de sessao na fileira. Mesma linguagem do cartao da tela em pe —
+// faixa de estado na borda, nome, icone da CLI, turno e o contexto como trilho
+// na base — so que mais curto: deitado a fileira tem cinco em 452 px, entao
+// cada um leva ~86 e os chips nao cabem. O que sai sao eles; o que fica e o
+// que se le de longe.
+void drawCartaoDeitado(Arduino_Canvas *g, int x, int y, int w, const Agent &a) {
+    g->fillRoundRect(x, y, w, L_CARD_H, 8, SUBCARD);
+    drawNovoLinha(g, a.novo, x, y, w, L_CARD_H, SUBCARD, 8);
+    drawAvisoLinha(g, a.done, x, y, w, L_CARD_H, SUBCARD, 8);
+    drawFaixaEstado(g, x, y, 3, L_CARD_H, 8, corDoEstado(a.state, a.done));
+
+    const int tx  = x + 10;
+    const int dir = x + w - 8;
+
+    // O nome, cortado por medida ate a borda: a DejaVu e proporcional e contar
+    // caractere deixaria uns curtos e outros passando do cartao.
+    g->setFont(&DejaVuSans7pt7b);
+    g->setTextSize(1);
+    g->setTextColor(fgColor());
+    std::string nome = a.repo;
+    int16_t x1, y1; uint16_t nw, nh;
+    while (!nome.empty()) {
+        g->getTextBounds(nome.c_str(), 0, 0, &x1, &y1, &nw, &nh);
+        if ((int)nw <= dir - tx) break;
+        nome.pop_back();
+    }
+    g->setCursor(tx, y + 17);
+    g->print(nome.c_str());
+    g->setFont();
+
+    // O contexto EM CIMA DO TRILHO QUE ELE EXPLICA, e nao na linha do nome.
+    //
+    // Ali ele era escrito por cima: o nome e cortado pela largura INTEIRA do
+    // cartao (e tem que ser — e ele o dado da linha), entao um repo comprido
+    // chegava embaixo do numero. Nesta linha o vizinho e o turno, que e curto e
+    // pode ceder, e o numero passa a ficar logo acima da barra que ele mede.
+    char pb[8];
+    if (a.hasContext) snprintf(pb, sizeof(pb), "%d%%", a.contextPct);
+    else              snprintf(pb, sizeof(pb), "-");
+    const int pctX = dir - (int)strlen(pb) * 6;
+    g->setTextColor(a.hasContext ? MUTED : TRACK);
+    g->setTextSize(1);
+    g->setCursor(pctX, y + 26);
+    g->print(pb);
+
+    // O icone do fornecedor e o turno na mesma linha: quem esta rodando e ha
+    // quanto tempo, que e a leitura desta fileira.
+    int cx = tx;
+    const provedores::Icone ic = provedores::iconeDe(a.agent);
+    if (ic.w) {
+        drawIconeProvedor(g, cx, y + 24 + (12 - ic.h) / 2, ic,
+                          g_stale ? MUTED : provedores::corDe(a.agent), SUBCARD);
+        cx += ic.w + 5;
+    }
+    if (a.turnoS >= 0) {
+        const std::string t = formatTurno(a.turnoS);
+        const uint16_t cor = a.state == AgentState::Working ? H_WORKING
+                           : a.state == AgentState::Blocked ? H_BLOCKED
+                                                            : MUTED;
+        // O turno CEDE ao contexto quando o cartao aperta: e o dado mais barato
+        // dos dois nesta linha, e sumir e melhor do que escrever por cima — que
+        // e exatamente o defeito que trouxe o numero para ca.
+        if (cx + (int)t.size() * 6 <= pctX - 4) {
+            g->setTextColor(g_stale ? MUTED : cor);
+            g->setTextSize(1);
+            g->setCursor(cx, y + 26);
+            g->print(t.c_str());
+        }
+    }
+
+    const int tw = dir - tx;
+    g->fillRoundRect(tx, y + L_CARD_H - 8, tw, 2, 1, TRACK);
+    if (a.hasContext && a.contextPct > 0) {
+        int fill = tw * a.contextPct / 100;
+        if (fill < 2) fill = 2;
+        g->fillRoundRect(tx, y + L_CARD_H - 8, fill, 2, 1, colorOf(a.level));
+    }
+}
+
+// O CABECALHO DE TODAS AS TELAS DEITADAS: o nome digitando a esquerda, a
+// temperatura e a hora a direita.
+//
+// Ele nasceu na tela nova e virou o cabecalho de todas a pedido — e a troca
+// vale por si: o bicho que morava no canto esquerdo era enfeite ocupando o
+// lugar onde a marca deveria estar, e a marca ja tinha que ser escrita ao lado
+// dele, gastando duas vezes a mesma largura. Sem ele, o nome comeca na margem
+// e sobra espaco para a hora crescer de corpo 3 para 4.
+//
+// O CANTO CONTINUA SENDO O BOTAO DE GIRAR (ver alvoIconeCabecalho): o alvo
+// cobre o nome inteiro, entao o gesto nao mudou de lugar — mudou de desenho.
+void drawHeaderDeitado(Arduino_Canvas *g, const Status &s, int staleSeconds) {
+    // O limite do nome e onde comeca o que vem da direita. Medido, e nao fixo:
+    // com temperatura ele e mais apertado que sem.
+    int esq = SCREEN_W - L_MARG;
+    if (s.clock.known) esq -= (int)s.clock.hm.size() * 6 * 4;
+    if (s.weather.known) esq -= 52;
+    drawNomeCabecalho(g, esq - 8);
+
+    if (s.clock.known) {
+        const int w = (int)s.clock.hm.size() * 6 * 4;
+        g->setTextColor(fgColor());
+        g->setTextSize(4);
+        g->setCursor(SCREEN_W - L_MARG - w, 6);
+        g->print(s.clock.hm.c_str());
+        if (s.weather.known)
+            drawTemp(g, SCREEN_W - L_MARG - w - 52, 12, s.weather.temp, MUTED, 2);
+    } else if (s.weather.known) {
+        drawTemp(g, SCREEN_W - L_MARG - 52, 12, s.weather.temp, MUTED, 2);
+    }
+
+    // O selo VIA vai ABAIXO da linha, encostado na margem direita: no
+    // cabecalho antigo ele disputava a faixa com o titulo e o clima e sumia em
+    // silencio quando nao cabia. Aqui ele tem lugar proprio.
+    if (s.viaSlave) {
+        const int sw = (s.tag.empty() ? 11 : (int)s.tag.size() + 4) * 6 + 10;
+        drawSeloVia(g, SCREEN_W - L_MARG - sw, L_HDR_H + 4, s.tag);
+    }
+
+    g->drawFastHLine(L_MARG, L_HDR_H, SCREEN_W - L_MARG * 2,
+                     staleSeconds > 0 ? C_YELL : TRACK);
+}
+
+void drawDeitadaNova(Arduino_Canvas *g, const Status &s, int staleSeconds,
+                     int opcaoArmada) {
+    g->fillScreen(BG);
+    drawHeaderDeitado(g, s, staleSeconds);
+
+    if (s.bloqueio.known) {
+        drawPerguntaP0(g, s, opcaoArmada);
+        drawFooter(g, s, 0, staleSeconds);
+        return;
+    }
+
+    // ---- Os dois aneis, cada grupo centrado na SUA metade ----
+    // Grupo = anel + vao + coluna de texto. Centrar cada um na metade que lhe
+    // cabe distribui a linha inteira sem que nenhum encoste na borda — que era
+    // o que acontecia com o anel colado na margem e o texto correndo para
+    // dentro da metade vizinha.
+    const int metade = (SCREEN_W - L_MARG * 2) / 2;
+    const int grupo  = L_ANEL_R1 * 2 + L_ANEL_GAP + L_TXT_W;
+    const int folga  = (metade - grupo) / 2;
+    const int esq    = L_MARG + folga;
+    const int dir    = L_MARG + metade + folga;
+    drawAnelDeitado(g, esq + L_ANEL_R1, esq + L_ANEL_R1 * 2 + L_ANEL_GAP,
+                    "SESSAO", s.session, JANELA_5H, &s.clock);
+    drawAnelDeitado(g, dir + L_ANEL_R1, dir + L_ANEL_R1 * 2 + L_ANEL_GAP,
+                    "SEMANA", s.week, JANELA_7D, &s.clock);
+
+    // ---- A linha do Fable, centrada ----
+    if (s.fableKnown) {
+        const uint16_t cor = colorOf(s.fableLevel);
+        const int lw = 300;
+        const int x0 = (SCREEN_W - lw) / 2;
+        g->setTextColor(MUTED);
+        g->setTextSize(1);
+        g->setCursor(x0, L_FABLE_Y - 1);
+        g->print("FABLE");
+
+        char pb[8];
+        snprintf(pb, sizeof(pb), "%d%%", s.fablePct);
+        const int numX = x0 + lw - 4 * 6;
+        g->setTextColor(cor);
+        g->setCursor(numX + 4 * 6 - (int)strlen(pb) * 6, L_FABLE_Y - 1);
+        g->print(pb);
+
+        const int bx = x0 + 5 * 6 + 8;
+        const int bw = numX - 8 - bx;
+        g->fillRoundRect(bx, L_FABLE_Y + 1, bw, 3, 1, CARD);
+        int fill = bw * (s.fablePct < 0 ? 0 : (s.fablePct > 100 ? 100 : s.fablePct)) / 100;
+        if (fill > 0 && fill < 3) fill = 3;
+        if (fill > 0) g->fillRoundRect(bx, L_FABLE_Y + 1, fill, 3, 1, cor);
+    }
+
+    // ---- A fileira de sessoes ----
+    // Bloqueado primeiro, como na lista em pe: a fileira corta no que cabe, e
+    // se a sessao que sobrasse fosse a bloqueada o painel esconderia a unica
+    // linha que pede acao.
+    // A FILEIRA OCUPA A LINHA INTEIRA, dividida pela quantidade REAL de
+    // sessoes: com tres na tela cada uma leva um terco, e nao um quinto com
+    // dois vaos mortos na direita. O ultimo cartao termina na margem por
+    // construcao — a sobra da divisao inteira vai para ele, em vez de virar um
+    // degrau visivel no fim da linha.
+    const std::vector<int> ordem = grupos::ordemComBloqueadosNoTopo(s.agents);
+    const int n = (int)ordem.size() < L_CARD_MAX ? (int)ordem.size() : L_CARD_MAX;
+    const int faixa = SCREEN_W - L_MARG * 2;
+    const int gap = 6;
+    for (int i = 0; i < n; i++) {
+        const int x0 = L_MARG + faixa * i / n;
+        const int x1 = L_MARG + faixa * (i + 1) / n;
+        drawCartaoDeitado(g, x0, L_CARD_Y, x1 - x0 - (i < n - 1 ? gap : 0),
+                          s.agents[ordem[i]]);
+    }
+
+    if (n == 0) {
+        g->setTextColor(MUTED);
+        g->setTextSize(1);
+        g->setCursor(L_MARG, L_CARD_Y + 20);
+        g->print("nenhuma sessao ativa");
+    }
+
+    // O rodape e o de sempre, MENOS os bichos: `drawFooter` os desenha, e aqui
+    // eles nao existem. As bolinhas e a idade do dado vem dele.
+    drawFooter(g, s, 0, staleSeconds);
+
+    // As que nao couberam, na ponta direita do ULTIMO cartao: o rodape voltou a
+    // ser da turma, e escrever ali passaria por cima dos bichos.
+    if ((int)ordem.size() > n) {
+        char buf[12];
+        snprintf(buf, sizeof(buf), "+%d", (int)ordem.size() - n);
+        g->setTextColor(MUTED);
+        g->setTextSize(1);
+        g->setCursor(SCREEN_W - L_MARG - (int)strlen(buf) * 6,
+                     L_CARD_Y + L_CARD_H + 4);
+        g->print(buf);
+    }
+}
+
 void drawStatus(const Status &s, int page, const std::string &selectedId,
                 int staleSeconds, bool botaoArmado,
                 const nivel::Estado &nivelNoCartao, float xpDoDia,
@@ -3272,11 +3855,18 @@ void drawStatus(const Status &s, int page, const std::string &selectedId,
     // que nenhuma geometria da paisagem (que e escrita em constantes de
     // SCREEN_W) escape para la.
     if (display::retrato()) {
-        if (page == 0 || telaToken || telaReset || telaOffline) {
-            // A P0 (e as telas de bicho, que so existem sobre ela) seguem o
-            // caminho proprio: turma no topo, pergunta em tela cheia.
+        // Em pe as paginas sao CINCO: 0 = tela nova, 1 = principal,
+        // 2 = contexto, 3 = Clawd, 4 = nivel (ver ui::PAGES).
+        if (telaToken || telaReset || telaOffline) {
+            // As telas de bicho tomam o painel em qualquer pagina — o caminho
+            // da principal ja sabe desenha-las e sai antes de tudo.
             drawRetrato(g, s, staleSeconds, opcaoArmada, telaToken, telaReset,
                         telaOffline);
+        } else if (page == 0) {
+            drawRetratoNova(g, s, staleSeconds, opcaoArmada);
+        } else if (page == 1) {
+            drawRetrato(g, s, staleSeconds, opcaoArmada, false, nullptr,
+                        false);
         } else {
             // A limpeza e incondicional de novo. A quarta pagina pintava a
             // tela inteira com o fundo animado do nivel e pulava o
@@ -3284,7 +3874,7 @@ void drawStatus(const Status &s, int page, const std::string &selectedId,
             // (20 arquivos), e a particao de flash so cabe o que o painel usa
             // em toda tela. Ver src/assets.h.
             g->fillScreen(BG);
-            drawHeaderRetrato(g, s, staleSeconds, page == 2);
+            drawHeaderRetrato(g, s, staleSeconds, page == 3);
             // Bloqueio em qualquer pagina em pe vira a pergunta em tela
             // cheia: em pe o painel e de relance, e a pergunta e o unico
             // evento que pede acao.
@@ -3295,14 +3885,14 @@ void drawStatus(const Status &s, int page, const std::string &selectedId,
                 // isto, abrir um bloqueio fora da P0 fazia os quatro sumirem.
                 drawTurmaRetrato(g);
                 drawPerguntaP0(g, s, opcaoArmada);
-            } else if (page == 1) {
+            } else if (page == 2) {
                 // A turma no MESMO lugar da tela inicial, e pela mesma razao:
                 // so no topo a faixa barata do flush a alcanca, e so assim ela
                 // anima na cadencia dos outros bichos (ver R1_C1_Y).
                 drawTurmaRetrato(g);
                 drawPageContextRetrato(g, s, indexOfId(s, selectedId),
                                        botaoArmado, opcaoArmada);
-            } else if (page == 2) {
+            } else if (page == 3) {
                 drawPageClawd(g, s);
             } else {
                 drawPageNivel(g, s, nivelNoCartao, xpDoDia);
@@ -3320,8 +3910,19 @@ void drawStatus(const Status &s, int page, const std::string &selectedId,
     // esse fundo saiu — era arte por faixa de dezena (20 arquivos), e a
     // particao de flash so cabe o que o painel usa em toda tela. Ver
     // src/assets.h.
+    // A TELA NOVA DEITADA tem cabecalho proprio (o nome digitando no lugar do
+    // mago e do titulo), entao ela sai antes do `drawHeader` comum.
+    if (page == 0) {
+        drawDeitadaNova(g, s, staleSeconds, opcaoArmada);
+        display::flush();
+        return;
+    }
+
     g->fillScreen(BG);
-    drawHeader(g, s, staleSeconds, page == 3);
+    // O MESMO cabecalho da tela nova em TODAS as paginas deitadas: nome
+    // digitando, temperatura e hora. O antigo (mago no canto, titulo ao lado,
+    // hora em corpo 3) saiu inteiro — ver drawHeaderDeitado.
+    drawHeaderDeitado(g, s, staleSeconds);
 
     // Tela de OFFLINE so quando nao ha agente NENHUM. Com `online: false` mas
     // agentes na lista, eles estao apenas ociosos (bloqueados) — esconde-los
@@ -3335,7 +3936,7 @@ void drawStatus(const Status &s, int page, const std::string &selectedId,
     // E ele so come a PRIMEIRA pagina. As de contexto, do Clawd e do nivel nao
     // dependem de sessao nenhuma, e engoli-las junto era ir alem do que o aviso
     // sabe.
-    if (!s.online && s.agents.empty() && !s.doCache && page == 0) {
+    if (!s.online && s.agents.empty() && !s.doCache && page == 1) {
         g->setTextColor(MUTED);
         g->setTextSize(3);
         g->setCursor(20, 140);
@@ -3343,11 +3944,11 @@ void drawStatus(const Status &s, int page, const std::string &selectedId,
         g->setTextSize(1);
         g->setCursor(20, 180);
         g->print("nenhuma sessao ativa");
-    } else if (page == 0) {
-        drawPageLimits(g, s, opcaoArmada);
     } else if (page == 1) {
-        drawPageContext(g, s, indexOfId(s, selectedId), botaoArmado, opcaoArmada);
+        drawPageLimits(g, s, opcaoArmada);
     } else if (page == 2) {
+        drawPageContext(g, s, indexOfId(s, selectedId), botaoArmado, opcaoArmada);
+    } else if (page == 3) {
         drawPageClawd(g, s);
     } else {
         drawPageNivel(g, s, nivelNoCartao, xpDoDia);
@@ -3355,6 +3956,69 @@ void drawStatus(const Status &s, int page, const std::string &selectedId,
 
     drawFooter(g, s, page, staleSeconds);
     display::flush();
+}
+
+bool tickNome(uint32_t nowMs) {
+    // O primeiro tick so arma o relogio: sem isto a primeira letra nasceria
+    // com atraso zero e o inicio do ciclo dependeria de quando o boot caiu.
+    if (!g_nomeMs) { g_nomeMs = nowMs ? nowMs : 1; return false; }
+
+    if (g_nomeLetras < NOME_LEN) {
+        if (nowMs - g_nomeMs < NOME_LETRA_MS) return false;
+        g_nomeMs = nowMs;
+        g_nomeLetras++;
+        g_nomeCursor = true;
+        g_nomeFase   = 0;
+        return true;
+    }
+
+    // Nome completo: o cursor pisca por NOME_PISCADAS meias-fases e o ciclo
+    // recomeca do zero — e a animacao 1 da prancheta, "escreve e pisca".
+    if (nowMs - g_nomeMs < NOME_CURSOR_MS) return false;
+    g_nomeMs = nowMs;
+    if (++g_nomeFase >= NOME_PISCADAS) {
+        g_nomeLetras = 0;
+        g_nomeFase   = 0;
+        g_nomeCursor = true;
+    } else {
+        g_nomeCursor = !g_nomeCursor;
+    }
+    return true;
+}
+
+void redrawTopoNova(const Status &s, int staleSeconds) {
+    g_stale = staleSeconds > 0;
+    Arduino_Canvas *g = display::canvas();
+
+    // A faixa do nome e limpa INTEIRA (nome + celula do cursor): o quadro novo
+    // pode ter menos letras que o anterior, e o blit nao apaga nada sozinho.
+    // A limpeza para no MESMO limite do desenho — passar dele apagaria o
+    // primeiro digito da hora, que este redesenho nao repinta.
+    const int y   = (R_HDR_LINHA - 8 * NOME_SZ) / 2;
+    const int lim = limiteDoNome(s);
+    if (lim > R_MARG)
+        g->fillRect(R_MARG, y, lim - R_MARG, 8 * NOME_SZ, BG);
+    drawNomeCabecalho(g, lim);
+
+    // DEITADO nao ha fileira: a tela nova em paisagem nao tem bichos, e o
+    // prefixo aqui e de COLUNAS (ver display::flushPrefix). Enviar ate o fim do
+    // nome custa ~18 ms — mais que os ~11 do retrato, e ainda muito abaixo dos
+    // ~64 de um quadro inteiro, que era o que a digitacao estava pagando por
+    // nao ter caminho proprio deste lado.
+    if (!display::retrato()) {
+        display::flushPrefix(lim + 4);
+        return;
+    }
+
+    // A mesma faixa da turma do redrawBadge, com a caixa do CENTRO na conta —
+    // o bicho do cabecalho pode ser mais baixo ou mais alto que o trio.
+    const int cw = clawd::crewW(R_CARD_W);
+    const int ch = clawd::crewComCentroH();
+    if (cw && ch) {
+        g->fillRect(R_MARG, R_TURMA_CHAO - ch, cw, ch, BG);
+        clawd::drawCrewComCentroInto(g, R_MARG, R_TURMA_CHAO, R_CARD_W);
+    }
+    display::flushPrefix(R_TOPO_FIM);
 }
 
 void redrawBadge(const Status &s, int staleSeconds, bool semTurma) {
@@ -3396,18 +4060,17 @@ void redrawBadge(const Status &s, int staleSeconds, bool semTurma) {
 
     int colunas = 0;
 
-    // Os QUATRO sprites animados moram na mesma tira: o mago no topo e a turma
-    // no pe. A tira do prefixo tem altura inteira, entao um envio so leva
-    // todos — o mago nao custa nada alem do que o rodape ja custava.
-    // `redrawBadge` so e chamado nas paginas baratas: as caras pagam
-    // redesenho inteiro. Entao aqui nunca e a pagina do nivel.
-    const int iw = clawd::iconW(false);
-    const int ih = clawd::iconH(false);
-    if (iw && ih) {
-        g->fillRect(14, 40 - ih, iw, ih, BG);
-        clawd::drawIconInto(g, 14, 40 - ih, false);
-        colunas = prefixColumns(14, iw, 6, SCREEN_W);
-    }
+    // DEITADO O CANTO DO CABECALHO NAO E MAIS DO BICHO. Ele era desenhado aqui
+    // em (14, 40) junto com a turma, porque os dois moravam na mesma tira do
+    // prefixo e um envio so levava ambos. Com o cabecalho novo (nome digitando
+    // a partir da margem, ver drawHeaderDeitado) esse canto passou a ser do
+    // NOME — e este redesenho continuava pintando o bicho por cima dele, e
+    // ainda limpava a caixa antes, comendo as primeiras letras. O desenho
+    // completo nao o mostrava mais; so este caminho barato o ressuscitava, e
+    // por isso ele so aparecia nas paginas que animam.
+    //
+    // O bicho segue vivo EM PE (ramo acima) e na tela de reset, onde o canto
+    // ainda e dele.
 
     const int chao = SCREEN_H - 8;
 
@@ -3573,10 +4236,11 @@ bool turmaAt(int x, int y, int page) {
     if (w <= 0 || h <= 0) return false;
 
     // Nas paginas de bicho grande a fileira nao e desenhada, e um toque ali
-    // pertence ao que estiver no lugar dela.
+    // pertence ao que estiver no lugar dela. Em pe elas sao a 3 e a 4 — a
+    // tela nova empurrou tudo uma casa.
     const bool emPe = display::retrato();
-    // Nas paginas de bicho grande a fileira nao existe em nenhuma orientacao.
-    if (page == 2 || page == 3) return false;
+    if (emPe ? (page == 3 || page == 4) : (page == 2 || page == 3))
+        return false;
 
     // Em pe a fileira mora no topo em TODA pagina que a mostra — a inicial e a
     // de contexto usam as mesmas duas constantes, entao o alvo tambem e um so.

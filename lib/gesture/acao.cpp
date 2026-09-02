@@ -31,9 +31,21 @@ Decisao noTerminal(GestureKind k, const Contexto &c) {
     }
 }
 
+// A pagina NORMALIZADA: a tela nova (0) e a principal (1) sao a MESMA pagina
+// para os gestos — mesma lista de cartoes, mesma turma, mesma pergunta em tela
+// cheia —, e as demais descem uma casa. E o que deixa as regras abaixo
+// escritas UMA vez, como sempre foram.
+//
+// Vale nas DUAS orientacoes desde que a tela nova ganhou a irma deitada: antes
+// era so em pe, e o `retrato` entrava na conta.
+int paginaLogica(const Contexto &c) {
+    return c.page == 0 ? 0 : c.page - 1;
+}
+
 // O duplo toque, na ordem em que os alvos disputam. Cada `if` desta cadeia e
 // uma regra, e trocar dois de lugar muda o painel.
 Decisao duploToque(const Contexto &c) {
+    const int p = paginaLogica(c);
     // O BICHO DO CABECALHO vem PRIMEIRO de todos, e vale em qualquer pagina: em
     // pe ele e a unica saida da tela, e uma saida que perde para outro alvo em
     // alguma pagina e uma saida que nao existe.
@@ -76,16 +88,16 @@ Decisao duploToque(const Contexto &c) {
     // segundo toque ali e "confirmar", nao "abrir") e depois da turma, que e
     // faixa propria. Antes dos alvos de pagina porque a lista ocupa metade da
     // tela: com a pagina ganhando, qualquer toque na lista viraria navegacao.
-    if (c.retrato && c.page == 0 && c.haveLast && !c.temBloqueio &&
+    if (c.retrato && p == 0 && c.haveLast && !c.temBloqueio &&
         c.cartaoSessao >= 0)
         return com(Acao::AbrirTerminalDoAgente, c.cartaoSessao);
 
     // Pergunta em tela cheia da P0: o segundo toque confirma, do mesmo jeito que
     // na aba de contexto.
-    if ((c.page == 0 || c.retrato) && c.haveLast && c.opcaoP0)
+    if ((p == 0 || c.retrato) && c.haveLast && c.opcaoP0)
         return com(Acao::TocarOpcao, c.opcaoP0);
 
-    if (c.page == 1 && c.haveLast) {
+    if (p == 1 && c.haveLast) {
         if (c.opcaoP1) return com(Acao::TocarOpcao, c.opcaoP1);
         // O duplo toque cai aqui tambem: dois toques rapidos no botao de
         // terminal sao um duplo toque para o detector, e sem esta linha eles
@@ -97,24 +109,25 @@ Decisao duploToque(const Contexto &c) {
     // Deitado, o duplo toque em qualquer lugar da pagina 1 avanca o agente. Em
     // pe NAO: la a lista mostra os quatro e o toque simples seleciona, entao o
     // duplo toque fica livre para os alvos proprios.
-    if (c.page == 1 && !c.retrato) return so(Acao::ProximoAgente);
+    if (p == 1 && !c.retrato) return so(Acao::ProximoAgente);
 
     // Duplo toque na pagina do Clawd troca o trabalhador em cena. Vale a pagina
     // inteira e nao so o retangulo do sprite: nao ha mais nada para tocar aqui,
     // e a moldura varia de 152 a 440 px — exigir o alvo certo faria o gesto
     // falhar justamente com os bichos menores.
-    if (c.page == 2) return so(Acao::TrocarTrabalho);
+    if (p == 2) return so(Acao::TrocarTrabalho);
 
     return nada();
 }
 
 Decisao toqueSimples(const Contexto &c) {
+    const int p = paginaLogica(c);
     // Pergunta em tela cheia: na P0 das duas orientacoes, e em pe em QUALQUER
     // pagina — la o bloqueio toma a tela inteira.
-    if ((c.page == 0 || c.retrato) && c.haveLast && c.temBloqueio)
+    if ((p == 0 || c.retrato) && c.haveLast && c.temBloqueio)
         return c.opcaoP0 ? com(Acao::TocarOpcao, c.opcaoP0) : nada();
 
-    if (c.page == 1 && c.haveLast) {
+    if (p == 1 && c.haveLast) {
         // Toque simples no menu da direita seleciona aquele repo.
         if (c.agenteIndex >= 0) return com(Acao::SelecionarAgente, c.agenteIndex);
         if (c.opcaoP1)          return com(Acao::TocarOpcao, c.opcaoP1);

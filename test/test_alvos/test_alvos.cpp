@@ -46,6 +46,19 @@ void test_o_icone_do_cabecalho_cobre_o_fogo_desenhado(void) {
     TEST_ASSERT_FALSE(dentro(a, 28, 80));
 }
 
+// Na tela nova aquele canto e o NOME, que vai de x=14 a x=176 em corpo 3. O
+// alvo cobre a palavra INTEIRA: o giro e a unica saida do modo em pe, e um
+// controle sem saida alternativa nao pode responder so na primeira metade.
+void test_o_alvo_do_cabecalho_cobre_o_nome_inteiro(void) {
+    const Alvo a = alvoIconeCabecalho();
+    TEST_ASSERT_TRUE(dentro(a, 14, 20));     // primeira letra
+    TEST_ASSERT_TRUE(dentro(a, 176, 20));    // ultima letra
+    TEST_ASSERT_TRUE(dentro(a, 95, 20));     // meio da palavra
+
+    // E para antes da HORA, que comeca em 186 e nao e alvo de nada.
+    TEST_ASSERT_FALSE(dentro(a, 186, 20));
+}
+
 void test_o_alvo_da_sessao_cobre_o_percentual_desenhado(void) {
     const Alvo a = alvoPctSessao();
     TEST_ASSERT_TRUE(dentro(a, 93, 140));    // canto do "20%"
@@ -180,6 +193,7 @@ void test_o_que_nao_coube_nao_tem_alvo(void) {
 int main(int, char **) {
     UNITY_BEGIN();
     RUN_TEST(test_o_icone_do_cabecalho_cobre_o_fogo_desenhado);
+    RUN_TEST(test_o_alvo_do_cabecalho_cobre_o_nome_inteiro);
     RUN_TEST(test_o_alvo_da_sessao_cobre_o_percentual_desenhado);
     RUN_TEST(test_o_alvo_da_semana_cobre_o_percentual_desenhado);
     RUN_TEST(test_o_rotulo_da_semana_cobre_a_palavra_desenhada);

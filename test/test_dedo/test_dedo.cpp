@@ -91,7 +91,7 @@ void test_o_release_sem_posicao_nao_inverte_o_sentido(void) {
 void test_dois_toques_rapidos_viram_duplo(void) {
     GestureDetector det;
     Contexto c = base();
-    c.page = 2;                        // a pagina do Clawd troca o trabalhador
+    c.page = 3;                        // a pagina do Clawd troca o trabalhador
 
     TEST_ASSERT_EQUAL(GestureKind::Tap, tap(det, 160, 240).kind);
     const Gesture g = tap(det, 160, 240);
@@ -190,7 +190,7 @@ void test_duplo_toque_dispensa_a_tela_do_clawd_dormindo(void) {
 void test_confirmar_a_limpeza_nao_troca_de_agente(void) {
     GestureDetector det;
     Contexto c = base();
-    c.page = 1;
+    c.page = 2;              // contexto
     c.noBotaoLimpeza = true;
 
     tap(det, 250, 200);
@@ -200,7 +200,7 @@ void test_confirmar_a_limpeza_nao_troca_de_agente(void) {
 
     // E fora do botao, deitado, o mesmo duplo toque avanca o agente.
     Contexto fora = base();
-    fora.page = 1;
+    fora.page = 2;
     esperar(600);
     tap(det, 100, 200);
     const Gesture g2 = tap(det, 100, 200);
@@ -212,7 +212,7 @@ void test_confirmar_a_limpeza_nao_troca_de_agente(void) {
 void test_toque_simples_seleciona_e_o_duplo_faz_outra_coisa(void) {
     GestureDetector det;
     Contexto c = base();
-    c.page = 1;
+    c.page = 2;              // contexto
     c.agenteIndex = 2;
 
     const Gesture um = tap(det, 400, 120);

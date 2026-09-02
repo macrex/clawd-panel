@@ -228,10 +228,10 @@ void tocarBotaoLimpeza(uint32_t now) {
 
 // Gira a tela. Dois toques no bicho do cabecalho, em qualquer pagina.
 //
-// A escolha nao e guardada no cartao: a placa liga sempre em pe, a pedido (ver
-// display::begin). Isso e proposital e nao esquecimento — um painel que liga
-// numa orientacao que depende do ultimo uso e um painel que se olha e nao se
-// sabe por que esta assim.
+// A escolha nao e guardada no cartao: a placa liga sempre DEITADA, a pedido
+// (ver display::begin). Isso e proposital e nao esquecimento — um painel que
+// liga numa orientacao que depende do ultimo uso e um painel que se olha e nao
+// se sabe por que esta assim.
 void girarTela();   // implementada abaixo de tokenManual, que ela cancela
 
 // ---- A tela do Token (limite estourado, so em pe) ----
@@ -392,10 +392,12 @@ bool clawdDorme(uint32_t now) {
 }
 
 void girarTela() {
-    const bool novoEmPe = !display::retrato();
-    display::setRetrato(novoEmPe);
-    // A pagina FICA. Quando em pe so existia a P0, o giro resetava para ela;
-    // agora que as quatro existem nos dois lados, resetar perderia o lugar.
+    display::setRetrato(!display::retrato());
+    // A PAGINA FICA, e agora sem nenhuma traducao: as cinco existem nas duas
+    // orientacoes, na mesma ordem. Houve um degrau aqui enquanto a tela nova
+    // so existia em pe — girar da tela nova caia nos limites, e voltar subia
+    // uma casa. Com a irma deitada pronta, o degrau virou o que ele sempre
+    // deveria ser: nada.
     //
     // O manual do Token morre no giro: deitado a tela dele nao existe, e
     // voltar a ficar em pe com ela armada seria um susto sem causa.
@@ -1090,7 +1092,9 @@ void atualizarTurnos(uint32_t now, bool &redraw) {
         const int novo = turnoMonotonico(turnoMem, a.id, a.state, cru);
         if (novo != a.turnoS) { a.turnoS = novo; mudou = true; }
     }
-    if (mudou && page == 0 && display::retrato()) redraw = true;
+    // As duas primeiras paginas em pe mostram o cronometro: a tela nova e a
+    // principal desenham a MESMA lista de cartoes.
+    if (mudou && display::retrato() && (page == 0 || page == 1)) redraw = true;
 }
 // O nivel do Clawd: o tempo de convivio, a trava de maximo, e o que vai
 // para o cartao e para a NVS.
@@ -1261,14 +1265,21 @@ void animarClawd(uint32_t now, bool dedoNaTela, bool &redraw) {
     // dez minutos de espera nao tem pressa nenhuma para insistir agora.
     if (clawd::tickIconeCabecalho(now, !mexendo)) redraw = true;
 
-    const bool caro = (page == 2 || page == 3);
+    // Em pe as paginas de bicho grande desceram uma casa: a tela nova entrou
+    // na frente e empurrou Clawd e nivel para 3 e 4.
+    const bool emPe = display::retrato();
+    const bool caro = emPe ? (page == 3 || page == 4) : (page == 2 || page == 3);
     if (!(caro && mexendo)) {
         // `clawd::tick` avanca o selo, o trio e o bicho do cabecalho. Roda
         // em TODA pagina, inclusive onde eles nao aparecem: congelar o que
         // esta escondido faria a animacao saltar ao trocar de pagina.
         const bool avancouFaixa = clawd::tick(now);
+        // O nome da tela nova digita no proprio relogio. Anda sempre, pela
+        // mesma regra dos contadores da turma; so vira quadro na pagina 0 em
+        // pe, onde ele esta em cena.
+        const bool avancouNome = ui::tickNome(now);
 
-        if (page == 3) {
+        if (page == (emPe ? 4 : 3)) {
             // A QUARTA PAGINA nao anima NADA, e por isso este ramo esta
             // vazio de proposito.
             //
@@ -1287,9 +1298,17 @@ void animarClawd(uint32_t now, bool dedoNaTela, bool &redraw) {
             // pede ANTES de qualquer redesenho parcial deste ciclo.
             if (resetAcabouAgora(now)) redraw = true;
 
-            if (avancouFaixa && !redraw) {
+            if ((avancouFaixa || (avancouNome && page == 0)) && !redraw) {
                 if (caro) {
                     redraw = true;
+                } else if (page == 0 && !telaTokenAtiva() &&
+                           !clawdDorme(now) && !telaResetAtiva(now)) {
+                    // O topo da tela nova e outro desenho — o nome digitando,
+                    // mais a fileira com o bicho no centro quando em pe. Vale
+                    // nas DUAS orientacoes: deitado, `redrawBadge` pintaria o
+                    // bicho do cabecalho em (14,40), que nesta tela e onde o
+                    // NOME esta escrito.
+                    ui::redrawTopoNova(last, staleSec);
                 } else if (!telaResetAtiva(now)) {
                     // Em pe a turma esta SEMPRE no topo nas paginas
                     // baratas — a inicial e a de contexto usam o mesmo
@@ -1319,7 +1338,7 @@ void animarClawd(uint32_t now, bool dedoNaTela, bool &redraw) {
             // Em pe o clima so aparece na P2 — que e cara e ja redesenha
             // por conta do bicho grande, entao o tick so precisa avancar o
             // quadro.
-            if ((!display::retrato() || page == 2) && clawd::tickClima(now))
+            if ((!emPe || page == 3) && clawd::tickClima(now))
                 redraw = true;
             // O Token da tela de limite: 900 ms por pose, e cada pose e um
             // flush inteiro — ~48 ms a cada 900, so enquanto a tela dele

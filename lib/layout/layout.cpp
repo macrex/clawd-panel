@@ -107,7 +107,15 @@ const int LIM_Y     = 114;   // teto das duas colunas de limite
 const int LIM_H     = 98;    // altura de cada coluna
 const int LIM_W     = 143;   // largura de cada coluna
 const int LIM_GAP   = 6;     // 14 + 143 + 6 + 143 + 14 = 320
-const int GIRO_W    = 76;
+// 180 e nao 76: na tela nova o canto superior esquerdo deixou de ser o bicho e
+// passou a ser o NOME, que mede 162 px em corpo 3. Um alvo do tamanho do bicho
+// cobria as quatro primeiras letras e o dedo caia fora nas outras cinco — num
+// controle que e a UNICA saida do modo em pe.
+//
+// 180 e o nome mais folga, e para antes da HORA (que comeca em 186): o
+// cabecalho inteiro menos o relogio. Nas paginas que ainda mostram o bicho ali
+// o alvo so ficou generoso, que e o que ele sempre foi de proposito.
+const int GIRO_W    = 180;
 const int GIRO_H    = 46;
 
 // A SEMANA deixou de ficar ABAIXO da sessao e passou a ficar AO LADO dela.

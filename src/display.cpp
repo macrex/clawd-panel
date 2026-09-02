@@ -32,10 +32,14 @@ bool begin(uint8_t brightness) {
     // o clock dobrado. 16 ms nao valem sujeira permanente na tela.
     if (!cv->begin()) return false;
 
-    // A placa liga EM PE, a pedido. Aqui e nao no main: assim ate as telas de
+    // A placa liga DEITADA, a pedido. Aqui e nao no main: assim ate as telas de
     // boot (INICIANDO, SEM CONFIG) ja nascem na orientacao certa, em vez de
-    // aparecerem deitadas por um instante e girarem depois.
-    setRetrato(true);
+    // aparecerem em pe por um instante e girarem depois.
+    //
+    // Ela ligou em pe ate hoje, e a troca e do mesmo tipo: uma escolha FIXA, e
+    // nao a memoria do ultimo uso. Um painel que liga na orientacao em que
+    // alguem o deixou e um painel que se olha sem saber por que esta assim.
+    setRetrato(false);
 
     cv->fillScreen(RGB565_BLACK);
     cv->flush();

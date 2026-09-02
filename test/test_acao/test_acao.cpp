@@ -110,7 +110,7 @@ void test_a_turma_ganha_dos_alvos_de_pagina(void) {
 // limpeza trocaria de agente em vez de limpar.
 void test_os_botoes_da_pagina_1_ganham_do_proximo_agente(void) {
     Contexto c = base();
-    c.page = 1;
+    c.page = 2;              // contexto
 
     Contexto opcao = c;  opcao.opcaoP1 = 2;
     TEST_ASSERT_EQUAL(Acao::TocarOpcao, act(GestureKind::DoubleTap, opcao));
@@ -137,7 +137,7 @@ void test_em_pe_a_pagina_1_nao_avanca_o_agente(void) {
 
 void test_a_pagina_do_clawd_troca_o_trabalhador(void) {
     Contexto c = base();
-    c.page = 2;
+    c.page = 3;              // Clawd
     TEST_ASSERT_EQUAL(Acao::TrocarTrabalho, act(GestureKind::DoubleTap, c));
 }
 
@@ -168,7 +168,7 @@ void test_sem_dado_o_duplo_toque_nao_toca_conteudo(void) {
 
 void test_toque_na_lista_seleciona_o_agente(void) {
     Contexto c = base();
-    c.page = 1;
+    c.page = 2;              // contexto: a tela nova empurrou tudo uma casa
     c.agenteIndex = 2;
     c.opcaoP1 = 1;            // a lista ganha da opcao
     TEST_ASSERT_EQUAL(Acao::SelecionarAgente, act(GestureKind::Tap, c));
@@ -177,7 +177,7 @@ void test_toque_na_lista_seleciona_o_agente(void) {
 
 void test_toque_fora_da_lista_cai_nos_botoes(void) {
     Contexto c = base();
-    c.page = 1;
+    c.page = 2;              // contexto
 
     Contexto opcao = c;  opcao.opcaoP1 = 4;
     TEST_ASSERT_EQUAL(Acao::TocarOpcao, act(GestureKind::Tap, opcao));
@@ -235,6 +235,63 @@ void test_o_terminal_so_fecha_pelo_botao_no_toque(void) {
     TEST_ASSERT_EQUAL(Acao::TerminalFechar, act(GestureKind::DoubleTap, c));
 }
 
+// ---- A tela nova em pe (pagina 0) e o degrau das demais ----
+// Em pe as paginas viraram cinco, com a tela nova na frente. Para os gestos a
+// nova e a principal (1) sao a MESMA pagina — mesma lista, mesma turma — e as
+// outras descem um degrau para casar com a numeracao da paisagem.
+
+void test_em_pe_a_nova_e_a_principal_abrem_o_terminal_do_cartao(void) {
+    Contexto c = base();
+    c.retrato = true;
+    c.cartaoSessao = 2;
+
+    c.page = 0;                    // tela nova
+    Decisao d = decidirGesto(GestureKind::DoubleTap, c);
+    TEST_ASSERT_EQUAL(Acao::AbrirTerminalDoAgente, d.acao);
+    TEST_ASSERT_EQUAL(2, d.n);
+
+    c.page = 1;                    // principal
+    d = decidirGesto(GestureKind::DoubleTap, c);
+    TEST_ASSERT_EQUAL(Acao::AbrirTerminalDoAgente, d.acao);
+}
+
+void test_em_pe_as_paginas_desceram_um_degrau(void) {
+    Contexto c = base();
+    c.retrato = true;
+
+    // A pagina de contexto agora e a 2: os botoes dela valem la...
+    c.page = 2;
+    c.noBotaoTerminal = true;
+    TEST_ASSERT_EQUAL(Acao::AbrirTerminal,
+                      decidirGesto(GestureKind::DoubleTap, c).acao);
+    // ...o toque no menu seleciona o agente la...
+    c.noBotaoTerminal = false;
+    c.agenteIndex = 1;
+    TEST_ASSERT_EQUAL(Acao::SelecionarAgente,
+                      decidirGesto(GestureKind::Tap, c).acao);
+    // ...e NAO na principal, que desceu para a 1 e nao tem menu nenhum.
+    c.page = 1;
+    TEST_ASSERT_EQUAL(Acao::Nada, decidirGesto(GestureKind::Tap, c).acao);
+
+    // A pagina do Clawd e a 3.
+    c = base();
+    c.retrato = true;
+    c.page = 3;
+    TEST_ASSERT_EQUAL(Acao::TrocarTrabalho,
+                      decidirGesto(GestureKind::DoubleTap, c).acao);
+}
+
+void test_em_pe_o_swipe_alcanca_a_quinta_pagina(void) {
+    Contexto c = base();
+    c.retrato = true;
+    c.paginas = 5;
+    c.page    = 4;
+    TEST_ASSERT_EQUAL(Acao::Nada, decidirGesto(GestureKind::SwipeLeft, c).acao);
+    c.page = 3;
+    TEST_ASSERT_EQUAL(Acao::PaginaProxima,
+                      decidirGesto(GestureKind::SwipeLeft, c).acao);
+}
+
 // Gesto que o painel nao usa nunca vira acao.
 void test_gesto_nenhum_nao_faz_nada(void) {
     Contexto c = base();
@@ -261,6 +318,9 @@ int main(int, char **) {
     RUN_TEST(test_toque_na_lista_seleciona_o_agente);
     RUN_TEST(test_toque_fora_da_lista_cai_nos_botoes);
     RUN_TEST(test_a_pergunta_captura_o_toque_simples);
+    RUN_TEST(test_em_pe_a_nova_e_a_principal_abrem_o_terminal_do_cartao);
+    RUN_TEST(test_em_pe_as_paginas_desceram_um_degrau);
+    RUN_TEST(test_em_pe_o_swipe_alcanca_a_quinta_pagina);
     RUN_TEST(test_o_terminal_consome_o_gesto_antes_de_tudo);
     RUN_TEST(test_o_terminal_so_fecha_pelo_botao_no_toque);
     RUN_TEST(test_gesto_nenhum_nao_faz_nada);
