@@ -112,6 +112,13 @@ Status parseStatus(const char *json) {
     s.session.known    = sessKnown;
     s.session.inferred = doc["session_inferred"] | false;
 
+    // O FABLE e percentual puro: sem prazo, sem cor, sem memoria. `known` so
+    // com a flag da API — zero e leitura valida, e adivinhar pelo valor
+    // confundiria "0%" com "nao sei".
+    s.fablePct   = doc["fable_pct"] | 0;
+    s.fableLevel = levelFromColor(doc["colors"]["fable"]);
+    s.fableKnown = doc["fable_known"] | false;
+
     s.week.pct       = doc["week_pct"] | 0;
     s.week.resets    = strOr(doc["week_resets_dh"], "");
     s.week.resetsIn  = doc["week_resets_in"] | 0;

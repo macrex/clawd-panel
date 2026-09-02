@@ -350,6 +350,45 @@ class TestePlanos(unittest.TestCase):
         # so "Codex", com o modelo certo no campo ao lado.
         self.assertIn("GPT-5.6 Terra", orfao["line"])
 
+    def test_orfao_ganha_o_contexto_do_rodape_da_tela(self):
+        """O contexto de quem nao e o Claude Code so existe na TELA dele.
+
+        Um pane de Qwen ficava com "Context —" para sempre: a nossa statusline
+        so roda dentro do Claude Code e o herdr nao reporta contexto de
+        ninguem. O rodape do terminal dele diz, e e de onde isto vem.
+        """
+        herdr._aplicar([dele("w9:p9", "idle", agente="qwen", repo="alheio")])
+        with mock.patch.object(api.herdr, "ler_pane",
+                               return_value="gemma4:26b (Ollama) · "
+                                            "200.0k Context 91.0% used"):
+            s = api.build_status()
+        orfao = next(a for a in s["labels"] if a["agent"] == "qwen")
+        self.assertEqual(orfao["context_pct"], 91)
+        # O modelo vem de carona na mesma linha, para a CLI que nao grava turno
+        # em disco — e por isso `modelos.modelo_codex` nem entra neste caminho.
+        self.assertEqual(orfao["model"], "gemma4:26b")
+        self.assertIn("91%", orfao["line"])
+        # A cor deixa de ser o verde fixo que so existia porque nao havia
+        # numero: 91% de contexto e vermelho, como em qualquer sessao nossa.
+        self.assertEqual(orfao["color"], "red")
+
+    def test_a_tela_do_orfao_nao_e_lida_duas_vezes(self):
+        # Cada leitura e um subprocess do herdr (~19 ms), e o /status e pedido a
+        # cada 2 s por cada cliente. Sem o cache compartilhado com
+        # `modelo_do_orfao`, a sonda nova sozinha custaria mais que o resto.
+        with mock.patch.object(api.herdr, "ler_pane",
+                               return_value="m · Context 5% used") as ler:
+            api.tela_do_orfao("w9:p9")
+            api.tela_do_orfao("w9:p9")
+        ler.assert_called_once()
+
+    def test_orfao_sem_pane_nao_chama_o_herdr(self):
+        # `tela_do_orfao("")` responde sem sondar: um pane_id vazio nao tem tela
+        # para ler, e chamar o binario para descobrir isso e trabalho jogado.
+        with mock.patch.object(api.herdr, "ler_pane") as ler:
+            self.assertEqual(api.tela_do_orfao(""), {})
+        ler.assert_not_called()
+
     def test_orfao_sem_modelo_mantem_o_nome_do_agente_na_linha(self):
         # Sem isto `agent_line` cai no default "Claude" de `short_model`, e um
         # codex sai afirmando que e o Claude.

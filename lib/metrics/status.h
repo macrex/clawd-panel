@@ -342,6 +342,14 @@ struct Status {
     Metric      context;
     Metric      session;
     Metric      week;
+    // A fatia do gasto de HOJE que veio do Fable, quando a API a publica.
+    // Percentual e cor, sem prazo: nao e uma janela com reset, e informacao de
+    // canto de olho. A COR segue a mesma regra dos limites (<50 verde, 50-79
+    // amarelo, >=80 vermelho) e vem pronta do servidor, como as outras — uma
+    // API antiga nao acende a flag e a barra nem aparece.
+    int         fablePct   = 0;
+    Level       fableLevel = Level::Green;
+    bool        fableKnown = false;
     // A hora em que os limites lembrados foram lidos pela ultima vez ("11:15"),
     // em 24h como o relogio do cabecalho. Vazia quando eles vem de leitura viva
     // — e ai nao ha nada a dizer, porque a idade e a do payload inteiro.

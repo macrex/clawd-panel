@@ -17,6 +17,11 @@ backup-cartao-fabrica/
 # desta pasta. Serve para o tray achar o processo; nao e codigo.
 server/api.pid
 
+# Voz do processo: com `pythonw` os fluxos viram None e o crash morre mudo, e
+# por isso a API escreve stdout e stderr aqui. E rastro de runtime, nao codigo.
+server/api.log
+server/api.log.old
+
 # Coordenadas de onde a maquina esta, descobertas pelo IP no primeiro boot.
 # Ficam de fora por serem o endereco de casa de quem roda isto, nao por serem
 # segredo tecnico. Use weather.example.json como modelo.

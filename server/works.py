@@ -560,6 +560,37 @@ def por_modelo(registros, dia=None):
     }
 
 
+# Os modelos que contam como FABLE na fatia abaixo. Dois ids e nao um: Fable e
+# Mythos sao o MESMO modelo por tras (mesma tabela de preco, ver precos.py), e
+# separa-los na tela diria que sao coisas diferentes.
+FABLE_IDS = ("claude-fable-5", "claude-mythos-5")
+
+
+def fatia_fable(registros, dia=None):
+    """Quanto do custo do recorte veio do Fable, em porcento. None sem custo.
+
+    A statusline do Claude Code NAO publica janela de limite por modelo — so
+    `five_hour` e `seven_day` da assinatura (conferido na doc oficial). Entao o
+    numero do painel nao pode ser "quanto da cota do Fable ja foi": esse dado
+    nao existe do lado de fora. O que existe, e e do proprio livro-caixa daqui,
+    e QUANTO DO GASTO foi dele — que responde a pergunta pratica de quem olha a
+    barra ("estou puxando muito o modelo caro?") sem inventar um limite.
+
+    None e nao zero quando nao ha custo conhecido: zero significaria "nao gastei
+    nada com Fable", e nao "nao sei o que gastei".
+    """
+    fora = por_modelo(registros, dia=dia)
+    total = _num(fora.get("cost_usd")) or 0.0
+    if total <= 0:
+        return None
+    fable = 0.0
+    for m in fora.get("modelos") or []:
+        if m.get("id") in FABLE_IDS:
+            fable += _num(m.get("cost_usd")) or 0.0
+    pct = int(round(fable * 100.0 / total))
+    return 0 if pct < 0 else (100 if pct > 100 else pct)
+
+
 def vitalicio(registros):
     """Os totais de TODA a história do livro-caixa, para o nível do Clawd.
 

@@ -10,6 +10,7 @@ Sem dependências externas — apenas stdlib.
 """
 
 import collections
+import faulthandler
 import json
 import os
 import platform
@@ -21,6 +22,7 @@ from urllib.parse import unquote
 
 import arquivo
 import bloqueio
+import cota
 import herdr
 import modelos
 import motor
@@ -590,6 +592,19 @@ def campos_de_limites(lim, now):
         # Limites sao da CONTA: ficam no topo, fora da lista de agentes.
         "session_label": sess_label,
         "week_label": wk_label,
+        # A fatia do Fable no gasto dos ultimos 7 dias. NAO e limite: a
+        # statusline nao publica janela por modelo (so five_hour/seven_day da
+        # assinatura), entao este numero sai do livro-caixa daqui. A tela nova
+        # o desenha numa barra cinza discreta, sem cor de nivel — ele informa,
+        # nao pede acao. `known` falso quando nao ha custo conhecido no
+        # periodo, e ai a barra nem aparece.
+        "fable_pct": lim.get("fable_pct") or 0,
+        "fable_known": lim.get("fable_pct") is not None,
+        # De ONDE veio o numero acima: "cota" e a janela semanal do modelo, a
+        # mesma do `/cost`; "gasto" e a reserva local (a fatia do custo de 24h)
+        # que entra quando o endpoint da cota nao responde. Sao perguntas
+        # diferentes, e a tela nao pode apresentar as duas do mesmo jeito.
+        "fable_fonte": lim.get("fable_fonte") or "",
     }
 
 
@@ -955,6 +970,54 @@ def modelo_do_orfao(agente, cwd):
     return v
 
 
+def tela_do_orfao(pane_id):
+    """O rodape da tela de um pane: `{"model", "context_pct"}`, ou `{}`.
+
+    A sonda irma de `modelo_do_orfao`, e ela existe porque as CLIs da familia
+    Gemini (Qwen Code inclusive) nao gravam turno em disco para casar por cwd —
+    elas escrevem o estado no rodape do terminal. E o UNICO lugar de onde sai o
+    contexto de quem nao e o Claude Code: o herdr nao reporta contexto para
+    ninguem, e a nossa statusline so roda dentro do Claude Code.
+
+    `--lines 3` e nao as 50 de `LER_LINHAS`: no modo `visible` o herdr devolve
+    as ULTIMAS linhas do viewport, e o rodape esta entre elas (medido: 3 linhas
+    ja trazem o modelo, o contexto e o modo). Ler 50 so daria mais prosa para o
+    parser varrer — e mais chance de a conversa citar a frase que ele procura.
+
+    Divide o cache, o TTL e a poda com `modelo_do_orfao`, com a chave marcada
+    para os dois nunca colidirem: e a mesma pergunta ("o que da para saber de um
+    agente que so o herdr enxerga?"), feita a cada /status, e um cache proprio
+    seria a segunda copia da mesma trava.
+    """
+    global _sondas_falhas
+    if not pane_id:
+        return {}
+    chave = ("tela", pane_id)
+    agora = _now()
+    with _cache_lock:
+        c = _modelos_cache.get(chave)
+        if c and agora - c["ts"] < MODELOS_TTL_S:
+            return c["valor"]
+
+    falhou = False
+    try:
+        v = modelos.rodape_da_tela(
+            herdr.ler_pane(pane_id, linhas=3, source="visible"))
+    except Exception:
+        # Mesmo cinto de seguranca de `modelo_do_orfao`, e pelo mesmo motivo: um
+        # defeito na sonda nao pode derrubar o /status, mas tem que deixar
+        # rastro em vez de virar um "—" indistinguivel de "nao achei".
+        v = {}
+        falhou = True
+
+    with _cache_lock:
+        if falhou:
+            _sondas_falhas += 1
+        _podar_modelos(agora)
+        _modelos_cache[chave] = {"ts": agora, "valor": v}
+    return v
+
+
 def build_agents(live_items, retrato=None):
     """Uma entrada por agente vivo, do maior contexto para o menor.
 
@@ -1055,14 +1118,23 @@ def build_agents(live_items, retrato=None):
         # O modelo do orfao vem do disco da CLI dele — ver modelos.py. Era None
         # fixo, e o card desenhava "-" para todo agente que nao fosse o Claude.
         modelo_orfao = modelo_do_orfao(a["agent"], a["cwd"])
+        # O rodape da tela dele, quando a CLI escreve um. E de onde sai o
+        # contexto — e o modelo, para as CLIs que nao gravam turno em disco.
+        rodape = tela_do_orfao(a["pane_id"])
+        ctx_orfao = rodape.get("context_pct")
         agents.append({
             "session_id": a["pane_id"],
             "repo": a["repo"],
             "branch": None,
-            "model": modelo_orfao,
+            # A sonda de disco primeiro: ela devolve o nome ja arrumado por
+            # `modelos.bonito`, e o rodape entrega o identificador cru da CLI.
+            "model": modelo_orfao or rodape.get("model"),
             "effort": None,
-            "context_pct": None,
-            "color": "green",
+            "context_pct": ctx_orfao,
+            # A mesma cor das nossas sessoes agora que ha numero. Verde fixo era
+            # a consequencia de `context_pct` ser sempre None aqui: um orfao com
+            # 90% de contexto desenhava a barra da cor de quem esta folgado.
+            "color": pct_color(ctx_orfao) if ctx_orfao is not None else "green",
             "age": 0,
             "state": estado,
             "done": a["state"] == "done",
@@ -1090,8 +1162,9 @@ def build_agents(live_items, retrato=None):
             # `pane_id` sempre existe, ao contrario das nossas sessoes.
             "pane_id": a["pane_id"],
             "line": agent_line(a["repo"], None,
-                               modelo_orfao or agent_label(a["agent"]),
-                               None, None),
+                               modelo_orfao or rodape.get("model")
+                               or agent_label(a["agent"]),
+                               ctx_orfao, None),
         })
 
     # Quem precisa de você primeiro; depois, maior contexto. Um agente bloqueado
@@ -1459,6 +1532,73 @@ def vitalicio_do_livro():
     return _vit_cache["valor"]
 
 
+# A fatia do Fable das últimas 24h, memoizada pela mesma razão do vitalício: ela
+# varre o livro inteiro e o painel pede /status a cada dois segundos. A chave
+# junta a identidade da lista com o MINUTO — a janela desliza, então o número
+# precisa se refazer sozinho mesmo sem turno novo, e o minuto é resolução de
+# sobra para uma janela de um dia.
+_fable_cache = {"regs": None, "minuto": None, "valor": None}
+
+FABLE_JANELA = 86400
+
+
+def fable_pct(now):
+    """A cota semanal do Fable, em porcento, ou None.
+
+    DUAS FONTES, com hierarquia clara — a mesma ideia da statusline com os
+    hooks: quem sabe de verdade manda, e a outra é reserva.
+
+      1. A COTA, de `GET /api/oauth/usage` (server/cota.py): é o número que o
+         `/cost` mostra, e é o que a barra quer dizer.
+      2. A FATIA DO GASTO das últimas 24h, do livro-caixa local: responde outra
+         pergunta ("estou puxando muito o modelo caro?") e entra só quando a
+         cota não veio.
+
+    A reserva existe porque o endpoint da cota não é contrato público: ele pode
+    mudar sem aviso, e o token expira entre uma renovação e outra do Claude
+    Code. Quando isso acontece a barra continua na tela com um número que
+    significa outra coisa — e é por isso que `fable_fonte` viaja junto no
+    payload, para o painel poder dizer qual dos dois está mostrando.
+    """
+    real = cota.fable(now)
+    return real if real is not None else fable_recente(now)
+
+
+def fable_fonte(now):
+    """"cota" quando o número veio do /cost; "gasto" quando é a reserva."""
+    return "cota" if cota.fable(now) is not None else "gasto"
+
+
+def fable_recente(now):
+    """Quanto do gasto das últimas 24h veio do Fable, em porcento, ou None.
+
+    A JANELA JÁ ERROU DUAS VEZES, e as duas em direções opostas:
+
+    - **7 dias** afogava o presente. Mostrava 20% num dia em que o Fable era
+      62% do gasto: uma semana carregada de Opus dilui o modelo que acabou de
+      entrar no fluxo, e o número na tela ficava sem relação com o que estava
+      acontecendo.
+    - **"hoje"** (meia-noite local) resolvia isso e trocava por outro defeito,
+      observado ao vivo na virada do dia: à 00h o recorte esvazia, `known` cai
+      para falso e a barra SOME da tela até alguém fechar um turno. Um degrau
+      diário que ninguém pediu.
+
+    24h deslizantes não têm nenhum dos dois: acompanham o presente (58% contra
+    os 62% de "hoje", na medição que motivou a troca) e atravessam a meia-noite
+    sem degrau. `None` continua existindo, mas agora só quando de fato não houve
+    gasto conhecido em um dia inteiro.
+    """
+    regs = works.ler_cache()
+    minuto = int(now // 60)
+    if _fable_cache["regs"] is not regs or _fable_cache["minuto"] != minuto:
+        _fable_cache["regs"] = regs
+        _fable_cache["minuto"] = minuto
+        _fable_cache["valor"] = works.fatia_fable(
+            works.desde(regs, now - FABLE_JANELA),
+            dia=time.strftime("%Y-%m-%d", time.localtime(now)))
+    return _fable_cache["valor"]
+
+
 # ---- Captura de tela ----
 #
 # O pedido pega carona no polling que a placa já faz: `POST /tela/pedir` arma um
@@ -1648,7 +1788,11 @@ def build_status():
         # a unica coisa que ainda valia. Ver `limites_lembrados`.
         with _lock:
             lembrado = limites_lembrados(_limites_mem, now)
-        limites = campos_de_limites(lembrado, now)
+        # A fatia do Fable sai do livro-caixa e nao das sessoes vivas, entao ela
+        # continua valendo com todo terminal fechado — como os proprios limites.
+        limites = campos_de_limites(
+            {**lembrado, "fable_pct": fable_pct(now),
+             "fable_fonte": fable_fonte(now)}, now)
         return {
             "online": False,
             "sessions": 0,
@@ -1683,7 +1827,8 @@ def build_status():
             "arquivo": arq,
             "colors": {"context": "green",
                        "session": pct_color(limites["session_pct"]),
-                       "week": pct_color(limites["week_pct"])},
+                       "week": pct_color(limites["week_pct"]),
+                       "fable": pct_color(limites["fable_pct"])},
             "herdr_online": retrato["online"],
             "done": sum(1 for a in agents if a.get("done")),
             # Sem sessao nossa nao ha limpeza nossa para relatar.
@@ -1835,7 +1980,9 @@ def build_status():
         {"session_pct": session_pct, "session_resets_at": session_resets_at,
          "session_known": session_known, "session_inferred": session_inferred,
          "week_pct": week_pct, "week_resets_at": week_resets_at,
-         "week_known": week_known, "memoria": de_memoria}, now)
+         "week_known": week_known, "memoria": de_memoria,
+         "fable_pct": fable_pct(now),
+         "fable_fonte": fable_fonte(now)}, now)
 
     model = short_model(newest["data"].get("model"))
     effort = effort_label(newest["data"].get("effort"))
@@ -1878,6 +2025,11 @@ def build_status():
             "context": pct_color(ctx_pct),
             "session": pct_color(limites["session_pct"]),
             "week": pct_color(limites["week_pct"]),
+            # A fatia do Fable segue a MESMA regra dos limites (<50 verde,
+            # 50-79 amarelo, >=80 vermelho), e a regra continua morando aqui:
+            # a placa nunca decide cor sozinha, senao dois lugares poderiam
+            # discordar sobre o que e "muito".
+            "fable": pct_color(limites["fable_pct"]),
         },
         "herdr_online": retrato["online"],
         "done": sum(1 for a in agents if a.get("done")),
@@ -2385,10 +2537,47 @@ def write_pid():
         pass
 
 
+LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "api.log")
+
+
+def abrir_log():
+    """Da voz ao processo: `pythonw` descarta stdout e stderr.
+
+    Em 26/08/2026 o servidor sumiu as 16:18 e nao houve traceback em lugar
+    nenhum — nem no Visualizador de Eventos, nem em arquivo, porque o atalho do
+    Startup roda `pythonw.exe` e os dois fluxos viram None. A queda seguinte
+    precisa deixar rastro, entao ambos passam a escrever em `api.log`.
+
+    O `faulthandler` vai junto porque cobre o que a excecao Python nao cobre —
+    segfault, abort, travamento nativo — e e justamente a queda muda que ficou
+    sem explicacao.
+
+    Os `print` do boot caem no mesmo arquivo de proposito: a linha de subida e
+    o que data a queda anterior.
+    """
+    # ponytail: rotacao de um arquivo so; se o volume virar problema, trocar
+    # por logging.handlers.RotatingFileHandler.
+    try:
+        if os.path.getsize(LOG_FILE) > 1_000_000:
+            os.replace(LOG_FILE, LOG_FILE + ".old")
+    except OSError:
+        pass
+    fh = open(LOG_FILE, "a", buffering=1, encoding="utf-8", errors="replace")
+    sys.stdout = sys.stderr = fh
+    faulthandler.enable(fh)
+    print()
+    print(f"=== subiu {time.strftime('%d/%m/%Y %H:%M:%S')} pid={os.getpid()} ===")
+
+
 def main():
+    abrir_log()
     write_pid()
     restored = load_state()
     weather.start()
+    # A cota da conta, do mesmo endpoint que o `/cost` le. Daemon como o clima:
+    # a consulta acontece no ciclo dela, nunca dentro do /status que a placa
+    # pede a cada dois segundos.
+    cota.start()
     binario = herdr.start(ao_consultar=lambda online: motor.avaliar(online, _now()))
     if binario:
         print(f"herdr: sensor ligado ({binario})")

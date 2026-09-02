@@ -517,6 +517,40 @@ class TestPorModelo(unittest.TestCase):
         self.assertIsNone(out["fator"])
 
 
+class TestFatiaFable(unittest.TestCase):
+    """Quanto do gasto veio do Fable — a barra discreta da tela nova.
+
+    Ela existe porque a statusline NAO publica janela de limite por modelo: o
+    unico jeito honesto de dizer algo sobre o Fable e falar do gasto que este
+    livro-caixa mediu.
+    """
+
+    def registro(self, tokens):
+        return {"session_id": "s1", "started": 1785870000.0, "tokens": tokens}
+
+    def test_metade_do_custo_e_fable(self):
+        # Fable 1M de saida = US$ 50; Opus 5 2M de saida = US$ 50. Metade.
+        r = self.registro({"claude-fable-5": {"output": 1_000_000},
+                           "claude-opus-5": {"output": 2_000_000}})
+        self.assertEqual(works.fatia_fable([r]), 50)
+
+    def test_mythos_conta_como_fable(self):
+        """Sao o mesmo modelo por tras; separa-los na tela mentiria."""
+        r = self.registro({"claude-mythos-5": {"output": 1_000_000},
+                           "claude-opus-5": {"output": 1_000_000}})
+        self.assertEqual(works.fatia_fable([r]), 67)
+
+    def test_sem_fable_e_zero_e_nao_nulo(self):
+        r = self.registro({"claude-opus-5": {"output": 1_000_000}})
+        self.assertEqual(works.fatia_fable([r]), 0)
+
+    def test_sem_custo_conhecido_devolve_nulo(self):
+        """Zero diria "nao gastei"; None diz "nao sei", e a barra nem aparece."""
+        self.assertIsNone(works.fatia_fable([]))
+        self.assertIsNone(works.fatia_fable(
+            [self.registro({"modelo-novo-99": {"output": 1_000_000}})]))
+
+
 class TestVitalicio(unittest.TestCase):
     """O total de TODA a historia, que alimenta o nivel do Clawd.
 
