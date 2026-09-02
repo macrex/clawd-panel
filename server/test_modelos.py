@@ -797,5 +797,52 @@ class TestBlobCitaPasta(unittest.TestCase):
             b"\n\x13D:/workspace/gcloud\xda", r"D:\outro"))
 
 
+class RodapeDaTela(unittest.TestCase):
+    """O rodape do terminal, a unica fonte de contexto de quem nao e o Claude.
+
+    A linha usada aqui foi COPIADA de um pane de Qwen Code rodando de verdade,
+    e nao inventada a partir do formato: era a tela do agente que aparecia no
+    painel sem contexto nenhum.
+    """
+
+    REAL = ("  gemma4:26b (Ollama) · 200.0k Context 13.1% used\n"
+            "  Modo auto (Tab para alternar)")
+
+    def test_le_o_modelo_e_o_contexto_da_linha_real(self):
+        self.assertEqual(modelos.rodape_da_tela(self.REAL),
+                         {"model": "gemma4:26b", "context_pct": 13})
+
+    def test_a_medida_ao_contrario_nao_e_lida(self):
+        """"98% context left" e 2% USADO, e le-lo como 98 inverte a barra.
+
+        O Gemini CLI ja escreveu a medida assim. Sem a palavra `used`, o parser
+        prefere nao responder: um "—" no card e recuperavel, um numero
+        invertido nao se distingue de um verdadeiro.
+        """
+        self.assertEqual(modelos.rodape_da_tela("  gemini (98% context left)"),
+                         {})
+
+    def test_a_conversa_acima_nao_vence_o_rodape(self):
+        # O turno pode citar a propria frase que o parser procura — foi o que
+        # aconteceu no pane onde ESTE codigo estava sendo escrito.
+        tela = "  o card lia Context 99% used da linha errada\n" + self.REAL
+        self.assertEqual(modelos.rodape_da_tela(tela)["context_pct"], 13)
+
+    def test_sem_separador_o_modelo_nao_e_inventado(self):
+        # Sem o `·` nao da para saber onde o modelo termina; o contexto
+        # continua valendo, que e o que o painel foi buscar.
+        self.assertEqual(modelos.rodape_da_tela("Context 40% used"),
+                         {"model": None, "context_pct": 40})
+
+    def test_tela_sem_rodape_nao_responde(self):
+        for vazio in ("", None, "so prosa\nsem rodape nenhum"):
+            self.assertEqual(modelos.rodape_da_tela(vazio), {})
+
+    def test_o_numero_fica_dentro_da_barra(self):
+        # A CLI escreve o que quiser; a barra do painel vai de 0 a 100.
+        linha = "m · Context 120% used"
+        self.assertEqual(modelos.rodape_da_tela(linha)["context_pct"], 100)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

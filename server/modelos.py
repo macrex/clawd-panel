@@ -472,3 +472,49 @@ def modelo_antigravity(cwd=None, raiz=None):
             # bancos para nada.
             break
     return bonito(reserva) if reserva else None
+
+
+# ---- O rodape da TELA ----
+# As duas sondas acima leem DISCO, porque o Codex e o Antigravity gravam o
+# modelo a cada turno e nao o escrevem na tela. As CLIs da familia Gemini —
+# Qwen Code inclusive — fazem o contrario: nao ha rollout para casar por cwd, e
+# o rodape do terminal ja diz tudo, medido num pane de Qwen:
+#
+#     gemma4:26b (Ollama) · 200.0k Context 13.1% used
+#
+# E a UNICA fonte de contexto de um agente que nao e o Claude Code. O herdr nao
+# reporta contexto para ninguem (conferido no `agent list` cru), e a nossa
+# statusline so roda dentro do Claude Code — por isso todo orfao mostrava
+# "Context —" na placa.
+#
+# `used` e obrigatorio no padrao: o Gemini CLI ja escreveu a mesma medida ao
+# contrario ("% context left"), e ler uma como a outra inverteria o numero na
+# tela. Sem a palavra, esta funcao prefere nao responder.
+RE_CONTEXTO_USADO = re.compile(r"context\s+(\d+(?:[.,]\d+)?)\s*%\s+used", re.I)
+
+# O modelo e o primeiro pedaco da MESMA linha, e o separador `·` e o que prova
+# que a linha e um rodape de status e nao prosa da conversa. Sem ele o modelo
+# fica None e o contexto continua valendo: perder o nome custa um "—" no card,
+# e inventa-lo custa uma mentira.
+RE_MODELO_RODAPE = re.compile(r"^\s*([^\s()]{2,40})\s.*·")
+
+
+def rodape_da_tela(tela):
+    """`{"model", "context_pct"}` lidos do rodape. `{}` quando nao ha rodape.
+
+    Varre de BAIXO para cima e para na primeira linha que casa: o rodape e a
+    ultima linha da tela, e a conversa acima dela pode citar qualquer coisa —
+    inclusive a propria frase que esta funcao procura, quando o assunto do
+    turno e o proprio painel.
+    """
+    for linha in reversed((tela or "").splitlines()):
+        m = RE_CONTEXTO_USADO.search(linha)
+        if not m:
+            continue
+        pct = int(round(float(m.group(1).replace(",", "."))))
+        modelo = RE_MODELO_RODAPE.match(linha)
+        return {"model": modelo.group(1) if modelo else None,
+                # A CLI escreve o que quiser; a tela do painel tem uma barra de
+                # 0 a 100 e nada mais.
+                "context_pct": min(100, max(0, pct))}
+    return {}
