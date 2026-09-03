@@ -143,3 +143,37 @@ Alvo alvoRotuloSemana();
 // O percentual da janela de 7 dias: metade DIREITA da coluna da direita. Duplo
 // toque ali abre a tela do Token sem esperar o limite estourar.
 Alvo alvoPctSemana();
+
+// ---- A grade de botoes da pergunta ----
+// Deitada, a tela de pergunta tem 158 px de miolo contra 292 em pe. Com quatro
+// opcoes o botao fica em 33 px — dois pixels abaixo do limiar que libera o
+// corpo 2 — e o rotulo cai para a grade de 8 px. O que sobra deitado e LARGURA:
+// 440 px para um rotulo que enche metade da linha.
+//
+// A grade troca largura por altura: quatro opcoes deitadas viram duas colunas
+// de 216x75 em vez de quatro faixas de 33, sem tirar a fileira de bichos do
+// rodape. O preco esta no texto, que passa a ter metade das colunas — e por
+// isso a segunda coluna so aparece deitada e a partir de QUATRO opcoes. Com
+// tres ou menos a faixa inteira ainda da altura de sobra, e reparti-la so
+// encolheria o rotulo em troca de nada.
+
+// Quantas colunas a grade usa. Em pe e sempre uma: la a altura e o que sobra.
+int gradeColunas(int total, bool deitado);
+
+// A area util da grade e o teto de cada celula.
+struct Grade {
+    int x = 0, larg = 0;      // faixa horizontal
+    int topo = 0, fim = 0;    // faixa vertical
+    int gap = 0;              // vao entre celulas, nas duas direcoes
+    int altMin = 0;           // celula mais baixa que isto nao vale desenhar
+    int cols = 1;
+};
+
+// A celula `i` de `total`, ou false quando ela nao cabe — ou quando o indice
+// esta fora da contagem.
+//
+// A ULTIMA celula de uma contagem impar ocupa a largura inteira: numa grade de
+// duas colunas com cinco opcoes ela ficaria sozinha na fileira de baixo, com
+// metade da tela vazia ao lado, e o rotulo dela pagaria por um espaco que
+// ninguem esta usando.
+bool gradeCelula(const Grade &g, int i, int total, Alvo &out);

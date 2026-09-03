@@ -171,6 +171,82 @@ void test_fatias_degeneradas_nao_estouram(void) {
     TEST_ASSERT_EQUAL_INT(14, evenSlotX(292, 4, -3, 14));
 }
 
+// ---- A grade de botoes da pergunta ----
+// A area util da tela deitada, medida no ui.cpp: P0Q_X=20, p0qW()=440,
+// p0qTopo()=78, p0qFim()=236, P0Q_GAP=8, P0Q_ALT_MIN=22.
+static Grade gradeDeitada(int cols) {
+    Grade g;
+    g.x = 20; g.larg = 440; g.topo = 78; g.fim = 236;
+    g.gap = 8; g.altMin = 22; g.cols = cols;
+    return g;
+}
+
+void test_a_segunda_coluna_so_existe_deitado_e_a_partir_de_quatro(void) {
+    TEST_ASSERT_EQUAL_INT(1, gradeColunas(4, false));   // em pe, nunca
+    TEST_ASSERT_EQUAL_INT(1, gradeColunas(2, true));
+    TEST_ASSERT_EQUAL_INT(1, gradeColunas(3, true));    // tres ainda cabem em faixa
+    TEST_ASSERT_EQUAL_INT(2, gradeColunas(4, true));
+    TEST_ASSERT_EQUAL_INT(2, gradeColunas(5, true));
+}
+
+void test_quatro_opcoes_deitadas_dobram_a_altura_do_botao(void) {
+    // Em coluna unica o botao mede 33 px — dois abaixo do limiar do corpo 2.
+    // Em duas colunas ele passa a 75, e a fileira de bichos continua no lugar.
+    Grade g = gradeDeitada(2);
+    Alvo a;
+
+    TEST_ASSERT_TRUE(gradeCelula(g, 0, 4, a));
+    TEST_ASSERT_EQUAL_INT(20, a.x);   TEST_ASSERT_EQUAL_INT(78, a.y);
+    TEST_ASSERT_EQUAL_INT(216, a.w);  TEST_ASSERT_EQUAL_INT(75, a.h);
+
+    TEST_ASSERT_TRUE(gradeCelula(g, 1, 4, a));
+    TEST_ASSERT_EQUAL_INT(244, a.x);  TEST_ASSERT_EQUAL_INT(78, a.y);
+
+    TEST_ASSERT_TRUE(gradeCelula(g, 3, 4, a));
+    TEST_ASSERT_EQUAL_INT(244, a.x);  TEST_ASSERT_EQUAL_INT(161, a.y);
+    // A grade termina dentro da area util, e nao um pixel abaixo dela.
+    TEST_ASSERT_TRUE(a.y + a.h <= g.fim);
+    TEST_ASSERT_TRUE(a.x + a.w <= g.x + g.larg);
+}
+
+void test_a_ultima_sozinha_na_fileira_toma_a_largura_inteira(void) {
+    // Cinco opcoes: 1|2, 3|4 e a quinta sozinha. Meia tela vazia ao lado dela
+    // seria espaco que o rotulo pagaria sem ninguem estar usando.
+    Grade g = gradeDeitada(2);
+    Alvo a;
+    TEST_ASSERT_TRUE(gradeCelula(g, 4, 5, a));
+    TEST_ASSERT_EQUAL_INT(20, a.x);
+    TEST_ASSERT_EQUAL_INT(440, a.w);
+    TEST_ASSERT_TRUE(a.y + a.h <= g.fim);
+
+    // Com SEIS a ultima fileira esta cheia: ninguem se alarga.
+    TEST_ASSERT_TRUE(gradeCelula(g, 5, 6, a));
+    TEST_ASSERT_EQUAL_INT(244, a.x);
+    TEST_ASSERT_EQUAL_INT(216, a.w);
+}
+
+void test_coluna_unica_repete_a_geometria_empilhada(void) {
+    Grade g = gradeDeitada(1);
+    Alvo a;
+    TEST_ASSERT_TRUE(gradeCelula(g, 0, 4, a));
+    TEST_ASSERT_EQUAL_INT(440, a.w);
+    TEST_ASSERT_EQUAL_INT(33, a.h);
+    TEST_ASSERT_TRUE(gradeCelula(g, 3, 4, a));
+    TEST_ASSERT_EQUAL_INT(78 + 3 * 41, a.y);
+}
+
+void test_celula_que_nao_cabe_e_recusada(void) {
+    Grade g = gradeDeitada(1);
+    Alvo a;
+    // Oito opcoes empilhadas dao 12 px de botao: abaixo do minimo, ninguem
+    // desenha nada em vez de desenhar oito tarjas ilegiveis.
+    TEST_ASSERT_FALSE(gradeCelula(g, 0, 8, a));
+    // Indice fora da contagem, e contagem vazia.
+    TEST_ASSERT_FALSE(gradeCelula(g, 4, 4, a));
+    TEST_ASSERT_FALSE(gradeCelula(g, -1, 4, a));
+    TEST_ASSERT_FALSE(gradeCelula(g, 0, 0, a));
+}
+
 int main(int, char **) {
     UNITY_BEGIN();
     RUN_TEST(test_texto_que_cabe_nao_quebra);
@@ -192,5 +268,10 @@ int main(int, char **) {
     RUN_TEST(test_centros_das_fatias_sao_equidistantes);
     RUN_TEST(test_resto_da_divisao_cai_dentro_das_fatias);
     RUN_TEST(test_fatias_degeneradas_nao_estouram);
+    RUN_TEST(test_a_segunda_coluna_so_existe_deitado_e_a_partir_de_quatro);
+    RUN_TEST(test_quatro_opcoes_deitadas_dobram_a_altura_do_botao);
+    RUN_TEST(test_a_ultima_sozinha_na_fileira_toma_a_largura_inteira);
+    RUN_TEST(test_coluna_unica_repete_a_geometria_empilhada);
+    RUN_TEST(test_celula_que_nao_cabe_e_recusada);
     return UNITY_END();
 }

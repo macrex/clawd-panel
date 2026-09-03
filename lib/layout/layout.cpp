@@ -145,3 +145,30 @@ Alvo alvoRotuloSemana() {
 Alvo alvoPctSemana() {
     return Alvo{xDaSemana() + LIM_W / 2, LIM_Y, LIM_W - LIM_W / 2, LIM_H};
 }
+
+int gradeColunas(int total, bool deitado) {
+    return (deitado && total >= 4) ? 2 : 1;
+}
+
+bool gradeCelula(const Grade &g, int i, int total, Alvo &out) {
+    if (total <= 0 || i < 0 || i >= total) return false;
+
+    const int cols   = g.cols < 1 ? 1 : g.cols;
+    const int linhas = (total + cols - 1) / cols;
+    const int alt    = (g.fim - g.topo + g.gap) / linhas - g.gap;
+    if (alt < g.altMin) return false;
+
+    const int larg = (g.larg + g.gap) / cols - g.gap;
+    if (larg <= 0) return false;
+
+    const int r = i / cols, c = i % cols;
+    // Sozinha na ultima fileira: toma a largura inteira em vez de deixar meia
+    // tela vazia ao lado.
+    const bool sozinha = cols > 1 && r == linhas - 1 && total - r * cols == 1;
+
+    out.x = sozinha ? g.x : g.x + c * (larg + g.gap);
+    out.y = g.topo + r * (alt + g.gap);
+    out.w = sozinha ? g.larg : larg;
+    out.h = alt;
+    return true;
+}

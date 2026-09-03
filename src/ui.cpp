@@ -1313,7 +1313,11 @@ int p0qCols() { return p0qW() / 6; }               // caracteres em corpo 1
 // Em pe o miolo comeca abaixo da turma (que la mora no topo, ver drawRetrato) e
 // termina acima da linha de idade do dado.
 int p0qTitY() { return display::retrato() ? 112 : 54; }
-int p0qTopo() { return display::retrato() ? 176 : 78; }
+// 114 deitado, e nao 78: a pergunta passou a ser escrita em corpo 2 e pede tres
+// linhas de 19 px em vez de duas de 11. Os 36 px vem dos botoes, que os tem de
+// sobra desde que quatro opcoes deixaram de ser quatro faixas e viraram duas
+// colunas — a celula cai de 75 para 57 px e continua o dobro do que era antes.
+int p0qTopo() { return display::retrato() ? 176 : 114; }
 int p0qFim()  { return display::retrato() ? 438 : 236; }
 
 // Em pe a pergunta usa a fonte PROPORCIONAL, e nao a grade embutida.
@@ -1330,6 +1334,17 @@ int p0qFim()  { return display::retrato() ? 438 : 236; }
 const int P0Q_TIT_BASE  = 11;    // do topo pedido ate a linha de base
 const int P0Q_TIT_PASSO = 15;
 const int P0Q_TIT_MAX   = 3;
+
+// Deitado a pergunta usa a GRADE em corpo 2 — o mesmo corpo dos rotulos dos
+// botoes logo abaixo. Em corpo 1 ela media 8 px de altura e nao se lia a um
+// metro do painel, que e a distancia de onde ele fica.
+//
+// O dobro de corpo custa metade das colunas: 36 por linha em vez de 73. A
+// terceira linha devolve o que o corpo tirou — 108 caracteres contra os 146 de
+// antes — e a API ja corta a pergunta em 200 bytes, entao o que passa disso
+// nunca chegou inteiro de qualquer jeito.
+const int P0Q_TIT_PASSO_D = 19;   // 16 px de altura mais 3 de respiro
+const int P0Q_TIT_MAX_D   = 3;
 
 // Escreve quebrando por largura MEDIDA, e nao por contagem de caracteres.
 //
@@ -1372,14 +1387,21 @@ int textoQuebradoProp(Arduino_Canvas *g, int x, int y, int passo, int larg,
 }
 
 // Geometria de UM botao — usada pelo desenho E pelo toque, para nao divergirem.
-bool perguntaP0Botao(int i, int total, int &y, int &h) {
-    if (total <= 0 || i < 0 || i >= total) return false;
-    const int topo = p0qTopo();
-    const int alt  = (p0qFim() - topo + P0Q_GAP) / total - P0Q_GAP;
-    if (alt < P0Q_ALT_MIN) return false;
-    y = topo + i * (alt + P0Q_GAP);
-    h = alt;
-    return true;
+//
+// Deitado e com quatro opcoes ou mais, a grade vira DUAS COLUNAS: o botao dobra
+// de altura sem tirar a fileira de bichos do rodape (ver layout::gradeColunas).
+// A aritmetica mora em lib/layout porque e o que da para conferir no PC — aqui
+// fica so a area util, que depende da rotacao.
+bool perguntaP0Botao(int i, int total, Alvo &out) {
+    Grade g;
+    g.x      = P0Q_X;
+    g.larg   = p0qW();
+    g.topo   = p0qTopo();
+    g.fim    = p0qFim();
+    g.gap    = P0Q_GAP;
+    g.altMin = P0Q_ALT_MIN;
+    g.cols   = gradeColunas(total, !display::retrato());
+    return gradeCelula(g, i, total, out);
 }
 
 void drawPerguntaP0(Arduino_Canvas *g, const Status &s, int opcaoArmada) {
@@ -1417,7 +1439,12 @@ void drawPerguntaP0(Arduino_Canvas *g, const Status &s, int opcaoArmada) {
         // caractere que mede os rotulos passaria a mentir.
         g->setFont();
     } else {
-        textoQuebrado(g, P0Q_X, p0qTitY(), 11, p0qCols(), titulo.c_str(), 2);
+        // OBRIGATORIO voltar ao corpo 1 depois: os botoes medem o rotulo por
+        // conta propria e o `setTextSize` e do canvas inteiro.
+        g->setTextSize(2);
+        textoQuebrado(g, P0Q_X, p0qTitY(), P0Q_TIT_PASSO_D, p0qW() / 12,
+                      titulo.c_str(), P0Q_TIT_MAX_D);
+        g->setTextSize(1);
     }
 
     // Quem travou, no rodape do miolo e alinhado A DIREITA: e contexto, nao
@@ -1465,19 +1492,21 @@ void drawPerguntaP0(Arduino_Canvas *g, const Status &s, int opcaoArmada) {
         return;
     }
 
-    // Botoes empilhados, largura toda e SEM teto de altura: com duas opcoes
-    // eles viram dois tarjoes de ~60 px, que e o alvo que nao se erra em pe.
+    // Botoes SEM teto de altura: com duas opcoes eles viram dois tarjoes de
+    // ~60 px, que e o alvo que nao se erra em pe. Deitado, a partir de quatro
+    // opcoes eles se repartem em duas colunas (ver perguntaP0Botao).
     const int total = (int)b.opcoes.size();
     const int qw = p0qW();
     for (int i = 0; i < total; i++) {
-        int y = 0, h = 0;
-        if (!perguntaP0Botao(i, total, y, h)) break;
+        Alvo a;
+        if (!perguntaP0Botao(i, total, a)) break;
+        const int y = a.y, h = a.h;
         const Opcao &o = b.opcoes[i];
         const bool armada = (opcaoArmada == o.n);
 
-        g->fillRoundRect(P0Q_X, y, qw, h, 10, CARD);
-        g->drawRoundRect(P0Q_X, y, qw, h, 10, armada ? C_YELL : TRACK);
-        if (armada) g->drawRoundRect(P0Q_X + 2, y + 2, qw - 4, h - 4, 8, C_YELL);
+        g->fillRoundRect(a.x, y, a.w, h, 10, CARD);
+        g->drawRoundRect(a.x, y, a.w, h, 10, armada ? C_YELL : TRACK);
+        if (armada) g->drawRoundRect(a.x + 2, y + 2, a.w - 4, h - 4, 8, C_YELL);
 
         // Numero e rotulo crescem com a altura do botao: com poucas opcoes o
         // botao vira um tarjao e o texto acompanha, em vez de ficar uma legenda
@@ -1485,19 +1514,26 @@ void drawPerguntaP0(Arduino_Canvas *g, const Status &s, int opcaoArmada) {
         const int nsz = h >= 60 ? 4 : (h >= 40 ? 3 : 2);
         g->setTextColor(armada ? C_YELL : LARANJA);
         g->setTextSize(nsz);
-        g->setCursor(P0Q_X + 16, y + (h - nsz * 8) / 2);
+        g->setCursor(a.x + 16, y + (h - nsz * 8) / 2);
         g->printf("%d", o.n);
 
-        const int tx  = P0Q_X + 16 + nsz * 6 + 16;
+        const int tx  = a.x + 16 + nsz * 6 + 16;
         // TETO DE CORPO 2 EM PE. La o botao chega a 130 px com duas opcoes, e o
         // corpo 3 que essa altura liberava dava 15 caracteres por linha — os
         // rotulos vinham cortados no meio da palavra dentro de um botao com
         // metade dele vazio. O que o botao grande compra e alvo para o dedo, e
         // nao letra grande: quem precisa ser lido e o texto, e ele cabe inteiro
         // em corpo 2.
+        //
+        // O corpo 3 exige ALTURA E LARGURA INTEIRA. Numa das duas colunas o
+        // botao tem 75 px de altura e 216 de largura: a altura sozinha
+        // liberaria o corpo 3, e ele daria 8 caracteres por linha — corta o
+        // rotulo mais curto do AskUserQuestion. Quem manda na letra e a coluna
+        // mais estreita das duas, e nao a mais alta.
         const int lsz = display::retrato() ? (h >= 34 ? 2 : 1)
-                                           : (h >= 60 ? 3 : (h >= 34 ? 2 : 1));
-        const int cols = (P0Q_X + qw - 12 - tx) / (6 * lsz);
+                                           : (h >= 60 && a.w >= qw ? 3
+                                                                   : (h >= 34 ? 2 : 1));
+        const int cols = (a.x + a.w - 12 - tx) / (6 * lsz);
         // Rotulo longo usa quantas linhas couberem, ate tres. Antes o teto era
         // dois, e um rotulo de tres linhas era cortado num botao que tinha
         // altura de sobra para ele.
@@ -4284,12 +4320,14 @@ bool rotuloSemanaAt(int x, int y) {
 // Versao da P0: sem selecao, mede pela geometria da pergunta em tela cheia.
 int perguntaP0At(const Status &s, int x, int y) {
     if (!s.bloqueio.known || s.bloqueio.opcoes.empty()) return 0;
-    if (x < P0Q_X || x >= P0Q_X + p0qW()) return 0;
     const int total = (int)s.bloqueio.opcoes.size();
     for (int k = 0; k < total; k++) {
-        int by = 0, bh = 0;
-        if (!perguntaP0Botao(k, total, by, bh)) break;
-        if (y >= by && y < by + bh) return s.bloqueio.opcoes[k].n;
+        Alvo a;
+        // Os QUATRO lados, e nao so o `y`: com duas colunas, filtrar o x pela
+        // faixa inteira e decidir pela altura faria o toque na coluna da
+        // direita responder a opcao da esquerda.
+        if (!perguntaP0Botao(k, total, a)) break;
+        if (dentro(a, x, y)) return s.bloqueio.opcoes[k].n;
     }
     return 0;
 }
