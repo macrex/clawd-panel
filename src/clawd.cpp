@@ -321,12 +321,43 @@ bool tickIcone(Icone &ic, uint32_t nowMs) {
     return true;
 }
 
-bool desenharIcone(Icone &ic, Arduino_Canvas *g, int x, int y) {
+// A ESCALA E APLICADA NO BLIT, e nao na decodificacao, e a razao e memoria: o
+// buffer do icone tem o tamanho do quadro decodificado, entao decodificar
+// AMPLIADO nao caberia nele — e o Clawd dormindo (192x169) e justamente o que
+// precisa crescer para ocupar a faixa deitada.
+//
+// Aqui o quadro e decodificado como sempre e reamostrado linha a linha na saida
+// (vizinho mais proximo), com uma linha de rascunho de 480 px — a largura
+// maxima da tela. Fica em `static` por causa da pilha da loopTask, que ja
+// estourou uma vez com um buffer grande de funcao (ver o tinfl em storage.cpp).
+uint16_t g_linhaEscala[480];
+
+// `num`/`den` e a escala do desenho (1:1 = tamanho nativo). Ela reduz ou
+// amplia; quem escolhe a razao e quem sabe o tamanho da caixa (ver
+// escalaParaCaber, em lib/layout).
+bool desenharIcone(Icone &ic, Arduino_Canvas *g, int x, int y,
+                   int num = 1, int den = 1) {
     if (!ic.buf) return false;
     if (!decodeCropDown(ic.sp, ic.quadro, ic.box, ic.div,
                         ic.buf, (size_t)ic.w * ic.h, ic.sp.key))
         return false;
-    g->draw16bitRGBBitmapWithTranColor(x, y, ic.buf, ic.sp.key, ic.w, ic.h);
+
+    if (num == den || num < 1 || den < 1) {
+        g->draw16bitRGBBitmapWithTranColor(x, y, ic.buf, ic.sp.key, ic.w, ic.h);
+        return true;
+    }
+
+    int ow = ic.w * num / den, oh = ic.h * num / den;
+    if (ow < 1 || oh < 1) return false;
+    if (ow > (int)(sizeof(g_linhaEscala) / sizeof(g_linhaEscala[0])))
+        ow = sizeof(g_linhaEscala) / sizeof(g_linhaEscala[0]);
+
+    for (int oy = 0; oy < oh; oy++) {
+        const uint16_t *src = ic.buf + (size_t)(oy * den / num) * ic.w;
+        for (int ox = 0; ox < ow; ox++) g_linhaEscala[ox] = src[ox * den / num];
+        g->draw16bitRGBBitmapWithTranColor(x, y + oy, g_linhaEscala, ic.sp.key,
+                                           ow, 1);
+    }
     return true;
 }
 
@@ -1323,11 +1354,11 @@ bool drawResetOpacoInto(Arduino_Canvas *g, int x, int y, uint16_t fundo) {
     return true;
 }
 
-int  tokenW() { return tokenIc.buf ? tokenIc.w : 0; }
-int  tokenH() { return tokenIc.buf ? tokenIc.h : 0; }
+int  tokenW(int num, int den) { return tokenIc.buf ? tokenIc.w * num / den : 0; }
+int  tokenH(int num, int den) { return tokenIc.buf ? tokenIc.h * num / den : 0; }
 bool tickToken(uint32_t nowMs) { return tickIcone(tokenIc, nowMs); }
-bool drawTokenInto(Arduino_Canvas *g, int x, int y) {
-    return desenharIcone(tokenIc, g, x, y);
+bool drawTokenInto(Arduino_Canvas *g, int x, int y, int num, int den) {
+    return desenharIcone(tokenIc, g, x, y, num, den);
 }
 
 bool carregarOffline() {
@@ -1351,11 +1382,11 @@ void soltarOffline() {
     offlineIc = Icone();
 }
 
-int  offlineW() { return offlineIc.buf ? offlineIc.w : 0; }
-int  offlineH() { return offlineIc.buf ? offlineIc.h : 0; }
+int  offlineW(int num, int den) { return offlineIc.buf ? offlineIc.w * num / den : 0; }
+int  offlineH(int num, int den) { return offlineIc.buf ? offlineIc.h * num / den : 0; }
 bool tickOffline(uint32_t nowMs) { return tickIcone(offlineIc, nowMs); }
-bool drawOfflineInto(Arduino_Canvas *g, int x, int y) {
-    return desenharIcone(offlineIc, g, x, y);
+bool drawOfflineInto(Arduino_Canvas *g, int x, int y, int num, int den) {
+    return desenharIcone(offlineIc, g, x, y, num, den);
 }
 
 int crewW(int faixaW) {

@@ -72,8 +72,14 @@ void test_o_clawd_dormindo_ganha_dos_ensaios(void) {
 void test_os_ensaios_ganham_do_token(void) {
     Contexto c = base();
     c.telaToken = true;
+    c.retrato   = true;              // em pe aquele alvo e o ensaio do reset
     c.noPctSessao = true;
     TEST_ASSERT_EQUAL(Acao::EnsaiarReset, act(GestureKind::DoubleTap, c));
+
+    // Deitado o mesmo alvo abre a tela de offline, e continua ganhando dele.
+    Contexto l = c;
+    l.retrato = false;
+    TEST_ASSERT_EQUAL(Acao::AbrirOffline, act(GestureKind::DoubleTap, l));
 
     Contexto d = base();
     d.telaToken = true;
@@ -84,6 +90,42 @@ void test_os_ensaios_ganham_do_token(void) {
     Contexto e = base();
     e.telaToken = true;
     TEST_ASSERT_EQUAL(Acao::DispensarToken, act(GestureKind::DoubleTap, e));
+}
+
+// DEITADO o alvo da sessao muda de dono: la nao ha tela de reset para ensaiar,
+// e o anel da sessao abre a do Clawd dormindo — a irma da do Token, que ate
+// entao nao tinha atalho em orientacao nenhuma.
+void test_deitado_o_alvo_da_sessao_abre_a_tela_de_offline(void) {
+    Contexto c = base();               // base() e deitado
+    c.noPctSessao = true;
+    TEST_ASSERT_EQUAL(Acao::AbrirOffline, act(GestureKind::DoubleTap, c));
+
+    // Em pe ele continua sendo o ensaio da tela de reset.
+    Contexto p = c;
+    p.retrato = true;
+    TEST_ASSERT_EQUAL(Acao::EnsaiarReset, act(GestureKind::DoubleTap, p));
+
+    // E o da semana abre o Token nas duas.
+    Contexto t = base();
+    t.noPctSemana = true;
+    TEST_ASSERT_EQUAL(Acao::AbrirToken, act(GestureKind::DoubleTap, t));
+    t.retrato = true;
+    TEST_ASSERT_EQUAL(Acao::AbrirToken, act(GestureKind::DoubleTap, t));
+}
+
+// DEITADO os alvos sao dos ANEIS, que moram no miolo da primeira tela — e o
+// miolo das outras paginas pertence a outra coisa. Sem a pagina na conta, um
+// duplo toque no meio da pagina do Clawd abriria uma tela de bicho em vez de
+// trocar o trabalhador.
+void test_deitado_os_alvos_de_limite_so_valem_na_primeira_tela(void) {
+    Contexto c = base();
+    c.page = 3;                        // Clawd
+    c.noPctSessao = c.noPctSemana = c.noRotuloSemana = true;
+    TEST_ASSERT_EQUAL(Acao::TrocarTrabalho, act(GestureKind::DoubleTap, c));
+
+    // A pagina 1 e a MESMA tela para os gestos (paginaLogica), entao la valem.
+    c.page = 1;
+    TEST_ASSERT_EQUAL(Acao::EnsaiarKenny, act(GestureKind::DoubleTap, c));
 }
 
 // Com bloqueio na tela os alvos de ensaio nao existem: la quem mora naquele
@@ -308,6 +350,8 @@ int main(int, char **) {
     RUN_TEST(test_a_tela_de_reset_ganha_dos_ensaios);
     RUN_TEST(test_o_clawd_dormindo_ganha_dos_ensaios);
     RUN_TEST(test_os_ensaios_ganham_do_token);
+    RUN_TEST(test_deitado_o_alvo_da_sessao_abre_a_tela_de_offline);
+    RUN_TEST(test_deitado_os_alvos_de_limite_so_valem_na_primeira_tela);
     RUN_TEST(test_bloqueio_desliga_os_atalhos_de_ensaio);
     RUN_TEST(test_a_turma_ganha_dos_alvos_de_pagina);
     RUN_TEST(test_os_botoes_da_pagina_1_ganham_do_proximo_agente);

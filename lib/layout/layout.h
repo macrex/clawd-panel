@@ -144,6 +144,38 @@ Alvo alvoRotuloSemana();
 // toque ali abre a tela do Token sem esperar o limite estourar.
 Alvo alvoPctSemana();
 
+// ---- Os dois alvos da primeira tela DEITADA ----
+// Deitado nao ha coluna de limite: cada janela e um ANEL de 136 px de diametro,
+// com o rotulo ("SESSAO", "SEMANA") escrito no miolo dele. O alvo e o anel
+// INTEIRO e nao a palavra — 36x8 px nao e alvo de dedo, e o miolo do anel nao
+// pertence a mais nada.
+//
+// Eles ficam mais alto que os alvos em pe (y 50..186 contra 114..212), e essa e
+// a unica razao de existirem separados: a geometria deitada nao e a mesma tela
+// mais larga, e um alvo herdado apontaria para o vazio entre o anel e a lista.
+Alvo alvoAnelSessaoDeitado();
+Alvo alvoAnelSemanaDeitado();
+
+// ---- Em que escala um desenho cabe numa caixa ----
+// A escala e uma RAZAO e nao um divisor inteiro, e a diferenca e o tamanho do
+// bicho na tela: o Token mede 224x336 e a faixa deitada tem 240x250. Por
+// divisor inteiro so havia 336 (nao cabe) e 168 — metade da tela util jogada
+// fora. Por razao ele entra em 167x250, que e o que a caixa comporta.
+//
+// A razao e devolvida sem simplificar: quem desenha so faz `v * num / den`, e
+// reduzir a fracao nao mudaria um pixel do resultado.
+//
+// Ela AMPLIA quando o desenho e menor que a caixa (o Clawd dormindo tem 192x169
+// e sobra espaco), e e por isso que a caixa e o parametro, e nao um teto: um
+// bicho que so encolhe deixa metade da faixa vazia quando ele e o pequeno.
+struct Escala {
+    int num = 1, den = 1;
+};
+
+// Entrada degenerada (qualquer lado <= 0) devolve 1:1 — desenhar em tamanho
+// nativo e melhor do que multiplicar por uma escala que ninguem calculou.
+Escala escalaParaCaber(int w, int h, int caixaW, int caixaH);
+
 // ---- A grade de botoes da pergunta ----
 // Deitada, a tela de pergunta tem 158 px de miolo contra 292 em pe. Com quatro
 // opcoes o botao fica em 33 px — dois pixels abaixo do limiar que libera o

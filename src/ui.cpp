@@ -13,6 +13,21 @@
 #include <cstdio>
 #include <cstring>
 
+// As duas telas de bicho DEITADAS sao definidas junto do resto da paisagem (elas
+// usam as constantes L_* e o cabecalho deitado, que nascem no fim do arquivo),
+// mas quem escolhe entre elas e o molde em pe, que vem antes. Dai a declaracao
+// aqui em cima — e em `ui`, que e onde a paisagem inteira mora.
+namespace ui {
+// A caixa disponivel para o bicho deitado. Quem chama mede o sprite contra ela
+// e escolhe a escala (ver escalaParaCaber), porque so o chamador sabe de que
+// bicho se trata.
+void caixaBichoDeitado(int &larg, int &alt);
+void drawTelaBichoDeitado(Arduino_Canvas *g, const Status &s, int staleSeconds,
+                          int larg, int alt, int num, int den,
+                          bool (*desenhar)(Arduino_Canvas *, int, int, int, int),
+                          const char *frase, const char *sub);
+}
+
 namespace {
 
 const uint16_t BG      = RGB565(12, 14, 18);
@@ -2571,14 +2586,15 @@ const int R_BICHO_CHAO = PANEL_H - 108;
 
 void drawTelaBicho(Arduino_Canvas *g, const Status &s, int staleSeconds,
                    int larg, int alt,
-                   bool (*desenhar)(Arduino_Canvas *, int, int)) {
+                   bool (*desenhar)(Arduino_Canvas *, int, int, int, int)) {
     g->fillScreen(BG);
     drawHeaderRetrato(g, s, staleSeconds);
 
     // Centrado na faixa, com piso no teto: o Token tem 336 px de altura e nao
     // cabe nela, entao para ele a conta da negativo e vale o 64 de sempre.
     const int folga = (R_BICHO_CHAO - R_BICHO_TETO - alt) / 2;
-    desenhar(g, (PANEL_W - larg) / 2, R_BICHO_TETO + (folga > 0 ? folga : 0));
+    desenhar(g, (PANEL_W - larg) / 2, R_BICHO_TETO + (folga > 0 ? folga : 0),
+             1, 1);
 
     // Os dois prazos no rodape, MIUDOS de proposito: a tela e do bicho, e os
     // numeros so precisam estar la para quem procurar. Rotulo no corpo 1 da
@@ -2603,6 +2619,19 @@ void drawTelaBicho(Arduino_Canvas *g, const Status &s, int staleSeconds,
 }
 
 void drawTelaToken(Arduino_Canvas *g, const Status &s, int staleSeconds) {
+    if (!display::retrato()) {
+        // Sem recado ao lado: o "acabaram os tokens" esta PINTADO na camisa do
+        // bicho (ver tools/build_token_offline.py), e repeti-lo em texto seria
+        // dizer duas vezes o que a arte ja diz.
+        int cw, ch;
+        ui::caixaBichoDeitado(cw, ch);
+        const Escala e = escalaParaCaber(clawd::tokenW(), clawd::tokenH(), cw, ch);
+        ui::drawTelaBichoDeitado(g, s, staleSeconds,
+                                 clawd::tokenW(e.num, e.den),
+                                 clawd::tokenH(e.num, e.den), e.num, e.den,
+                                 clawd::drawTokenInto, nullptr, nullptr);
+        return;
+    }
     drawTelaBicho(g, s, staleSeconds, clawd::tokenW(), clawd::tokenH(),
                   clawd::drawTokenInto);
 }
@@ -2612,6 +2641,25 @@ void drawTelaToken(Arduino_Canvas *g, const Status &s, int staleSeconds) {
 // bom (ver lib/metrics/relogio.h). O cabecalho ja diz ha quanto tempo o dado e
 // velho, entao a tela nao repete o numero — quem quer a idade tem ela em cima.
 void drawTelaOffline(Arduino_Canvas *g, const Status &s, int staleSeconds) {
+    // O bicho e o mesmo nos dois motivos de dormir; o que muda e a linha miuda.
+    // Sem ela, "sem contato com o servidor" e "nenhuma sessao ativa" virariam a
+    // mesma tela — e sao problemas diferentes, um de rede e outro de ninguem
+    // estar trabalhando.
+    const char *sub = semSessao(s) ? "nenhuma sessao ativa"
+                                   : "sem contato com o servidor";
+
+    if (!display::retrato()) {
+        int cw, ch;
+        ui::caixaBichoDeitado(cw, ch);
+        const Escala e =
+            escalaParaCaber(clawd::offlineW(), clawd::offlineH(), cw, ch);
+        ui::drawTelaBichoDeitado(g, s, staleSeconds,
+                                 clawd::offlineW(e.num, e.den),
+                                 clawd::offlineH(e.num, e.den), e.num, e.den,
+                                 clawd::drawOfflineInto, "CLAUDE OFFLINE", sub);
+        return;
+    }
+
     drawTelaBicho(g, s, staleSeconds, clawd::offlineW(), clawd::offlineH(),
                   clawd::drawOfflineInto);
 
@@ -2628,15 +2676,9 @@ void drawTelaOffline(Arduino_Canvas *g, const Status &s, int staleSeconds) {
     g->setCursor((PANEL_W - (int)strlen(frase) * 18) / 2, PANEL_H - 108);
     g->print(frase);
 
-    // O bicho e o mesmo nos dois motivos de dormir; o que muda e a linha
-    // miuda. Sem ela, "sem contato com o servidor" e "nenhuma sessao ativa"
-    // virariam a mesma tela — e sao problemas diferentes, um de rede e outro
-    // de ninguem estar trabalhando.
     g->setFont(&DejaVuSans7pt7b);
     g->setTextSize(1);
     g->setTextColor(MUTED);
-    const char *sub = semSessao(s) ? "nenhuma sessao ativa"
-                                   : "sem contato com o servidor";
     int16_t x1, y1; uint16_t sw, sh;
     g->getTextBounds(sub, 0, 0, &x1, &y1, &sw, &sh);
     g->setCursor((PANEL_W - (int)sw) / 2, PANEL_H - 68);
@@ -3783,6 +3825,120 @@ void drawHeaderDeitado(Arduino_Canvas *g, const Status &s, int staleSeconds) {
                      staleSeconds > 0 ? C_YELL : TRACK);
 }
 
+// ---- As telas de bicho, DEITADAS ----
+// A mesma tela em pe virada nao serve: la o bicho tem 336 px de altura e o
+// recado cabe abaixo dele, e aqui a altura util e 250 px. O que sobra deitado e
+// LARGURA — 480 px —, entao o bicho fica numa faixa a esquerda e o recado numa
+// coluna a direita, na altura dos olhos dele.
+//
+// A faixa do bicho leva 240 px — metade da largura da tela — e a coluna de
+// texto fica com os 194 que sobram. A conta que fecha esse repartir e o recado:
+// "CLAUDE" e "OFFLINE" em corpo 3, um por linha, medem 108 e 126 px. Em uma
+// linha so a frase pediria 252 e comeria a faixa do bicho inteira; quebrada,
+// ela fica MAIOR e ainda sobra faixa.
+const int LB_TETO   = L_HDR_H + 8;                 // 50
+const int LB_CHAO   = SCREEN_H - 20;               // 300
+const int LB_ESQ_W  = 240;
+const int LB_TXT_X  = L_MARG + LB_ESQ_W + 18;      // 272
+
+void caixaBichoDeitado(int &larg, int &alt) {
+    larg = LB_ESQ_W;
+    alt  = LB_CHAO - LB_TETO;
+}
+
+void drawTelaBichoDeitado(Arduino_Canvas *g, const Status &s, int staleSeconds,
+                          int larg, int alt, int num, int den,
+                          bool (*desenhar)(Arduino_Canvas *, int, int, int, int),
+                          const char *frase, const char *sub) {
+    g->fillScreen(BG);
+    drawHeaderDeitado(g, s, staleSeconds);
+
+    // Centrado na faixa nas duas direcoes. Medidos com a escala que
+    // `escalaParaCaber` devolve: o Token (224x336) entra em 167x250, limitado
+    // pela altura; o Clawd dormindo (192x169) cresce ate 240x211, limitado pela
+    // largura. `centerIn` cobre o resto — um sprite maior que a faixa comeca na
+    // margem em vez de nascer com x negativo, fora da tela.
+    int caixaW, caixaH;
+    caixaBichoDeitado(caixaW, caixaH);
+    const int folga = (caixaH - alt) / 2;
+    desenhar(g, centerIn(L_MARG, LB_ESQ_W, larg),
+             LB_TETO + (folga > 0 ? folga : 0), num, den);
+
+    // O bloco de texto e centrado na MESMA faixa do bicho, e por isso a altura
+    // dele e somada antes de escrever a primeira linha: sem isso a coluna
+    // comeca no topo e o recado fica olhando para a testa do bicho.
+    const int H_LINHA = 24 + 4;       // uma linha de corpo 3
+    const int H_FRASE = H_LINHA * 2 + 12;
+    const int H_SUB   = 11 + 20;      // glifo da DejaVu mais o respiro
+    const int H_PRAZO = 38;           // cada par rotulo/valor, o valor em corpo 2
+    const int bloco = (frase ? H_FRASE : 0) + (sub ? H_SUB : 0) + H_PRAZO * 2;
+    int y = LB_TETO + (caixaH - bloco) / 2;
+
+    if (frase) {
+        // Uma palavra por linha, quebrando no espaco. A frase e curta e fixa
+        // ("CLAUDE OFFLINE"); o que muda e o corpo, que passou de 2 para 3
+        // justamente porque a quebra liberou a largura.
+        g->setTextSize(3);
+        g->setTextColor(fgColor());
+        const char *esp = strchr(frase, ' ');
+        if (esp) {
+            char primeira[16];
+            const size_t n = (size_t)(esp - frase) < sizeof(primeira) - 1
+                                 ? (size_t)(esp - frase) : sizeof(primeira) - 1;
+            memcpy(primeira, frase, n);
+            primeira[n] = '\0';
+            g->setCursor(LB_TXT_X, y);
+            g->print(primeira);
+            g->setCursor(LB_TXT_X, y + H_LINHA);
+            g->print(esp + 1);
+        } else {
+            g->setCursor(LB_TXT_X, y + H_LINHA / 2);
+            g->print(frase);
+        }
+        y += H_FRASE;
+    }
+    if (sub) {
+        g->setFont(&DejaVuSans7pt7b);
+        g->setTextSize(1);
+        g->setTextColor(MUTED);
+        g->setCursor(LB_TXT_X, y + 11);
+        g->print(sub);
+        g->setFont();
+        y += H_SUB;
+    }
+
+    // Os dois prazos, um por linha. Eles continuam CERTOS com o servidor fora:
+    // nao vem mais do payload, sao contados pela placa a partir do ultimo valor
+    // bom (ver lib/metrics/relogio.h).
+    //
+    // O VALOR em corpo 2 e o rotulo em corpo 1: e o prazo que se le de longe, e
+    // o nome da janela so precisa dizer de quem ele e — a mesma divisao de peso
+    // dos cartoes de limite.
+    //
+    // O rotulo e escrito na fonte embutida, que posiciona pelo TOPO, e o valor
+    // na DejaVu, que posiciona pela BASELINE. Os dois cursores caem na mesma
+    // BASE (y + 22) para que as duas letras se apoiem na mesma linha: o rotulo
+    // tem 8 px de altura, entao o topo dele e 22 - 8.
+    const char *rotulo[2] = {"SESSAO", "SEMANA"};
+    const Metric *m[2]    = {&s.session, &s.week};
+    for (int i = 0; i < 2; i++) {
+        g->setTextSize(1);
+        g->setTextColor(MUTED);
+        g->setCursor(LB_TXT_X, y + 14);
+        g->print(rotulo[i]);
+
+        g->setFont(&DejaVuSans7pt7b);
+        g->setTextSize(2);
+        g->setTextColor(fgColor());
+        g->setCursor(LB_TXT_X + 6 * 6 + 12, y + 22);
+        g->print(m[i]->known && !m[i]->resets.empty() ? m[i]->resets.c_str()
+                                                      : "-");
+        g->setFont();
+        g->setTextSize(1);
+        y += H_PRAZO;
+    }
+}
+
 void drawDeitadaNova(Arduino_Canvas *g, const Status &s, int staleSeconds,
                      int opcaoArmada) {
     g->fillScreen(BG);
@@ -3946,6 +4102,23 @@ void drawStatus(const Status &s, int page, const std::string &selectedId,
     // esse fundo saiu — era arte por faixa de dezena (20 arquivos), e a
     // particao de flash so cabe o que o painel usa em toda tela. Ver
     // src/assets.h.
+    // AS TELAS DE BICHO TAMBEM DEITADAS, e antes de qualquer pagina: elas tomam
+    // o painel inteiro, e a ordem entre as duas e a mesma do retrato — com a API
+    // muda, o limite estourado que a do Token anunciaria e uma leitura velha.
+    //
+    // A de RESET nao entra aqui: ela e a unica das tres que continua so em pe
+    // (ver telaResetAtiva), e o parametro chega sempre nulo deitado.
+    if (telaOffline && clawd::offlineW()) {
+        drawTelaOffline(g, s, staleSeconds);
+        display::flush();
+        return;
+    }
+    if (telaToken && clawd::tokenW()) {
+        drawTelaToken(g, s, staleSeconds);
+        display::flush();
+        return;
+    }
+
     // A TELA NOVA DEITADA tem cabecalho proprio (o nome digitando no lugar do
     // mago e do titulo), entao ela sai antes do `drawHeader` comum.
     if (page == 0) {
@@ -4296,15 +4469,24 @@ bool turmaAt(int x, int y, int page) {
 // Os retangulos moram em lib/layout, conferidos contra uma foto da tela real
 // (ver test/test_alvos). O que fica aqui e a pergunta que so o firmware sabe
 // responder: estamos em pe?
+// DEITADO o mesmo atalho existe, e o alvo e o ANEL da semana: la a coluna nao
+// existe, e o nome da janela esta escrito no miolo do anel. E dele que o pedido
+// nasceu — a placa liga deitada, e as duas telas de bicho nunca apareciam.
 bool pctSemanaAt(int x, int y) {
-    return display::retrato() && dentro(alvoPctSemana(), x, y);
+    return dentro(display::retrato() ? alvoPctSemana() : alvoAnelSemanaDeitado(),
+                  x, y);
 }
 
 // O gemeo do de cima, na faixa da SESSAO: ele ensaia a tela de RESET. Os dois
 // atalhos vivem no mesmo canto de faixas vizinhas de proposito — quem aprendeu
 // um acha o outro.
+// Deitado ele muda de dono: o anel da SESSAO abre a tela do Clawd dormindo, que
+// e a irma da do Token e ate aqui nao tinha atalho nenhum em orientacao alguma
+// (ver Acao::AbrirOffline). A tela de reset, que e o ensaio em pe, continua sem
+// versao deitada — nao ha o que abrir la.
 bool pctSessaoAt(int x, int y) {
-    return display::retrato() && dentro(alvoPctSessao(), x, y);
+    return dentro(display::retrato() ? alvoPctSessao() : alvoAnelSessaoDeitado(),
+                  x, y);
 }
 
 // A metade ESQUERDA da faixa da SEMANA — onde mora o rotulo. E o terceiro

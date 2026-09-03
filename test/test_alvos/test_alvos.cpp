@@ -190,8 +190,85 @@ void test_o_que_nao_coube_nao_tem_alvo(void) {
     TEST_ASSERT_EQUAL_INT(-1, cartaoSessaoAt(228, -2));
 }
 
+// ---- Os dois aneis da primeira tela DEITADA ----
+// Medidas do desenho (drawDeitadaNova, com L_MARG 14, L_ANEL_R1 68, vao 10 e
+// coluna de texto de 76): cada grupo centrado na sua metade de 226 px poe os
+// centros em x=84 e x=310, na linha y=118. O rotulo da janela ("SESSAO",
+// "SEMANA") fica no miolo, 15 px abaixo do centro.
+void test_os_aneis_deitados_cobrem_o_rotulo_do_miolo(void) {
+    const Alvo ses = alvoAnelSessaoDeitado();
+    const Alvo sem = alvoAnelSemanaDeitado();
+
+    TEST_ASSERT_TRUE(dentro(ses, 84, 133));      // onde "SESSAO" esta escrito
+    TEST_ASSERT_TRUE(dentro(sem, 310, 133));     // e "SEMANA"
+    TEST_ASSERT_TRUE(dentro(ses, 84, 118));      // o percentual, logo acima
+    TEST_ASSERT_TRUE(dentro(sem, 310, 118));
+}
+
+// Um anel nao responde pelo outro: sao duas telas diferentes que eles abrem.
+void test_os_dois_aneis_deitados_nao_se_pisam(void) {
+    TEST_ASSERT_FALSE(dentro(alvoAnelSessaoDeitado(), 310, 133));
+    TEST_ASSERT_FALSE(dentro(alvoAnelSemanaDeitado(), 84, 133));
+    // E o vao entre eles nao pertence a ninguem.
+    TEST_ASSERT_FALSE(dentro(alvoAnelSessaoDeitado(), 200, 118));
+    TEST_ASSERT_FALSE(dentro(alvoAnelSemanaDeitado(), 200, 118));
+}
+
+// Eles ficam INTEIROS abaixo do cabecalho (linha em y=42) e dentro da tela
+// deitada: um alvo que subisse ali roubaria o toque do botao de girar, que e a
+// unica saida da orientacao.
+void test_os_aneis_deitados_nao_invadem_o_cabecalho_nem_a_borda(void) {
+    const Alvo a[2] = {alvoAnelSessaoDeitado(), alvoAnelSemanaDeitado()};
+    for (int i = 0; i < 2; i++) {
+        TEST_ASSERT_TRUE(a[i].y > 46);                  // abaixo do alvo do giro
+        TEST_ASSERT_TRUE(a[i].x >= 0);
+        TEST_ASSERT_TRUE(a[i].x + a[i].w <= 480);       // dentro da tela deitada
+        TEST_ASSERT_TRUE(a[i].y + a[i].h <= 320);
+    }
+}
+
+// A escala dos bichos deitados, contra a caixa REAL da tela (240x250) e os
+// tamanhos REAIS dos dois sprites, lidos dos arquivos: o Token e 224x336 e o
+// Clawd dormindo e 192x169.
+void test_a_escala_enche_a_caixa_sem_estourar(void) {
+    // O Token e limitado pela ALTURA: 336 -> 250, e a largura acompanha.
+    const Escala t = escalaParaCaber(224, 336, 240, 250);
+    TEST_ASSERT_EQUAL_INT(250, 336 * t.num / t.den);
+    TEST_ASSERT_EQUAL_INT(166, 224 * t.num / t.den);
+    TEST_ASSERT_TRUE(224 * t.num / t.den <= 240);
+
+    // O Clawd dormindo e o contrario: sobra altura, e quem aperta e a LARGURA.
+    // Ele CRESCE — por divisor inteiro ficaria parado nos 169 px nativos.
+    const Escala o = escalaParaCaber(192, 169, 240, 250);
+    TEST_ASSERT_EQUAL_INT(240, 192 * o.num / o.den);
+    TEST_ASSERT_EQUAL_INT(211, 169 * o.num / o.den);
+    TEST_ASSERT_TRUE(169 * o.num / o.den <= 250);
+}
+
+// Cabe exatamente = 1:1, e caixa degenerada nao vira divisao por zero nem
+// escala zero — sem escala calculada, o tamanho nativo e a resposta certa.
+void test_escala_nos_extremos(void) {
+    const Escala igual = escalaParaCaber(240, 250, 240, 250);
+    TEST_ASSERT_EQUAL_INT(240, 240 * igual.num / igual.den);
+    TEST_ASSERT_EQUAL_INT(250, 250 * igual.num / igual.den);
+
+    const Escala d[4] = {escalaParaCaber(0, 100, 240, 250),
+                         escalaParaCaber(100, 0, 240, 250),
+                         escalaParaCaber(100, 100, 0, 250),
+                         escalaParaCaber(100, 100, 240, -3)};
+    for (int i = 0; i < 4; i++) {
+        TEST_ASSERT_EQUAL_INT(1, d[i].num);
+        TEST_ASSERT_EQUAL_INT(1, d[i].den);
+    }
+}
+
 int main(int, char **) {
     UNITY_BEGIN();
+    RUN_TEST(test_os_aneis_deitados_cobrem_o_rotulo_do_miolo);
+    RUN_TEST(test_os_dois_aneis_deitados_nao_se_pisam);
+    RUN_TEST(test_os_aneis_deitados_nao_invadem_o_cabecalho_nem_a_borda);
+    RUN_TEST(test_a_escala_enche_a_caixa_sem_estourar);
+    RUN_TEST(test_escala_nos_extremos);
     RUN_TEST(test_o_icone_do_cabecalho_cobre_o_fogo_desenhado);
     RUN_TEST(test_o_alvo_do_cabecalho_cobre_o_nome_inteiro);
     RUN_TEST(test_o_alvo_da_sessao_cobre_o_percentual_desenhado);

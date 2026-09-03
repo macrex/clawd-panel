@@ -45,6 +45,10 @@ enum class Acao {
     EnsaiarReset,
     DispensarToken,
     AbrirToken,
+    // O irmao do AbrirToken, no alvo da SESSAO: abre a tela do Clawd dormindo
+    // sem esperar o servidor cair. So deitado — em pe aquele alvo ja e o ensaio
+    // da tela de reset, que nasceu primeiro e continua dele.
+    AbrirOffline,
     TrocarTema,
     AbrirTerminal,
     BotaoLimpeza,
@@ -90,6 +94,11 @@ struct Contexto {
     // Qual botao da barra do terminal esta sob o dedo. -1 = nenhum.
     int  botaoTerminal    = -1;
     bool noRotuloSemana   = false;
+    // Os dois alvos das janelas de limite. O NOME diz onde eles ficam em pe (o
+    // percentual de cada coluna); deitado a mesma pergunta e respondida pelo
+    // ANEL inteiro, que e onde o rotulo daquela janela esta escrito. Quem
+    // resolve a geometria de cada orientacao e a `ui` — aqui chega so "o dedo
+    // caiu no alvo da sessao" e "no alvo da semana".
     bool noPctSessao      = false;
     bool noPctSemana      = false;
     bool naTurma          = false;

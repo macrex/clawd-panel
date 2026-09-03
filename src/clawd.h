@@ -143,14 +143,20 @@ int  iconW(bool naPaginaDoNivel);                // 0 se nao ha o que desenhar
 int  iconH(bool naPaginaDoNivel);
 bool drawIconInto(Arduino_Canvas *g, int x, int y, bool naPaginaDoNivel);
 
-// ---- O Token da tela de limite estourado (retrato) ----
+// ---- O Token da tela de limite estourado ----
 // Quatro poses de 900 ms; os olhos giram, o corpo fica parado. tokenW() == 0
 // significa que o cartao nao tem o arquivo — e ai a tela de limite nao toma o
 // lugar de nada.
-int  tokenW();
-int  tokenH();
+//
+// `num`/`den` e a ESCALA do desenho, e existe por causa da tela deitada: o
+// arquivo mede 224x336 e cabe em pe em tamanho nativo, mas deitado a caixa e de
+// 240x250 e ele entra em 167x250. A escala e aplicada no blit (ver
+// desenharIcone), entao nao ha PSRAM a mais nem uma segunda copia do sprite
+// para manter em sincronia. Meça sempre com a MESMA razao do desenho.
+int  tokenW(int num = 1, int den = 1);
+int  tokenH(int num = 1, int den = 1);
 bool tickToken(uint32_t nowMs);
-bool drawTokenInto(Arduino_Canvas *g, int x, int y);
+bool drawTokenInto(Arduino_Canvas *g, int x, int y, int num, int den);
 
 // ---- O mesmo bicho, com o servidor fora (retrato) ----
 // O irmao do Token: mesmo desenho, mesmo enquadramento, mesmo gesto para
@@ -165,10 +171,10 @@ bool drawTokenInto(Arduino_Canvas *g, int x, int y);
 // e ai o painel se comporta como antes (a tela nao arma).
 bool carregarOffline();
 void soltarOffline();
-int  offlineW();
-int  offlineH();
+int  offlineW(int num = 1, int den = 1);
+int  offlineH(int num = 1, int den = 1);
 bool tickOffline(uint32_t nowMs);
-bool drawOfflineInto(Arduino_Canvas *g, int x, int y);
+bool drawOfflineInto(Arduino_Canvas *g, int x, int y, int num, int den);
 
 // ---- O bicho da tela de reset (retrato) ----
 // O par do Token: um limite estourou, o outro acabou de liberar. Mesmas regras

@@ -65,16 +65,24 @@ Decisao duploToque(const Contexto &c) {
     // por isso a troca de tema fica a um duplo toque de distancia, nos bichos.
     // Com bloqueio na tela os alvos nao existem: la quem mora naquele canto e a
     // pergunta.
-    if (c.haveLast && !c.temBloqueio && c.noRotuloSemana)
+    //
+    // `p == 0` DEITADO e o alvo deitado nascendo com limite: la os aneis moram
+    // no miolo da tela, e sem a pagina na conta um duplo toque no meio da
+    // pagina do Clawd (que troca o trabalhador) abriria uma tela de bicho. Em
+    // pe a regra fica como sempre foi, valendo em qualquer pagina.
+    const bool alvosDaP0 = c.retrato || p == 0;
+    if (alvosDaP0 && c.haveLast && !c.temBloqueio && c.noRotuloSemana)
         return so(Acao::EnsaiarKenny);
-    if (c.haveLast && !c.temBloqueio && c.noPctSessao)
-        return so(Acao::EnsaiarReset);
+    if (alvosDaP0 && c.haveLast && !c.temBloqueio && c.noPctSessao)
+        // Em pe aquele alvo ensaia a tela de RESET; deitado ela nao existe, e o
+        // que o anel da sessao abre e o Clawd dormindo.
+        return so(c.retrato ? Acao::EnsaiarReset : Acao::AbrirOffline);
 
     // Com o Token na tela, qualquer duplo toque abaixo do cabecalho e "ja vi".
     // Nao ha outro alvo para disputar: a tela e dele.
     if (c.telaToken) return so(Acao::DispensarToken);
 
-    if (c.haveLast && !c.temBloqueio && c.noPctSemana)
+    if (alvosDaP0 && c.haveLast && !c.temBloqueio && c.noPctSemana)
         return so(Acao::AbrirToken);
 
     // A fileira troca o ELENCO. Fica ANTES dos alvos de pagina porque ela e o

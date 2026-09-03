@@ -121,6 +121,27 @@ const int GIRO_H    = 46;
 // A SEMANA deixou de ficar ABAIXO da sessao e passou a ficar AO LADO dela.
 int xDaSemana() { return MARG + LIM_W + LIM_GAP; }       // 163
 
+// ---- E as da tela DEITADA, espelhadas de drawDeitadaNova ----
+// A mesma conta que o desenho faz: cada grupo (anel + vao + coluna de texto)
+// centrado na metade que lhe cabe.
+const int TELA_W    = 480;
+const int ANEL_R    = 68;    // L_ANEL_R1
+const int ANEL_CY_L = 118;   // L_ANEL_CY
+const int ANEL_GAP  = 10;    // L_ANEL_GAP
+const int TXT_W     = 76;    // L_TXT_W
+
+int cxDoAnel(int qual) {      // 0 = sessao (esquerda), 1 = semana (direita)
+    const int metade = (TELA_W - MARG * 2) / 2;
+    const int grupo  = ANEL_R * 2 + ANEL_GAP + TXT_W;
+    const int folga  = (metade - grupo) / 2;
+    return MARG + metade * qual + folga + ANEL_R;
+}
+
+Alvo anelDeitado(int qual) {
+    return Alvo{cxDoAnel(qual) - ANEL_R, ANEL_CY_L - ANEL_R,
+                ANEL_R * 2, ANEL_R * 2};
+}
+
 }   // namespace
 
 bool dentro(const Alvo &a, int x, int y) {
@@ -144,6 +165,18 @@ Alvo alvoRotuloSemana() {
 
 Alvo alvoPctSemana() {
     return Alvo{xDaSemana() + LIM_W / 2, LIM_Y, LIM_W - LIM_W / 2, LIM_H};
+}
+
+Alvo alvoAnelSessaoDeitado() { return anelDeitado(0); }
+Alvo alvoAnelSemanaDeitado() { return anelDeitado(1); }
+
+Escala escalaParaCaber(int w, int h, int caixaW, int caixaH) {
+    if (w <= 0 || h <= 0 || caixaW <= 0 || caixaH <= 0) return Escala();
+    // A dimensao que APERTA primeiro manda. Comparadas em produto cruzado para
+    // nao passar por ponto flutuante: caixaW/w <= caixaH/h vira
+    // caixaW*h <= caixaH*w.
+    if ((long)caixaW * h <= (long)caixaH * w) return Escala{caixaW, w};
+    return Escala{caixaH, h};
 }
 
 int gradeColunas(int total, bool deitado) {

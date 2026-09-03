@@ -336,8 +336,11 @@ bool resetAcabouAgora(uint32_t now) {
     return saiu;
 }
 
+// Vale nas DUAS orientacoes desde que a tela ganhou o molde deitado (bicho a
+// esquerda, prazos a direita — ver ui.cpp, drawTelaBichoDeitado). Enquanto ela
+// so existia em pe, a placa — que liga deitada — nunca avisava o estouro.
 bool telaTokenAtiva() {
-    if (!display::retrato() || !haveLast || clawd::tokenW() <= 0) return false;
+    if (!haveLast || clawd::tokenW() <= 0) return false;
     if (tokenManual) return true;
     return !tokenDispensado && ui::limiteEstourado(last);
 }
@@ -374,6 +377,12 @@ bool offlineDispensado = false;
 bool offlineCarregado = false;
 bool offlineFalhou    = false;
 
+// A tela tambem abre POR VONTADE, pelo duplo toque no anel da SESSAO da
+// primeira tela deitada — o irmao do `tokenManual`, que mora no anel da semana.
+// Ela e a unica das telas de bicho que nao tinha como ser vista sob demanda: as
+// outras duas ja tinham ensaio, e esta dependia de o servidor cair de verdade.
+bool offlineManual = false;
+
 // O Clawd dorme por DOIS motivos, e a tela e a mesma porque o recado e o mesmo:
 // nada esta acontecendo. Ou o servidor calou (acima), ou ele responde e nao ha
 // sessao nenhuma publicando (`semSessao`).
@@ -386,8 +395,8 @@ bool clawdDorme(uint32_t now) {
     // retrato bom, e sem retrato nenhum ela nao guarda nada — ali quem fala e a
     // mensagem de boot, que diz o que esta faltando em vez de mostrar um bicho
     // na frente de uma tela vazia.
-    if (!display::retrato() || !haveLast || offlineDispensado) return false;
-    if (!servidorFora(now) && !semSessao(last)) return false;
+    if (!haveLast || offlineDispensado) return false;
+    if (!offlineManual && !servidorFora(now) && !semSessao(last)) return false;
     return clawd::offlineW() > 0;
 }
 
@@ -399,9 +408,12 @@ void girarTela() {
     // uma casa. Com a irma deitada pronta, o degrau virou o que ele sempre
     // deveria ser: nada.
     //
-    // O manual do Token morre no giro: deitado a tela dele nao existe, e
-    // voltar a ficar em pe com ela armada seria um susto sem causa.
-    tokenManual = false;
+    // As duas telas armadas A MAO morrem no giro. Elas ja existem nas duas
+    // orientacoes, entao nao e mais uma questao de a tela nao caber la: girar e
+    // a saida de emergencia deste painel, e uma saida que devolve o mesmo bicho
+    // na outra orientacao nao e saida.
+    tokenManual   = false;
+    offlineManual = false;
 }
 
 // Avanca para o proximo agente, circulando.
@@ -677,6 +689,7 @@ void tratarToque(uint32_t now, const TouchPoint &t, bool &redraw) {
             // A PSRAM volta na hora. Quem dispensou nao vai reabrir a tela desta
             // queda, e 150 KB parados esperando isso nao se justificam.
             offlineDispensado = true;
+            offlineManual     = false;
             if (offlineCarregado) {
                 clawd::soltarOffline();
                 offlineCarregado = false;
@@ -706,6 +719,12 @@ void tratarToque(uint32_t now, const TouchPoint &t, bool &redraw) {
             break;
 
         case Acao::AbrirToken: tokenManual = true; redraw = true; break;
+
+        // O sprite nao esta residente (ver clawd.h): quem le o cartao e
+        // `carregarOuSoltarOffline`, na volta seguinte do laco. Ate ele chegar,
+        // `clawdDorme` devolve falso por falta de bicho e a tela so nao abre —
+        // que e o mesmo que acontece quando o arquivo nao existe.
+        case Acao::AbrirOffline: offlineManual = true; redraw = true; break;
 
         // A troca de tema le o cartao e leva ~300 ms. Acontece aqui, no gesto, e
         // nunca dentro de um desenho.
@@ -1299,8 +1318,17 @@ void animarClawd(uint32_t now, bool dedoNaTela, bool &redraw) {
             if (resetAcabouAgora(now)) redraw = true;
 
             if ((avancouFaixa || (avancouNome && page == 0)) && !redraw) {
+                const bool bichoDeitado =
+                    !emPe && (telaTokenAtiva() || clawdDorme(now));
                 if (caro) {
                     redraw = true;
+                } else if (bichoDeitado) {
+                    // DEITADO, com uma tela de bicho no ar, nao ha redesenho
+                    // parcial: o cabecalho dela e o da tela nova (o nome
+                    // digitando), e `redrawBadge` pintaria o bicho do
+                    // cabecalho por cima do nome — o defeito de 28/08 de
+                    // volta. O topo continua andando junto com o quadro do
+                    // bicho, que ja pede a tela inteira a cada 900 ms.
                 } else if (page == 0 && !telaTokenAtiva() &&
                            !clawdDorme(now) && !telaResetAtiva(now)) {
                     // O topo da tela nova e outro desenho — o nome digitando,
@@ -1379,9 +1407,9 @@ void animarClawd(uint32_t now, bool dedoNaTela, bool &redraw) {
 // tudo — inclusive a tentativa de leitura, para um arquivo que chegou pelo ar
 // depois do boot entrar na proxima vez sem reboot.
 void carregarOuSoltarOffline(uint32_t now, bool &redraw) {
-    const bool dorme = servidorFora(now) || semSessao(last);
+    const bool dorme = servidorFora(now) || semSessao(last) || offlineManual;
 
-    if (dorme && haveLast && display::retrato() && !offlineDispensado) {
+    if (dorme && haveLast && !offlineDispensado) {
         if (!offlineCarregado && !offlineFalhou) {
             offlineCarregado = clawd::carregarOffline();
             offlineFalhou    = !offlineCarregado;
