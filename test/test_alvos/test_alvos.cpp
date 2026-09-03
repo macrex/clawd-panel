@@ -73,26 +73,15 @@ void test_o_alvo_da_semana_cobre_o_percentual_desenhado(void) {
     TEST_ASSERT_TRUE(dentro(a, 270, 149));   // meio do "81%"
 }
 
-void test_o_rotulo_da_semana_cobre_a_palavra_desenhada(void) {
-    const Alvo a = alvoRotuloSemana();
-    TEST_ASSERT_TRUE(dentro(a, 172, 126));
-    TEST_ASSERT_TRUE(dentro(a, 229, 135));
-    TEST_ASSERT_TRUE(dentro(a, 200, 130));   // meio de "SEMANA"
-}
-
-// A divisao da COLUNA em duas metades e o que separa dois gestos diferentes:
-// ensaiar a morte do Kenny (esquerda) e abrir a tela do Token (direita). Se as
-// metades se sobrepusessem, um deles nunca aconteceria.
-void test_as_duas_metades_da_coluna_nao_se_pisam(void) {
-    const Alvo esq = alvoRotuloSemana();
-    const Alvo dir = alvoPctSemana();
-
-    // Encostam sem sobrepor: onde uma acaba, a outra comeca.
-    TEST_ASSERT_EQUAL_INT(esq.x + esq.w, dir.x);
-
-    // E nenhum ponto pertence as duas.
-    for (int x = esq.x; x < dir.x + dir.w; x += 7)
-        TEST_ASSERT_FALSE(dentro(esq, x, 150) && dentro(dir, x, 150));
+// A metade ESQUERDA da coluna da semana e onde o rotulo esta escrito, e ela
+// nao responde a nada. Ja respondeu — ensaiava a morte do Kenny —, e o alvo
+// saiu junto com aquele estado: um retangulo sem acao ali so roubaria o toque
+// de quem erra a mira no percentual ao lado.
+void test_o_rotulo_da_semana_nao_dispara_nada(void) {
+    const Alvo semana = alvoPctSemana();
+    TEST_ASSERT_FALSE(dentro(semana, 172, 126));   // canto do "SEMANA"
+    TEST_ASSERT_FALSE(dentro(semana, 229, 135));   // fim da palavra
+    TEST_ASSERT_FALSE(dentro(semana, 200, 130));   // meio da palavra
 }
 
 // As duas janelas agora sao VIZINHAS DE LADO, e nao mais empilhadas: elas
@@ -108,9 +97,8 @@ void test_as_duas_colunas_nao_se_pisam(void) {
 
     // O vao de 6 px entre as colunas nao pertence a ninguem: um dedo ali nao
     // pode disparar o ensaio errado.
-    const Alvo rotulo = alvoRotuloSemana();
     TEST_ASSERT_FALSE(dentro(sessao, 159, 149));
-    TEST_ASSERT_FALSE(dentro(rotulo, 159, 149));
+    TEST_ASSERT_FALSE(dentro(semana, 159, 149));
 }
 
 // A coluna da SESSAO tem a metade esquerda LIVRE — o rotulo dela nunca teve
@@ -119,7 +107,6 @@ void test_o_rotulo_da_sessao_nao_dispara_nada(void) {
     const Alvo sessao = alvoPctSessao();
     TEST_ASSERT_FALSE(dentro(sessao, 23, 130));    // canto do "SESSAO"
     TEST_ASSERT_FALSE(dentro(sessao, 77, 130));    // fim da palavra
-    TEST_ASSERT_FALSE(dentro(alvoRotuloSemana(), 50, 130));
     TEST_ASSERT_FALSE(dentro(alvoPctSemana(), 50, 130));
 }
 
@@ -138,7 +125,7 @@ void test_o_alvo_cobre_a_coluna_inteira_em_altura(void) {
 // toques que o painel nem reporta, e some do lado de fora sem ninguem notar.
 void test_nenhum_alvo_escapa_da_tela(void) {
     const Alvo todos[] = {alvoIconeCabecalho(), alvoPctSessao(),
-                          alvoRotuloSemana(), alvoPctSemana()};
+                          alvoPctSemana()};
     for (const Alvo &a : todos) {
         TEST_ASSERT_TRUE(a.x >= 0 && a.y >= 0);
         TEST_ASSERT_TRUE(a.w > 0 && a.h > 0);
@@ -273,8 +260,7 @@ int main(int, char **) {
     RUN_TEST(test_o_alvo_do_cabecalho_cobre_o_nome_inteiro);
     RUN_TEST(test_o_alvo_da_sessao_cobre_o_percentual_desenhado);
     RUN_TEST(test_o_alvo_da_semana_cobre_o_percentual_desenhado);
-    RUN_TEST(test_o_rotulo_da_semana_cobre_a_palavra_desenhada);
-    RUN_TEST(test_as_duas_metades_da_coluna_nao_se_pisam);
+    RUN_TEST(test_o_rotulo_da_semana_nao_dispara_nada);
     RUN_TEST(test_as_duas_colunas_nao_se_pisam);
     RUN_TEST(test_o_rotulo_da_sessao_nao_dispara_nada);
     RUN_TEST(test_o_alvo_cobre_a_coluna_inteira_em_altura);

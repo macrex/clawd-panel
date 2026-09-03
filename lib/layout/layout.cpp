@@ -159,10 +159,6 @@ Alvo alvoPctSessao() {
     return Alvo{MARG + LIM_W / 2, LIM_Y, LIM_W - LIM_W / 2, LIM_H};
 }
 
-Alvo alvoRotuloSemana() {
-    return Alvo{xDaSemana(), LIM_Y, LIM_W / 2, LIM_H};
-}
-
 Alvo alvoPctSemana() {
     return Alvo{xDaSemana() + LIM_W / 2, LIM_Y, LIM_W - LIM_W / 2, LIM_H};
 }

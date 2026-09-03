@@ -170,10 +170,6 @@ bool pctSemanaAt(int x, int y);
 // para ver sem esperar a janela virar.
 bool pctSessaoAt(int x, int y);
 
-// O rotulo da faixa da SEMANA: ensaia a morte do Kenny. So faz efeito num tema
-// que TENHA um Kenny — no padrao nao ha o que matar.
-bool rotuloSemanaAt(int x, int y);
-
 // ---- Modo terminal ----
 // A tela do agente em tela cheia. Nao e uma quinta pagina: e um estado a parte,
 // e por isso os swipes horizontais nao trocam de pagina enquanto ele esta

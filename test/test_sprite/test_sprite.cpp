@@ -523,6 +523,87 @@ void test_opaco_com_corrida_maior_que_o_quadro_nao_estoura(void) {
         TEST_ASSERT_EQUAL_UINT16(0, out[i]);
 }
 
+// ---- O relogio da animacao ----
+// O CASO REAL, e nao um numero de exemplo: a volta do laco custa ~42 ms deitado
+// e o `sp_cartman_descanso` pede 50 ms por quadro. Rearmando em `agora`, todo
+// quadro esperava DUAS voltas (84 ms) e a fileira andava a 12 por segundo no
+// lugar dos 20 do arquivo. Este teste roda um segundo de laco nas duas contas.
+static int quadrosEmUmSegundo(bool acumulando, uint32_t voltaMs,
+                              uint16_t frameMs) {
+    uint32_t ultimo = 0;
+    int quadros = 0;
+    for (uint32_t agora = voltaMs; agora <= 1000; agora += voltaMs) {
+        if ((agora - ultimo) < frameMs) continue;
+        ultimo = acumulando ? spriteRearme(ultimo, agora, frameMs) : agora;
+        quadros++;
+    }
+    return quadros;
+}
+
+void test_o_rearme_acumula_a_sobra_do_intervalo(void) {
+    // Antes: 11 quadros por segundo. Agora: perto dos 20 que o arquivo pede.
+    TEST_ASSERT_EQUAL_INT(11, quadrosEmUmSegundo(false, 42, 50));
+    TEST_ASSERT_INT_WITHIN(1, 20, quadrosEmUmSegundo(true, 42, 50));
+
+    // E nao ULTRAPASSA o ritmo do arquivo: a volta e que limita, nunca o
+    // credito. Com a volta bem menor que o quadro, a conta e a mesma dos dois
+    // jeitos.
+    TEST_ASSERT_EQUAL_INT(20, quadrosEmUmSegundo(true, 5, 50));
+    TEST_ASSERT_EQUAL_INT(20, quadrosEmUmSegundo(false, 5, 50));
+}
+
+// Parou meio segundo (tela cheia, modo terminal, leitura de cartao)? A animacao
+// ressincroniza em vez de disparar uma rajada para alcancar o tempo perdido.
+void test_atraso_grande_ressincroniza_em_vez_de_correr(void) {
+    TEST_ASSERT_EQUAL_UINT32(1000, spriteRearme(0, 1000, 50));   // 20 quadros de atraso
+    TEST_ASSERT_EQUAL_UINT32(150, spriteRearme(100, 180, 50));   // atraso de um quadro: credita
+    TEST_ASSERT_EQUAL_UINT32(150, spriteRearme(100, 200, 50));   // exatamente dois: ainda credita
+    TEST_ASSERT_EQUAL_UINT32(201, spriteRearme(100, 201, 50));   // passou de dois: resseta
+
+    // frameMs zero nao pode virar laco parado nem divisao por nada.
+    TEST_ASSERT_EQUAL_UINT32(77, spriteRearme(0, 77, 0));
+}
+
+// ---- O envio coalescido ----
+// O CASO QUE MOTIVOU: com o teto em 100 ms e o arquivo pedindo 33 (30 fps), os
+// contadores avancavam certos por baixo do pano e a tela continuava presa em
+// 10 envios por segundo — o teto, e nao o arquivo nem o laco, era quem mandava.
+void test_coalescer_envio_junta_avancos_dentro_do_teto(void) {
+    bool pendente = false;
+    uint32_t ultimoEnvio = 0;
+
+    // Dois avancos que caem no mesmo intervalo de 33 ms viram UM envio so, no
+    // instante em que o teto libera — e nao dois.
+    TEST_ASSERT_FALSE(coalescerEnvio(true, 10, 33, pendente, ultimoEnvio));
+    TEST_ASSERT_FALSE(coalescerEnvio(true, 20, 33, pendente, ultimoEnvio));
+    TEST_ASSERT_TRUE(coalescerEnvio(false, 33, 33, pendente, ultimoEnvio));
+    TEST_ASSERT_EQUAL_UINT32(33, ultimoEnvio);
+    TEST_ASSERT_FALSE(pendente);
+}
+
+// Sem nenhum contador tendo avancado, nao ha o que mandar — mesmo com o
+// intervalo do teto ja vencido.
+void test_coalescer_envio_nao_manda_nada_sem_avanco(void) {
+    bool pendente = false;
+    uint32_t ultimoEnvio = 0;
+    TEST_ASSERT_FALSE(coalescerEnvio(false, 1000, 33, pendente, ultimoEnvio));
+    TEST_ASSERT_FALSE(pendente);
+    TEST_ASSERT_EQUAL_UINT32(0, ultimoEnvio);
+}
+
+// O teto so ATRASA um envio pronto — nunca apressa um vazio. Um avanco isolado
+// (sem mais nenhum antes do teto vencer) ainda sai sozinho, no instante certo.
+void test_coalescer_envio_e_um_teto_e_nao_um_alvo(void) {
+    bool pendente = false;
+    uint32_t ultimoEnvio = 0;
+    TEST_ASSERT_TRUE(coalescerEnvio(true, 500, 33, pendente, ultimoEnvio));
+    TEST_ASSERT_EQUAL_UINT32(500, ultimoEnvio);
+
+    // Novo avanco logo em seguida: espera o teto, nao manda na hora.
+    TEST_ASSERT_FALSE(coalescerEnvio(true, 510, 33, pendente, ultimoEnvio));
+    TEST_ASSERT_TRUE(coalescerEnvio(false, 533, 33, pendente, ultimoEnvio));
+}
+
 int main(int, char **) {
     UNITY_BEGIN();
     RUN_TEST(test_opaco_troca_a_chave_pelo_fundo);
@@ -558,5 +639,10 @@ int main(int, char **) {
     RUN_TEST(test_frame_fora_da_faixa_e_recusado);
     RUN_TEST(test_buffer_pequeno_demais_e_recusado);
     RUN_TEST(test_corrida_maior_que_o_frame_nao_estoura);
+    RUN_TEST(test_o_rearme_acumula_a_sobra_do_intervalo);
+    RUN_TEST(test_atraso_grande_ressincroniza_em_vez_de_correr);
+    RUN_TEST(test_coalescer_envio_junta_avancos_dentro_do_teto);
+    RUN_TEST(test_coalescer_envio_nao_manda_nada_sem_avanco);
+    RUN_TEST(test_coalescer_envio_e_um_teto_e_nao_um_alvo);
     return UNITY_END();
 }

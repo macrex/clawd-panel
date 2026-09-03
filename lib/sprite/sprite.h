@@ -114,6 +114,43 @@ bool spriteUnionBox(const Sprite &s, SpriteBox &box);
 // justamente o mais vazio.
 int spriteBestFrame(const Sprite &s);
 
+// ---- O relogio de uma animacao ----
+// Onde a marca do ultimo quadro deve ficar depois de um quadro andar. Devolve o
+// novo `ultimo`, e quem chama ja sabe que o quadro andou.
+//
+// A CONTA ACUMULA A SOBRA em vez de rearmar em `agora`, e essa e a diferenca
+// entre a cadencia do arquivo e a do laco. Uma volta do `loop()` custa ~30-45 ms
+// (o `delay` mais o envio do quadro) e os arquivos pedem 50-70 ms: rearmando em
+// `agora`, todo intervalo era arredondado para o proximo multiplo da volta —
+// 50 ms viravam ~84, e a fileira andava a 12 quadros por segundo no lugar dos
+// 20 que a arte pede. Somando `frameMs` ao que ja passou, o atraso de uma volta
+// entra como credito na proxima e a media volta para o ritmo do arquivo.
+//
+// O TETO DE ATRASO evita o efeito oposto: parado meio segundo (tela cheia,
+// modo terminal, leitura de cartao), o credito acumulado dispararia uma rajada
+// de quadros para "alcancar" um tempo que ninguem viu passar. Acima de dois
+// quadros de atraso a animacao ressincroniza em `agora` e segue dali.
+uint32_t spriteRearme(uint32_t ultimo, uint32_t agora, uint16_t frameMs);
+
+// ---- O envio coalescido de varios contadores ----
+// Varios bichos animam em ritmos proprios, e mandar um quadro para a tela a
+// cada um que avança sairia caro (ate um envio por contador). Esta funcao
+// junta tudo que avançou dentro de `envioMinMs` num envio so.
+//
+// Chame a CADA volta do laco, com `algumAvancou` dizendo se pelo menos um
+// contador mudou de quadro NESTA volta. `pendente` e `ultimoEnvio` sao o
+// estado entre chamadas — quem chama os guarda (globais ou membros) e passa
+// por referencia; esta funcao os atualiza. Devolve true SO na volta em que o
+// lote deve ser mandado.
+//
+// `envioMinMs` e um TETO, nao um alvo: ele so pode ATRASAR um envio que já
+// estava pronto, nunca apressar um que não tinha nada para mostrar. Por isso
+// ele tem que acompanhar o arquivo mais RAPIDO em jogo — maior que o
+// `frameMs` dele e a fileira ganha um teto de fps mais baixo que o que o
+// proprio arquivo pede, e nenhum ajuste no arquivo aparece na tela.
+bool coalescerEnvio(bool algumAvancou, uint32_t nowMs, uint32_t envioMinMs,
+                    bool &pendente, uint32_t &ultimoEnvio);
+
 // Dimensoes do quadro REDUZIDO por um divisor inteiro.
 int    spriteDownW(const Sprite &s, int div);
 int    spriteDownH(const Sprite &s, int div);

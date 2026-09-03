@@ -43,27 +43,27 @@ void test_o_icone_do_cabecalho_ganha_de_tudo(void) {
     c.noIconeCabecalho = true;
     // Todos os concorrentes ligados ao mesmo tempo.
     c.telaReset = c.clawdDorme = c.telaToken = true;
-    c.noRotuloSemana = c.noPctSessao = c.noPctSemana = c.naTurma = true;
+    c.noPctSessao = c.noPctSemana = c.naTurma = true;
     c.opcaoP0 = c.opcaoP1 = 2;
     c.page = 2;
     TEST_ASSERT_EQUAL(Acao::GirarTela, act(GestureKind::DoubleTap, c));
 }
 
-// A tela de reset vem antes dos ensaios: ela esta POR CIMA, e os alvos de
-// ensaio pertencem a um layout que nao esta na tela.
+// A tela de reset vem antes dos alvos das janelas: ela esta POR CIMA, e eles
+// pertencem a um layout que nao esta na tela.
 void test_a_tela_de_reset_ganha_dos_ensaios(void) {
     Contexto c = base();
     c.telaReset = true;
-    c.noRotuloSemana = c.noPctSessao = true;
+    c.noPctSessao = true;
     TEST_ASSERT_EQUAL(Acao::DispensarReset, act(GestureKind::DoubleTap, c));
 }
 
-// O Clawd dormindo idem. Deixar os ensaios na frente faria um toque no lugar
-// errado matar o Kenny em vez de sair da tela.
+// O Clawd dormindo idem. Deixar os alvos na frente faria um toque no lugar
+// errado abrir outra tela em vez de sair desta.
 void test_o_clawd_dormindo_ganha_dos_ensaios(void) {
     Contexto c = base();
     c.clawdDorme = true;
-    c.noRotuloSemana = c.noPctSessao = c.naTurma = true;
+    c.noPctSessao = c.naTurma = true;
     TEST_ASSERT_EQUAL(Acao::DispensarOffline, act(GestureKind::DoubleTap, c));
 }
 
@@ -80,11 +80,6 @@ void test_os_ensaios_ganham_do_token(void) {
     Contexto l = c;
     l.retrato = false;
     TEST_ASSERT_EQUAL(Acao::AbrirOffline, act(GestureKind::DoubleTap, l));
-
-    Contexto d = base();
-    d.telaToken = true;
-    d.noRotuloSemana = true;
-    TEST_ASSERT_EQUAL(Acao::EnsaiarKenny, act(GestureKind::DoubleTap, d));
 
     // Sem alvo de ensaio, o Token dispensa.
     Contexto e = base();
@@ -120,12 +115,12 @@ void test_deitado_o_alvo_da_sessao_abre_a_tela_de_offline(void) {
 void test_deitado_os_alvos_de_limite_so_valem_na_primeira_tela(void) {
     Contexto c = base();
     c.page = 3;                        // Clawd
-    c.noPctSessao = c.noPctSemana = c.noRotuloSemana = true;
+    c.noPctSessao = c.noPctSemana = true;
     TEST_ASSERT_EQUAL(Acao::TrocarTrabalho, act(GestureKind::DoubleTap, c));
 
     // A pagina 1 e a MESMA tela para os gestos (paginaLogica), entao la valem.
     c.page = 1;
-    TEST_ASSERT_EQUAL(Acao::EnsaiarKenny, act(GestureKind::DoubleTap, c));
+    TEST_ASSERT_EQUAL(Acao::AbrirOffline, act(GestureKind::DoubleTap, c));
 }
 
 // Com bloqueio na tela os alvos de ensaio nao existem: la quem mora naquele
@@ -133,7 +128,7 @@ void test_deitado_os_alvos_de_limite_so_valem_na_primeira_tela(void) {
 void test_bloqueio_desliga_os_atalhos_de_ensaio(void) {
     Contexto c = base();
     c.temBloqueio = true;
-    c.noRotuloSemana = c.noPctSessao = c.noPctSemana = true;
+    c.noPctSessao = c.noPctSemana = true;
     TEST_ASSERT_EQUAL(Acao::Nada, act(GestureKind::DoubleTap, c));
 }
 
@@ -200,7 +195,7 @@ void test_a_pergunta_da_p0_confirma_no_duplo_toque(void) {
 void test_sem_dado_o_duplo_toque_nao_toca_conteudo(void) {
     Contexto c;              // haveLast falso
     c.opcaoP0 = c.opcaoP1 = 2;
-    c.noRotuloSemana = true;
+    c.noPctSemana = true;
     c.page = 1;
     c.retrato = true;
     TEST_ASSERT_EQUAL(Acao::Nada, act(GestureKind::DoubleTap, c));

@@ -128,17 +128,14 @@ Alvo alvoIconeCabecalho();
 // rotulo a esquerda", so que agora dentro da coluna de cada janela, e nao dentro
 // da largura do painel.
 //
-// A coluna da SESSAO tem a metade esquerda livre de proposito — o rotulo dela
-// nunca teve ensaio, e um alvo sem acao ali roubaria o toque de quem erra a mira
-// no percentual ao lado.
+// A METADE ESQUERDA das duas colunas fica livre de proposito: nenhum dos dois
+// rotulos abre nada, e um alvo sem acao ali roubaria o toque de quem erra a
+// mira no percentual ao lado. O da semana ja teve dono — ensaiava a morte do
+// Kenny — e voltou a ser espaco morto quando aquele estado saiu do painel.
 
 // O percentual da janela de 5h: metade DIREITA da coluna da esquerda. Duplo
 // toque ali ensaia a tela de reset.
 Alvo alvoPctSessao();
-
-// O rotulo da janela de 7 dias: metade ESQUERDA da coluna da direita. Duplo
-// toque ali ensaia a morte do Kenny.
-Alvo alvoRotuloSemana();
 
 // O percentual da janela de 7 dias: metade DIREITA da coluna da direita. Duplo
 // toque ali abre a tela do Token sem esperar o limite estourar.

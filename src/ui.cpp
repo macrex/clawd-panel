@@ -4489,16 +4489,6 @@ bool pctSessaoAt(int x, int y) {
                   x, y);
 }
 
-// A metade ESQUERDA da faixa da SEMANA — onde mora o rotulo. E o terceiro
-// atalho de ensaio: ele mata o Kenny por alguns segundos.
-//
-// A morte de verdade depende de uma sessao ficar 30 s sem publicar, e esperar
-// meia janela para conferir um sprite nao e teste, e paciencia. Os tres ensaios
-// ficam nas duas faixas: percentuais a direita, rotulos a esquerda.
-bool rotuloSemanaAt(int x, int y) {
-    return display::retrato() && dentro(alvoRotuloSemana(), x, y);
-}
-
 // Versao da P0: sem selecao, mede pela geometria da pergunta em tela cheia.
 int perguntaP0At(const Status &s, int x, int y) {
     if (!s.bloqueio.known || s.bloqueio.opcoes.empty()) return 0;

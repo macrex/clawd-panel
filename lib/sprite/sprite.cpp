@@ -207,6 +207,25 @@ bool spriteUnionBox(const Sprite &s, SpriteBox &box) {
     return true;
 }
 
+uint32_t spriteRearme(uint32_t ultimo, uint32_t agora, uint16_t frameMs) {
+    if (!frameMs) return agora;
+    // Subtracao em aritmetica de 32 bits sem sinal: ela sobrevive a virada do
+    // millis(), e e por isso que a comparacao e sobre a DIFERENCA e nunca sobre
+    // os dois instantes.
+    const uint32_t atraso = agora - ultimo;
+    if (atraso > (uint32_t)frameMs * 2) return agora;
+    return ultimo + frameMs;
+}
+
+bool coalescerEnvio(bool algumAvancou, uint32_t nowMs, uint32_t envioMinMs,
+                    bool &pendente, uint32_t &ultimoEnvio) {
+    if (algumAvancou) pendente = true;
+    if (!pendente || (nowMs - ultimoEnvio) < envioMinMs) return false;
+    pendente    = false;
+    ultimoEnvio = nowMs;
+    return true;
+}
+
 int spriteBestFrame(const Sprite &s) {
     if (!s.valid) return 0;
     int melhor = 0;

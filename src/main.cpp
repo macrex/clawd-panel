@@ -257,21 +257,6 @@ ResetWatch resetWatch;
 // conta sozinha. Os dois nunca falam juntos: o local so age com dado velho.
 PrazoWatch prazoWatch;
 
-// ---- A morte do Kenny ----
-// Uma sessao que cala mata o Kenny da fileira. `stale` e o campo que a API
-// publica quando o heartbeat para de chegar.
-bool algumaSessaoCaida(const Status &s) {
-    for (const Agent &a : s.agents)
-        if (a.stale) return true;
-    return false;
-}
-
-// O ENSAIO da morte: mata por alguns segundos, sem depender de sessao muda.
-// Enquanto ele vale, o estado real da API nao mexe no Kenny — senao o proximo
-// poll o levantaria antes de dar para olhar.
-const uint32_t KENNY_ENSAIO_MS = 10000;
-uint32_t kennyEnsaioAteMs = 0;
-
 // ---- O cartaz de sessao nova ----
 // Ids ja vistos, para saber quem chegou agora. Vale por NOVO_MS depois da
 // primeira aparicao.
@@ -382,6 +367,23 @@ bool offlineFalhou    = false;
 // Ela e a unica das telas de bicho que nao tinha como ser vista sob demanda: as
 // outras duas ja tinham ensaio, e esta dependia de o servidor cair de verdade.
 bool offlineManual = false;
+
+// ---- Quantas vezes por segundo a fileira REALMENTE sai para a tela ----
+// Nasceu de uma investigacao onde dois ajustes no ritmo dos sprites (o rearme
+// que acumula sobra e o `frame_ms` mais baixo) nao mudaram nada visivel: o
+// gargalo real era um TERCEIRO teto (`ENVIO_MIN_MS`, em clawd.cpp), que so
+// deixava a tela ser atualizada 10 vezes por segundo, nao importa quao rapido
+// os contadores andassem por baixo do pano. Sem medir o ENVIO em si — e nao o
+// ritmo do arquivo nem a volta do laco — aquele defeito ficava invisivel.
+uint32_t g_enviosFaixa = 0;
+
+// Le e zera, a cada 5 s (ver pulso()). Zerar aqui e nao no pulso mesmo mantem
+// os dois contadores deste tipo (este e `voltas`) com a mesma forma.
+uint32_t enviosFaixaJanela() {
+    const uint32_t v = g_enviosFaixa;
+    g_enviosFaixa = 0;
+    return v;
+}
 
 // O Clawd dorme por DOIS motivos, e a tela e a mesma porque o recado e o mesmo:
 // nada esta acontecendo. Ou o servidor calou (acima), ou ele responde e nao ha
@@ -590,12 +592,21 @@ void loop() {
     gravarArquivoBaixado();
     pulso(now);
 
-    // ~50 leituras de touch por segundo. Enquanto o bicho da tela de reset
-    // dança, nao: ali cada volta E um quadro, e os 20 ms parados comeriam um
-    // terço dos 70 que o arquivo mais rapido da. A tela e curta e nao tem gesto
-    // para perder — ela morre pelo relogio, e o unico controle que sobra e o
-    // giro, que continua sendo lido a cada volta.
-    delay(telaResetAtiva(now) ? 2 : 20);
+    // MEDIDO na placa pelo `pulso` (contador de voltas a cada 5 s): com este
+    // delay em 20 ms a volta inteira custava ~58 ms, e nao os ~20 que o numero
+    // sugeria — o resto e o trabalho de toda volta (leitura de toque, poll de
+    // rede, e o `redrawBadge` da fileira, que dispara quase toda volta agora
+    // que os sprites pedem 50 ms por quadro). Baixar para 8 ms nao muda esse
+    // trabalho: so devolve os 12 ms que o `delay` estava segurando a toa,
+    // levando a volta para ~46 ms e o toque de ~17 para ~22 leituras por
+    // segundo.
+    //
+    // Enquanto o bicho da tela de reset dança, o numero continua outro: ali
+    // cada volta E um quadro, e os 20 ms parados comeriam um terço dos 70 que
+    // o arquivo mais rapido da. A tela e curta e nao tem gesto para perder —
+    // ela morre pelo relogio, e o unico controle que sobra e o giro, que
+    // continua sendo lido a cada volta.
+    delay(telaResetAtiva(now) ? 2 : 8);
 }
 
 namespace {
@@ -637,7 +648,6 @@ void tratarToque(uint32_t now, const TouchPoint &t, bool &redraw) {
         ctx.noIconeCabecalho = ui::iconeCabecalhoAt(g.x, g.y);
         ctx.noSairTerminal   = ui::terminalSairAt(g.x, g.y);
         ctx.botaoTerminal   = ui::terminalBotaoAt(g.x, g.y);
-        ctx.noRotuloSemana   = ui::rotuloSemanaAt(g.x, g.y);
         ctx.noPctSessao      = ui::pctSessaoAt(g.x, g.y);
         ctx.noPctSemana      = ui::pctSemanaAt(g.x, g.y);
         ctx.naTurma          = ui::turmaAt(g.x, g.y, page);
@@ -694,12 +704,6 @@ void tratarToque(uint32_t now, const TouchPoint &t, bool &redraw) {
                 clawd::soltarOffline();
                 offlineCarregado = false;
             }
-            redraw = true;
-            break;
-
-        case Acao::EnsaiarKenny:
-            kennyEnsaioAteMs = (now ? now : 1) + KENNY_ENSAIO_MS;
-            clawd::matarKenny(true);
             redraw = true;
             break;
 
@@ -843,10 +847,6 @@ bool colherRede(uint32_t now, bool &redraw) {
             }
 
             marcarNovos(s, now, !haveLast);
-            if (!kennyEnsaioAteMs || now >= kennyEnsaioAteMs) {
-                kennyEnsaioAteMs = 0;
-                clawd::matarKenny(algumaSessaoCaida(s));
-            }
 
             // A hora da API vira reserva. Sem isto o proximo poll devolveria o
             // relogio congelado da API para dentro de `last`, desfazendo o que
@@ -1276,9 +1276,9 @@ void animarClawd(uint32_t now, bool dedoNaTela, bool &redraw) {
 
     // Nas paginas 3 e 4 o bicho ocupa a tela e o quadro custa um redesenho
     // inteiro (~64 ms), que cega o toque — por isso a animacao para
-    // enquanto ha dedo na tela. No rodape um quadro custa ~21 ms com o
-    // flush de prefixo, no maximo 10 vezes por segundo: parar seria visivel
-    // e nao compraria responsividade nenhuma.
+    // enquanto ha dedo na tela. No rodape um quadro custa ~11-21 ms com o
+    // flush de prefixo, ate 30 vezes por segundo (ver ENVIO_MIN_MS em
+    // clawd.cpp): parar seria visivel e nao compraria responsividade nenhuma.
     // O bicho do cabecalho troca a cada dez minutos, e a troca LE DO CARTAO.
     // Nunca com o dedo na tela: o engasgo da leitura engoliria o gesto, e
     // dez minutos de espera nao tem pressa nenhuma para insistir agora.
@@ -1293,6 +1293,13 @@ void animarClawd(uint32_t now, bool dedoNaTela, bool &redraw) {
         // em TODA pagina, inclusive onde eles nao aparecem: congelar o que
         // esta escondido faria a animacao saltar ao trocar de pagina.
         const bool avancouFaixa = clawd::tick(now);
+        // Conta quantas vezes por segundo a fileira REALMENTE sai para a
+        // tela — nao quantas vezes o arquivo pede, nem quantas a volta do
+        // laco permitiria. E o numero que faltava para depurar "esta lento":
+        // frame_ms e delay do laco sao teto de dois lados diferentes, e so
+        // este aqui diz o que de fato chegou no painel. Lido e zerado a cada
+        // 5 s pelo `pulso` (ver enviosFaixaJanela()).
+        if (avancouFaixa) g_enviosFaixa++;
         // O nome da tela nova digita no proprio relogio. Anda sempre, pela
         // mesma regra dos contadores da turma; so vira quadro na pagina 0 em
         // pe, onde ele esta em cena.
@@ -1371,13 +1378,6 @@ void animarClawd(uint32_t now, bool dedoNaTela, bool &redraw) {
             // O Token da tela de limite: 900 ms por pose, e cada pose e um
             // flush inteiro — ~48 ms a cada 900, so enquanto a tela dele
             // esta no ar.
-            // O ensaio da morte acaba sozinho, sem esperar poll: com o
-            // painel parado o Kenny ficaria caido ate a proxima resposta.
-            if (kennyEnsaioAteMs && now >= kennyEnsaioAteMs) {
-                kennyEnsaioAteMs = 0;
-                clawd::matarKenny(haveLast && algumaSessaoCaida(last));
-                redraw = true;
-            }
             if (telaTokenAtiva() && clawd::tickToken(now)) redraw = true;
             // O bicho da tela de servidor fora anima na mesma cadencia: e o
             // mesmo arquivo, com outra camisa. Sem isto ele ficaria parado
@@ -1476,13 +1476,14 @@ void pulso(uint32_t now) {
     static uint32_t voltas = 0;
     voltas++;
     if (now - ultimoPulso >= 5000) {
-        Serial.printf("pulso t=%lus voltas=%lu wifi=%d rssi=%d http=%d/%dms "
+        Serial.printf("pulso t=%lus voltas=%lu envFaixa=%lu/5s wifi=%d rssi=%d http=%d/%dms "
                       "motivo=%s "
                       "ciclos=%lu fetch=%lums contato=%lus "
                       "spr(clima=%d) "
                       "cap=%lu/%d "
                       "heap=%u min=%u psram=%u stale=%d pg=%d\n",
                       (unsigned long)(now / 1000), (unsigned long)voltas,
+                      (unsigned long)enviosFaixaJanela(),
                       (int)net::connected(), net::rssi(), net::lastHttpCode(),
                       // A DURACAO ao lado do codigo: os dois juntos e que
                       // separam "a porta esta fechada" (resposta em

@@ -316,7 +316,7 @@ bool carregarIcone(const char *path, int alturaAlvo, Recorte modo, Icone &ic) {
 
 bool tickIcone(Icone &ic, uint32_t nowMs) {
     if (!ic.buf || (nowMs - ic.ultimoMs) < ic.sp.frameMs) return false;
-    ic.ultimoMs = nowMs;
+    ic.ultimoMs = spriteRearme(ic.ultimoMs, nowMs, ic.sp.frameMs);
     ic.quadro   = (ic.quadro + 1) % ic.sp.frames;
     return true;
 }
@@ -671,32 +671,7 @@ const Tema &tema() { return TEMAS[temaAtual]; }
 // Primeiro slot que vem de arquivo. No tema padrao o zero e do bicho do estado.
 int slot0() { return tema().estadoNoSlot0 ? 1 : 0; }
 
-// Qual slot da fileira e o Kenny, ou -1 se este tema nao tem um. Sai do NOME
-// do arquivo e nao de um indice fixo: um tema novo poe o Kenny em outro lugar,
-// ou nao poe.
-int slotDoKenny() {
-    if (!tema().estadoNoSlot0) {
-        for (int i = 0; i < SLOTS; i++) {
-            const char *a = tema().arq[i][C_DESCANSO];
-            if (a && strstr(a, "kenny")) return i;
-        }
-    }
-    return -1;
-}
-
-
 Icone comp[SLOTS][CARAS];
-
-// ---- A morte do Kenny ----
-// Uma sessao que cai (o heartbeat cala) mata o Kenny da fileira. Ele fica
-// caido ate o proximo turno comecar — e nao por um tempo fixo: a piada e o
-// estado, e nao um susto de tres segundos.
-//
-// NAO e uma sexta cara. Uma cara nova obrigaria os dois temas a terem arquivo
-// para ela, e o padrao nao tem Kenny nenhum. E um sprite a parte, que ENTRA no
-// lugar do slot dele quando o tema diz qual e esse slot.
-Icone kennyMorto;
-bool  kennyCaido = false;
 
 // O bicho do ESTADO, medido uma vez no carregamento e guardado aqui. Ele vale
 // so no tema padrao, mas e medido sempre: sem isso, voltar do South Park para o
@@ -770,15 +745,6 @@ void medirFileira() {
             if (comp[i][c].h > alturaTrio)     alturaTrio = comp[i][c].h;
         }
 
-    // O morto entra na conta do slot dele. Sem isto a fileira inteira andava de
-    // lugar no instante da morte: ele e mais largo que o Kenny em pe, e a
-    // largura do slot e fixa justamente para ninguem deslizar.
-    const int kenny = slotDoKenny();
-    if (kenny >= 0 && kennyMorto.buf) {
-        if (kennyMorto.w > larguraSlot[kenny]) larguraSlot[kenny] = kennyMorto.w;
-        if (kennyMorto.h > alturaTrio)         alturaTrio = kennyMorto.h;
-    }
-
     // A grade sai do PADRAO (ver larguraPadrao). O tema 0 e ele, e e sempre o
     // primeiro a ser medido — os outros so alargam o slot quando o proprio
     // sprite nao caberia nele, porque `centerIn` alinha a esquerda no que
@@ -796,13 +762,18 @@ bool sozinho = false;    // sem sessao: o bicho da esquerda vai embora sozinho
 
 // Cadencia MAXIMA de envio da faixa.
 //
-// Cada contador anda no ritmo do proprio arquivo (125 ou 167 ms) e sao quatro:
-// o mago e os tres do rodape. Sem esta trava, quadros que caem em instantes
-// diferentes viram envios diferentes — ate 30 por segundo, ~60% de CPU so para
-// enfeite. Com ela, tudo que avancou no intervalo sai num envio so. O atraso
-// maximo de um quadro e este numero, e nenhum arquivo anda mais rapido do que
-// isso.
-const uint32_t ENVIO_MIN_MS = 100;
+// ERA 100 ms (10 envios/s), calibrado quando os arquivos mais rapidos pediam
+// 125-167 ms por quadro — nenhum chegava perto do teto, e ele so evitava o
+// desperdicio de mandar quadros quase identicos.
+//
+// O CHAO DA FILEIRA BAIXOU (ver tools/ritmo_sprite.py: frame_ms 33, 30 fps) e
+// este numero NAO acompanhou. Resultado: os CONTADORES avancavam certos por
+// baixo do pano, mas o que ia para a tela continuava preso em 10 por segundo —
+// a fileira parecia tao lenta quanto antes mesmo depois do arquivo e do laco
+// ficarem mais rapidos, porque o gargalo real nunca foi nenhum dos dois, foi
+// este teto. Baixado para acompanhar o arquivo mais rapido, e nao mais para
+// segura-lo.
+const uint32_t ENVIO_MIN_MS = 33;
 uint32_t ultimoEnvio = 0;
 bool     pendente    = false;
 
@@ -847,7 +818,6 @@ void begin() {
     // O alvo de altura e a propria altura do arquivo: divisor 1, sem reducao.
     carregarIcone("/clawd/sp_token.clw", 336, R_QUADRO, tokenIc);
     carregarIcone(RESET_ARQ[resetAtual], RESET_ALT_MAX, R_QUADRO, resetIc);
-    carregarIcone("/clawd/sp_kenny_morto.clw", SELO_H, R_QUADRO, kennyMorto);
     // 46 e nao SELO_H (42), e a diferenca de 4 px vale um degrau INTEIRO de
     // reducao: com 42 o divisor sobe para 4 e a caixa cai para 48x41; com 46
     // ele fica em 4 tambem, mas o alvo passa a ser a altura que os vizinhos
@@ -1287,9 +1257,6 @@ bool drawClimaInto(Arduino_Canvas *g, int x, int y) {
     return desenharIcone(clima, g, x, y);
 }
 
-void matarKenny(bool v) { kennyCaido = v; }
-bool kennyEstaMorto()   { return kennyCaido && kennyMorto.buf && slotDoKenny() >= 0; }
-
 // O proximo personagem da tela de RESET, lido do cartao na hora.
 //
 // Libera ANTES de carregar, pelo mesmo motivo da troca de tema: com os dois
@@ -1458,11 +1425,8 @@ bool drawCrewInto(Arduino_Canvas *g, int x, int chao, int faixaW) {
         if (sozinho) return true;
     }
 
-    const int kenny = kennyEstaMorto() ? slotDoKenny() : -1;
     for (int i = slot0(); i < SLOTS; i++) {
-        // O morto entra no lugar da cara viva daquele slot. Ele nao anda no
-        // tick (esta morto), entao nao ha contador a mexer.
-        Icone &ic = (i == kenny) ? kennyMorto : comp[i][cara];
+        Icone &ic = comp[i][cara];
         if (!ic.buf) continue;
         desenharIcone(ic, g, centerIn(slotX(i), slotW(i), ic.w), chao - ic.h);
     }
@@ -1522,9 +1486,8 @@ bool drawCrewComCentroInto(Arduino_Canvas *g, int x, int chao, int faixaW) {
         if (sozinho) return true;
     }
 
-    const int kenny = kennyEstaMorto() ? slotDoKenny() : -1;
     for (int i = slot0(); i < SLOTS; i++) {
-        Icone &ic = (i == kenny) ? kennyMorto : comp[i][cara];
+        Icone &ic = comp[i][cara];
         if (!ic.buf) continue;
         desenharIcone(ic, g,
                       centerIn(evenSlotX(faixaW, fatias, fatiaDe(i), x),
@@ -1539,7 +1502,7 @@ static bool andar(int slot, int &quadro, uint32_t &ultimo, uint32_t nowMs) {
     if (!carregado || slot < 0) return false;
     const Sprite &sp = sprites[slot];
     if ((nowMs - ultimo) < sp.frameMs) return false;
-    ultimo = nowMs;
+    ultimo = spriteRearme(ultimo, nowMs, sp.frameMs);
     quadro = (quadro + 1) % sp.frames;
     return true;
 }
@@ -1579,13 +1542,9 @@ bool tick(uint32_t nowMs) {
             if (tickIcone(comp[i][cara], nowMs)) avancou = true;
 
     // Quem avancou ja avancou; o que esta em jogo aqui e QUANDO isso vai para o
-    // painel. Quatro contadores em ritmos diferentes pediriam ate 30 envios por
-    // segundo — a trava junta tudo que caiu no intervalo num envio so.
-    if (avancou) pendente = true;
-    if (!pendente || (nowMs - ultimoEnvio) < ENVIO_MIN_MS) return false;
-    pendente    = false;
-    ultimoEnvio = nowMs;
-    return true;
+    // painel. `coalescerEnvio` junta tudo que caiu dentro de ENVIO_MIN_MS num
+    // envio so (ver lib/sprite, testado la).
+    return coalescerEnvio(avancou, nowMs, ENVIO_MIN_MS, pendente, ultimoEnvio);
 }
 
 void drawIntoEm(Arduino_Canvas *g, int centroX, int chao, int teto) {

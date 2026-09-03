@@ -201,14 +201,6 @@ bool drawResetInto(Arduino_Canvas *g, int x, int y);
 // troca depressa, que e a danca do Cartman.
 bool drawResetOpacoInto(Arduino_Canvas *g, int x, int y, uint16_t fundo);
 
-// ---- A morte do Kenny ----
-// Uma sessao que cala mata o Kenny da fileira; ele fica caido ate o proximo
-// turno comecar. Nao e uma sexta cara do tema: e um sprite a parte que entra no
-// lugar do slot dele, e por isso o tema padrao (que nao tem Kenny) ignora isto
-// sem precisar de arquivo nenhum.
-void matarKenny(bool v);
-bool kennyEstaMorto();
-
 // Troca o bicho do cabecalho a cada dez minutos, sorteando de uma lista fixa.
 // Devolve true quando trocou (o chamador precisa redesenhar).
 //

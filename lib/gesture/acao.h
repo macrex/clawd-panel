@@ -41,7 +41,6 @@ enum class Acao {
     GirarTela,
     DispensarReset,
     DispensarOffline,
-    EnsaiarKenny,
     EnsaiarReset,
     DispensarToken,
     AbrirToken,
@@ -93,7 +92,6 @@ struct Contexto {
     bool noSairTerminal   = false;
     // Qual botao da barra do terminal esta sob o dedo. -1 = nenhum.
     int  botaoTerminal    = -1;
-    bool noRotuloSemana   = false;
     // Os dois alvos das janelas de limite. O NOME diz onde eles ficam em pe (o
     // percentual de cada coluna); deitado a mesma pergunta e respondida pelo
     // ANEL inteiro, que e onde o rotulo daquela janela esta escrito. Quem

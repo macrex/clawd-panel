@@ -56,23 +56,19 @@ Decisao duploToque(const Contexto &c) {
     if (c.telaReset) return so(Acao::DispensarReset);
 
     // Com o Clawd dormindo, QUALQUER duplo toque abaixo do cabecalho e "ja vi,
-    // devolve o painel". Os alvos de ensaio logo abaixo pertencem ao layout da
-    // P0, que neste momento nao esta na tela — deixa-los na frente faria um
-    // toque no lugar errado matar o Kenny em vez de sair.
+    // devolve o painel". Os alvos das janelas logo abaixo pertencem ao layout
+    // da P0, que neste momento nao esta na tela — deixa-los na frente faria um
+    // toque no lugar errado abrir outra tela em vez de sair.
     if (c.clawdDorme) return so(Acao::DispensarOffline);
 
-    // Os dois ensaios. Sem efeito no tema padrao, que nao tem Kenny nenhum — e
-    // por isso a troca de tema fica a um duplo toque de distancia, nos bichos.
-    // Com bloqueio na tela os alvos nao existem: la quem mora naquele canto e a
-    // pergunta.
+    // Os alvos das duas janelas de limite. Com bloqueio na tela eles nao
+    // existem: la quem mora naquele canto e a pergunta.
     //
     // `p == 0` DEITADO e o alvo deitado nascendo com limite: la os aneis moram
     // no miolo da tela, e sem a pagina na conta um duplo toque no meio da
     // pagina do Clawd (que troca o trabalhador) abriria uma tela de bicho. Em
     // pe a regra fica como sempre foi, valendo em qualquer pagina.
     const bool alvosDaP0 = c.retrato || p == 0;
-    if (alvosDaP0 && c.haveLast && !c.temBloqueio && c.noRotuloSemana)
-        return so(Acao::EnsaiarKenny);
     if (alvosDaP0 && c.haveLast && !c.temBloqueio && c.noPctSessao)
         // Em pe aquele alvo ensaia a tela de RESET; deitado ela nao existe, e o
         // que o anel da sessao abre e o Clawd dormindo.
