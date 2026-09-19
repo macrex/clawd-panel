@@ -75,6 +75,37 @@ void test_status_nao_repete_o_pedido(void) {
     TEST_ASSERT_EQUAL_STRING(uma.c_str(), urlDoStatus(uma).c_str());
 }
 
+void test_nome_local_sai_sem_sufixo_nem_porta(void) {
+    TEST_ASSERT_EQUAL_STRING(
+        "macbook-pro-de-guilherme",
+        nomeLocalDaUrl("http://macbook-pro-de-guilherme.local:8787/status").c_str());
+    // Sem porta e sem caminho tambem: o host acaba onde a URL acaba.
+    TEST_ASSERT_EQUAL_STRING("mac", nomeLocalDaUrl("http://mac.local").c_str());
+}
+
+void test_nome_local_vazio_quando_nao_ha_mdns_a_consultar(void) {
+    // IP e nome comum vao inteiros para o resolvedor de sempre.
+    TEST_ASSERT_EQUAL_STRING(
+        "", nomeLocalDaUrl("http://192.168.1.41:8787/status").c_str());
+    TEST_ASSERT_EQUAL_STRING(
+        "", nomeLocalDaUrl("http://desktop:8787/status").c_str());
+    // ".local" pelado nao e nome de maquina nenhum.
+    TEST_ASSERT_EQUAL_STRING("", nomeLocalDaUrl("http://.local:8787").c_str());
+}
+
+void test_troca_de_host_preserva_porta_caminho_e_query(void) {
+    TEST_ASSERT_EQUAL_STRING(
+        "http://192.168.1.41:8787/status?campos=painel",
+        urlComHost("http://mac.local:8787/status?campos=painel",
+                   "192.168.1.41").c_str());
+}
+
+void test_troca_de_host_vazio_nao_mexe_na_url(void) {
+    // O mDNS nao respondeu: melhor tentar o nome do que montar `http:///status`.
+    const char *url = "http://mac.local:8787/status";
+    TEST_ASSERT_EQUAL_STRING(url, urlComHost(url, "").c_str());
+}
+
 int main(int, char **) {
     UNITY_BEGIN();
     RUN_TEST(test_irma_troca_o_ultimo_segmento);
@@ -85,5 +116,9 @@ int main(int, char **) {
     RUN_TEST(test_status_respeita_query_que_ja_existe);
     RUN_TEST(test_status_sem_endereco_nao_inventa);
     RUN_TEST(test_status_nao_repete_o_pedido);
+    RUN_TEST(test_nome_local_sai_sem_sufixo_nem_porta);
+    RUN_TEST(test_nome_local_vazio_quando_nao_ha_mdns_a_consultar);
+    RUN_TEST(test_troca_de_host_preserva_porta_caminho_e_query);
+    RUN_TEST(test_troca_de_host_vazio_nao_mexe_na_url);
     return UNITY_END();
 }

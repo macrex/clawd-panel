@@ -113,6 +113,55 @@ void test_marcar_origem_carimba_a_captura(void) {
     TEST_ASSERT_EQUAL_INT(1, s.captura.origem);
 }
 
+// Uma metrica como a API a publica: viva (memoria false) ou lembranca.
+static Metric met(int pct, bool memoria) {
+    Metric m;
+    m.pct     = pct;
+    m.known   = true;
+    m.memoria = memoria;
+    return m;
+}
+
+void test_limite_lembrado_cede_ao_do_pc2_que_esta_vendo(void) {
+    // O ultimo terminal do master fechou: a API dele republica a lembranca e o
+    // PC2, na MESMA conta, publica leitura viva. E a viva que vai para o anel.
+    Status base, pc2;
+    base.session = met(22, true);
+    base.week    = met(90, true);
+    pc2.session  = met(25, false);
+    pc2.week     = met(93, false);
+    fundirAgentes(base, pc2);
+    TEST_ASSERT_EQUAL_INT(25, base.session.pct);
+    TEST_ASSERT_EQUAL_INT(93, base.week.pct);
+    TEST_ASSERT_FALSE(base.session.memoria);
+}
+
+void test_limite_vivo_do_master_continua_mandando(void) {
+    Status base, pc2;
+    base.session = met(22, false);
+    pc2.session  = met(25, false);
+    fundirAgentes(base, pc2);
+    TEST_ASSERT_EQUAL_INT(22, base.session.pct);
+}
+
+void test_lembranca_nao_troca_de_lembranca(void) {
+    // Duas fotos velhas da mesma conta: trocar so faria o numero piscar.
+    Status base, pc2;
+    base.session = met(22, true);
+    pc2.session  = met(25, true);
+    fundirAgentes(base, pc2);
+    TEST_ASSERT_EQUAL_INT(22, base.session.pct);
+}
+
+void test_janela_desconhecida_no_master_aceita_a_do_pc2(void) {
+    // `known` falso e o outro extremo da mesma regra: nao ha o que preservar.
+    Status base, pc2;
+    pc2.week = met(93, false);
+    fundirAgentes(base, pc2);
+    TEST_ASSERT_TRUE(base.week.known);
+    TEST_ASSERT_EQUAL_INT(93, base.week.pct);
+}
+
 int main(int, char **) {
     UNITY_BEGIN();
     RUN_TEST(test_fusao_concatena_e_carimba_origem);
@@ -124,5 +173,9 @@ int main(int, char **) {
     RUN_TEST(test_captura_do_pc2_atravessa_a_fusao);
     RUN_TEST(test_captura_do_master_vence);
     RUN_TEST(test_marcar_origem_carimba_a_captura);
+    RUN_TEST(test_limite_lembrado_cede_ao_do_pc2_que_esta_vendo);
+    RUN_TEST(test_limite_vivo_do_master_continua_mandando);
+    RUN_TEST(test_lembranca_nao_troca_de_lembranca);
+    RUN_TEST(test_janela_desconhecida_no_master_aceita_a_do_pc2);
     return UNITY_END();
 }

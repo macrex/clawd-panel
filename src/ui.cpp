@@ -3719,9 +3719,17 @@ void drawCartaoDeitado(Arduino_Canvas *g, int x, int y, int w, const Agent &a) {
 
     // O nome, cortado por medida ate a borda: a DejaVu e proporcional e contar
     // caractere deixaria uns curtos e outros passando do cartao.
+    //
+    // E ELE QUEM DIZ DE QUAL MAQUINA E O AGENTE, pela cor: verde a de casa,
+    // violeta a de fora — as mesmas duas de `corDaTag`, que as outras telas
+    // gastam num chip. Aqui o chip nao cabe (a fileira aperta cada cartao em
+    // ~86 px com cinco sessoes) e a cor sai de graca, porque o nome ja esta
+    // escrito. Com uma fonte so, `tagDe` devolve vazio e o nome volta ao
+    // branco de sempre: nao ha o que distinguir.
     g->setFont(&DejaVuSans7pt7b);
     g->setTextSize(1);
-    g->setTextColor(fgColor());
+    g->setTextColor(g_stale || tagDe(a.tag).empty() ? fgColor()
+                                                    : corDaTag(a.origem));
     std::string nome = a.repo;
     int16_t x1, y1; uint16_t nw, nh;
     while (!nome.empty()) {

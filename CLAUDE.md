@@ -38,6 +38,7 @@ ambiente MSys).
 cd server; python -m pytest -q                                            # 385 testes
 python tools\tela.py                                                      # foto da tela da placa
 python tools\atualizar_sprite.py sdcard\clawd\arquivo.clw                  # sprite novo pelo ar
+python tools\atualizar_sprite.py config.json                               # config nova pelo ar (raiz do cartao)
 ```
 
 Gravar a placa: a skill `esp32-flash` resolve a porta pelo VID/PID (`303A:1001`)

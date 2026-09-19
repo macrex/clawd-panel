@@ -23,6 +23,15 @@ std::string urlIrma(const std::string &base, const char *segmento);
 // servidor recusa. Base vazia devolve vazia — sem endereco nao ha o que pedir.
 std::string urlDoStatus(const std::string &base);
 
+// O nome de maquina que esta URL pede por mDNS: o host sem o `.local` e sem a
+// porta. Vazio quando o host e um IP ou um nome comum — e ai nao ha mDNS a
+// consultar, a URL vai inteira para o resolvedor de sempre.
+std::string nomeLocalDaUrl(const std::string &url);
+
+// A MESMA URL com o host trocado pelo endereco dado. Porta, caminho e query
+// ficam como estavam; host vazio devolve a URL intacta.
+std::string urlComHost(const std::string &url, const std::string &host);
+
 // A MESMA URL, dizendo qual resumo de blocos frios esta placa ja tem.
 //
 // `works`, `uso` e `vitalicio` mudam quando um turno termina, e nao a cada dois

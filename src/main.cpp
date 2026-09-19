@@ -522,6 +522,19 @@ void setup() {
         return;
     }
 
+    // PARA ONDE ESTA PLACA APONTA, dito no boot. Uma `url2` velha — o IP da
+    // outra maquina mudou de DHCP — nao tem sintoma nenhum na tela: os cartoes
+    // dela simplesmente nao aparecem, igualzinho a nao haver sessao la. Sem
+    // esta linha, a unica forma de ler o que o cartao diz e tirar o cartao.
+    // A SENHA NAO ENTRA, e o resto entra inteiro: e a unica leitura do cartao
+    // que existe sem tirar o cartao, e e dela que sai o arquivo novo quando
+    // alguem for trocar um campo pelo ar (ver o `config.json` em net.cpp).
+    Serial.printf("config: ssid=%s url=%s url2=%s poll=%lums brilho=%u tz=%s ntp=%s\n",
+                  cfg.ssid.c_str(), cfg.url.c_str(),
+                  cfg.url2.empty() ? "(sem segunda fonte)" : cfg.url2.c_str(),
+                  (unsigned long)cfg.pollMs, (unsigned)cfg.brightness,
+                  cfg.tz.c_str(), cfg.ntp.c_str());
+
     display::setBrightness(cfg.brightness);
 
     // Arquivo ausente ou ilegivel deixa o estado zerado, e isso e proposital:

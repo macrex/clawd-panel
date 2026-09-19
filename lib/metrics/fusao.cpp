@@ -28,12 +28,41 @@ void ordenarAgentes(std::vector<Agent> &agents) {
         });
 }
 
+namespace {
+
+// Esta metrica e LEMBRANCA, e nao leitura: ou a API nao a conhece, ou ela
+// republicou o ultimo snapshot bom porque nenhuma sessao esta publicando.
+bool lembranca(const Metric &m) { return !m.known || m.memoria; }
+
+}  // namespace
+
 void fundirAgentes(Status &base, const Status &pc2) {
     for (const Agent &a : pc2.agents) {
         base.agents.push_back(a);
         base.agents.back().origem = 1;
     }
     ordenarAgentes(base.agents);
+
+    // OS LIMITES SAO DA CONTA, E NAO DA MAQUINA: as duas publicam o mesmo par
+    // de janelas, cada uma com a frescura que as sessoes dela permitem. Fechado
+    // o ultimo terminal do master, a API dele continua no ar e republica a
+    // ultima lembranca que guardou — e era ela que ia para os aneis, com o PC2
+    // ao lado publicando leitura VIVA da mesma conta.
+    //
+    // Quem esta vendo agora ganha, e so nesse caso: master fresco continua
+    // mandando (e o dono do cabecalho), e lembranca nao troca de lembranca —
+    // duas fotos velhas da mesma coisa nao melhoram nada e so fariam o numero
+    // piscar entre duas fontes.
+    //
+    // Por JANELA, porque elas caem em ritmos diferentes: a semana pode ser
+    // leitura viva enquanto a de 5h ja virou lembranca. `limitesVisto` fica
+    // como esta — ele carimba a lembranca que ainda estiver na tela.
+    if (lembranca(base.session) && !lembranca(pc2.session)) {
+        base.session = pc2.session;
+    }
+    if (lembranca(base.week) && !lembranca(pc2.week)) {
+        base.week = pc2.week;
+    }
 
     if (!base.bloqueio.known && pc2.bloqueio.known) {
         base.bloqueio = pc2.bloqueio;

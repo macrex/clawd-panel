@@ -11,6 +11,8 @@
 #include <utility>
 #include <ArduinoJson.h>
 #include <WiFi.h>
+#include <ESPmDNS.h>     // o servico mDNS; a consulta em si e a de baixo nivel
+#include <mdns.h>        // mdns_query: a LISTA de enderecos (ver enderecoNaRede)
 #include <HTTPClient.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -158,10 +160,119 @@ const int UPD_GRAVACAO  = -2103;
 // lib/protocolo. Nenhum deles precisava de Wi-Fi, HTTPClient ou FreeRTOS — so
 // estavam aqui.
 
+// O `.local` DO CARTAO VIRA IP AQUI, e nao no resolvedor do sistema.
+//
+// Um IP no config.json e uma bomba-relogio: o aluguel de DHCP da outra maquina
+// vence, ela troca de endereco e a fonte inteira some da tela sem sintoma
+// nenhum — os cartoes dela simplesmente nao aparecem, igual a nao haver sessao
+// la. O nome mDNS resolve isso, mas o `hostByName` desta placa nao o alcanca:
+// o lwIP vem com as consultas mDNS ligadas e ainda assim responde "DNS Failed
+// ... error -54" para qualquer `.local`, com o servico no ar. Medido nesta
+// placa, com e sem `MDNS.begin`.
+//
+// Entao a consulta e feita na mao, e o IP entra no lugar do nome. O cache
+// existe porque a pergunta e MULTICAST: repeti-la a cada volta poria a placa
+// gritando na rede duas vezes por segundo.
+struct HostLocal {
+    std::string ip;
+    uint32_t    ms = 0;      // quando a ultima consulta foi FEITA, nao quando deu certo
+};
+HostLocal g_local[2];        // 0 = master, 1 = PC2: sao as duas unicas URLs que existem
+
+// Uma consulta por minuto, no maximo — com ou sem resposta. Ela bloqueia a
+// tarefa de rede por ate 2 s, e o retry da fonte 2 e de 15 s: sem o carimbo no
+// caso ruim, uma maquina desligada custaria 2 s a cada 15. Um minuto tambem e o
+// prazo em que uma maquina que trocou de IP volta para a tela.
+const uint32_t LOCAL_TTL_MS = 60000;
+
+// UMA CONSULTA POR VEZ, e com folga entre elas. As duas fontes caducam no mesmo
+// instante — foram resolvidas no mesmo boot —, entao elas cairiam coladas na
+// mesma volta, e cada uma segura a tarefa de rede por ate 2 s. Espacadas, cada
+// fonte resolve na sua volta, que vem 2 s depois, e o poll nao para.
+const uint32_t LOCAL_GAP_MS = 3000;
+uint32_t g_localUltimaMs = 0;
+
+// O endereco que este nome anuncia NA REDE DA PLACA, e nao o primeiro deles.
+//
+// `MDNS.queryHost` devolve um IP so, e uma maquina de desenvolvimento anuncia
+// varios: medido aqui, o Windows respondeu `192.168.3.2` — placa de rede de
+// outra rede, inalcancavel da placa — enquanto tinha o `192.168.1.17` que a
+// placa queria. O painel ficou sem master por causa de uma escolha que nao era
+// dele. Por isso a consulta e a de baixo nivel, que traz a LISTA, e a escolha e
+// por mascara: o unico endereco util aqui e o que esta na mesma rede.
+std::string enderecoNaRede(const std::string &nome) {
+    // O mDNS so comeca a BUSCAR depois que a interface esta de pe. Iniciado no
+    // setup, com o Wi-Fi ainda associando, ele responde (a placa vira
+    // `clawd.local`, e isso funciona) mas as consultas saem no vazio: err=0 e
+    // nenhum resultado, sempre, e o tcpdump da outra maquina nao ve pacote
+    // nenhum chegar. Aqui dentro a associacao ja aconteceu — quem chama e a
+    // tarefa de rede, que so roda com Wi-Fi conectado.
+    static bool iniciado = false;
+    if (!iniciado) iniciado = MDNS.begin("clawd");
+
+    // MULTICAST, DITO NA MARCA: `mdns_query` manda pergunta de tipo A em
+    // UNICAST ("all other types send Unicast queries", diz o proprio header), e
+    // unicast depende de ja se saber para onde perguntar — que e justamente o
+    // que falta aqui. `mdns_query_generic` e a mesma consulta com a forma
+    // classica do mDNS, que e a que uma maquina qualquer da rede atende.
+    //
+    // Isso alcanca quem esta na MESMA BANDA da placa. Medido nesta casa: o
+    // Windows em 2,4 GHz responde; o Mac em 5 GHz (canal 161) nunca ve a
+    // pergunta — o tcpdump dele nao registra um pacote sequer, porque o
+    // roteador nao repassa multicast de uma banda para a outra e esta placa so
+    // fala 2,4. Para essa maquina, o jeito e o IP no cartao, com reserva de
+    // DHCP no roteador.
+    mdns_result_t *res = nullptr;
+    const esp_err_t err =
+        mdns_query_generic(nome.c_str(), nullptr, nullptr, MDNS_TYPE_A,
+                           MDNS_QUERY_MULTICAST, 2000, 1, &res);
+    if (err != ESP_OK) return std::string();
+
+    const uint32_t meu     = (uint32_t)WiFi.localIP();
+    const uint32_t mascara = (uint32_t)WiFi.subnetMask();
+    std::string achado;
+    for (mdns_result_t *r = res; r && achado.empty(); r = r->next) {
+        for (mdns_ip_addr_t *a = r->addr; a; a = a->next) {
+            if (a->addr.type != ESP_IPADDR_TYPE_V4) continue;
+            const uint32_t ip = a->addr.u_addr.ip4.addr;
+            if ((ip & mascara) != (meu & mascara)) continue;
+            achado = std::string(IPAddress(ip).toString().c_str());
+            break;
+        }
+    }
+    mdns_query_results_free(res);
+    return achado;
+}
+
+std::string urlEfetiva(int fonte, const std::string &url) {
+    const std::string nome = nomeLocalDaUrl(url);
+    if (nome.empty()) return url;               // IP ou nome comum: nada a fazer
+
+    HostLocal &c = g_local[fonte];
+    const uint32_t agora = millis();
+    const bool podeConsultar =
+        !g_localUltimaMs || (uint32_t)(agora - g_localUltimaMs) >= LOCAL_GAP_MS;
+    if (podeConsultar &&
+        (c.ip.empty() || (uint32_t)(agora - c.ms) >= LOCAL_TTL_MS)) {
+        c.ms = agora ? agora : 1;
+        g_localUltimaMs = c.ms;
+        const std::string novo = enderecoNaRede(nome);
+        if (!novo.empty()) {
+            if (novo != c.ip)
+                Serial.printf("mdns: %s.local = %s\n", nome.c_str(), novo.c_str());
+            c.ip = novo;
+        }
+    }
+    // Sem resposta e sem cache, vai o nome mesmo: o resolvedor de sempre pode
+    // ter um DNS que saiba responder, e uma URL sem host nao tem como dar certo.
+    return urlComHost(url, c.ip);
+}
+
 // A base da URL de uma acao e a da MAQUINA do agente: responder na maquina
 // errada nao acha o pane — ou, pior, acha um pane homonimo de outro agente.
-const std::string &urlBase(int origem) {
-    return (origem == 1 && !g_url2.empty()) ? g_url2 : g_url;
+std::string urlBase(int origem) {
+    const bool pc2 = (origem == 1 && !g_url2.empty());
+    return urlEfetiva(pc2 ? 1 : 0, pc2 ? g_url2 : g_url);
 }
 
 // Manda o comando. Roda DENTRO da tarefa de rede, nunca no laco.
@@ -543,7 +654,8 @@ NetResult fetchCiclo(Status &out) {
     int code1 = 0;
     uint32_t dur1 = 0;
     const NetResult r1 =
-        fetchFonte(g_conMaster, g_url, g_frioMaster, s1, code1, &dur1);
+        fetchFonte(g_conMaster, urlEfetiva(0, g_url), g_frioMaster, s1, code1,
+                   &dur1);
     g_lastCode  = code1;            // o diagnostico de sempre fala do master
     g_lastDurMs = dur1;
 
@@ -565,7 +677,7 @@ NetResult fetchCiclo(Status &out) {
     NetResult r2 = NetResult::HttpError;
     if (r1 != NetResult::Ok || backoffVenceu) {
         int code2 = 0;
-        r2 = fetchFonte(g_conSlave, g_url2, g_frioSlave, s2, code2);
+        r2 = fetchFonte(g_conSlave, urlEfetiva(1, g_url2), g_frioSlave, s2, code2);
         g_slaveProximaMs = (r2 == NetResult::Ok) ? 0 : agora + SLAVE_RETRY_MS;
     }
 
@@ -692,7 +804,18 @@ void tarefaRede(void *) {
                 const bool ok = baixarArquivo(a);
                 if (xSemaphoreTake(g_mtx, portMAX_DELAY) == pdTRUE) {
                     if (ok) {
-                        g_updCaminho   = "/clawd/" + a.nome;
+                        // A RAIZ E SO PARA O `config.json`, e o resto continua
+                        // indo para `/clawd/`. Ele e o unico arquivo do cartao
+                        // que muda o comportamento da placa — e era o unico que
+                        // exigia abrir a caixa e tirar o cartao para mudar, o
+                        // que num painel ligado na bateria custa desligar tudo.
+                        //
+                        // Mandar um JSON quebrado nao derruba o painel: o parse
+                        // do boot recusa o arquivo e a config sobe pela reserva
+                        // da NVS, que e a ultima boa (ver main.cpp).
+                        g_updCaminho   = a.nome == "config.json"
+                                             ? "/config.json"
+                                             : "/clawd/" + a.nome;
                         g_updBytes     = (size_t)a.bytes;
                         g_updReiniciar = a.reiniciar;
                         g_updId        = a.id;
