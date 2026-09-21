@@ -3272,7 +3272,7 @@ void drawFableRetrato(Arduino_Canvas *g, const Status &s) {
     // O ROTULO fica apagado de proposito, e so a barra e o numero pegam cor: o
     // que muda aqui e a medida, nao o nome dela — e a mesma divisao de papeis
     // dos cartoes de limite.
-    const uint16_t cor = colorOf(s.fableLevel);
+    const uint16_t cor = s.fableMemoria ? MUTED : colorOf(s.fableLevel);
 
     const int x0 = (PANEL_W - FABLE_W) / 2;
     g->setTextColor(MUTED);
@@ -3975,7 +3975,7 @@ void drawDeitadaNova(Arduino_Canvas *g, const Status &s, int staleSeconds,
 
     // ---- A linha do Fable, centrada ----
     if (s.fableKnown) {
-        const uint16_t cor = colorOf(s.fableLevel);
+        const uint16_t cor = s.fableMemoria ? MUTED : colorOf(s.fableLevel);
         const int lw = 300;
         const int x0 = (SCREEN_W - lw) / 2;
         g->setTextColor(MUTED);

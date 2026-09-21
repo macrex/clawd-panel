@@ -350,6 +350,9 @@ struct Status {
     int         fablePct   = 0;
     Level       fableLevel = Level::Green;
     bool        fableKnown = false;
+    // A leitura atual caiu, mas a API preservou o último valor bom. A tela o
+    // mantém visível em tom apagado, em vez de escondê-lo ou vendê-lo como novo.
+    bool        fableMemoria = false;
     // A hora em que os limites lembrados foram lidos pela ultima vez ("11:15"),
     // em 24h como o relogio do cabecalho. Vazia quando eles vem de leitura viva
     // — e ai nao ha nada a dizer, porque a idade e a do payload inteiro.

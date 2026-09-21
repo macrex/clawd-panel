@@ -118,6 +118,7 @@ Status parseStatus(const char *json) {
     s.fablePct   = doc["fable_pct"] | 0;
     s.fableLevel = levelFromColor(doc["colors"]["fable"]);
     s.fableKnown = doc["fable_known"] | false;
+    s.fableMemoria = doc["fable_memoria"] | false;
 
     s.week.pct       = doc["week_pct"] | 0;
     s.week.resets    = strOr(doc["week_resets_dh"], "");

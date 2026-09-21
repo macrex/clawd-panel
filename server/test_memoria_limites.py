@@ -16,6 +16,7 @@ O que estes testes prendem no lugar:
 
 import time
 import unittest
+from unittest import mock
 
 import claude_metrics_api as api
 
@@ -95,6 +96,11 @@ class TestLimitesLembrados(unittest.TestCase):
         }
         self.assertEqual(api.limites_lembrados(mem, self.agora)["visto"],
                          self.agora - 60)
+
+    def test_fable_lembrado_preserva_percentual_e_fonte(self):
+        mem = {"fable": {"pct": 63, "fonte": "cota", "ts": self.agora - 60}}
+        self.assertEqual(api.fable_lembrado(mem),
+                         {"pct": 63, "fonte": "cota", "ts": self.agora - 60})
 
 
 class TestMemoriaNoStatus(unittest.TestCase):
@@ -184,6 +190,28 @@ class TestMemoriaNoStatus(unittest.TestCase):
         self.assertTrue(s["limites"]["session"])
         self.assertFalse(s["limites"]["week"])
         self.assertEqual(s["week_pct"], 75)
+
+    def test_fable_sobrevive_ao_fim_da_sessao_e_a_fonte_indisponivel(self):
+        """O valor Fable não pode sumir junto com o último projeto aberto."""
+        sid, rec = sessao("a", 41, self.agora + 2 * 3600, 75, self.agora + 3 * 86400)
+        api._sessions[sid] = rec
+        with mock.patch.object(api, "fable_atual", return_value=(63, "cota")), \
+             mock.patch.object(api, "save_state"):
+            vivo = api.build_status()
+        self.assertEqual(vivo["fable_pct"], 63)
+        self.assertTrue(vivo["fable_known"])
+        self.assertFalse(vivo["fable_memoria"])
+
+        api._sessions.clear()
+        # A reserva local pode dizer 0% enquanto a cota semanal está fora do ar.
+        # Ela responde outra pergunta e não pode sobrescrever o 63% anterior.
+        with mock.patch.object(api, "fable_atual", return_value=(0, "gasto")):
+            lembrado = api.build_status()
+        self.assertEqual(lembrado["sessions"], 0)
+        self.assertEqual(lembrado["fable_pct"], 63)
+        self.assertTrue(lembrado["fable_known"])
+        self.assertTrue(lembrado["fable_memoria"])
+        self.assertEqual(lembrado["fable_fonte"], "cota")
 
 
 if __name__ == "__main__":

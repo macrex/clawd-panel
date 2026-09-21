@@ -68,6 +68,15 @@ void test_cores_vem_da_api_sem_recalcular(void) {
     TEST_ASSERT_TRUE(Level::Yellow == s.week.level);
 }
 
+void test_fable_lembrado_permanece_visivel_e_marcado_como_memoria(void) {
+    Status s = parseStatus(R"({"fable_pct":63,"fable_known":true,
+      "fable_memoria":true,"colors":{"fable":"yellow"}})");
+    TEST_ASSERT_EQUAL_INT(63, s.fablePct);
+    TEST_ASSERT_TRUE(s.fableKnown);
+    TEST_ASSERT_TRUE(s.fableMemoria);
+    TEST_ASSERT_TRUE(Level::Yellow == s.fableLevel);
+}
+
 void test_limits_fresh_falso_marca_sessao_e_semana_como_desconhecidas(void) {
     // Regra da API: sem sessao viva nas ultimas 5h, os numeros seriam mentira.
     const char *j = R"({"context_pct":26,"session_pct":0,"week_pct":0,
@@ -748,6 +757,7 @@ int main(int, char **) {
     RUN_TEST(test_prazo_ausente_fica_em_zero);
     RUN_TEST(test_branch_nulo_vira_string_vazia);
     RUN_TEST(test_cores_vem_da_api_sem_recalcular);
+    RUN_TEST(test_fable_lembrado_permanece_visivel_e_marcado_como_memoria);
     RUN_TEST(test_limits_fresh_falso_marca_sessao_e_semana_como_desconhecidas);
     RUN_TEST(test_lista_de_agentes_e_lida);
     RUN_TEST(test_agente_pode_rodar_modelo_diferente);

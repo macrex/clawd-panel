@@ -210,7 +210,8 @@ _lock = threading.Lock()
 
 # A MEMÓRIA DOS LIMITES DA CONTA, sob `_lock` como as sessões.
 #
-#   {"session": {"pct": int, "at": epoch, "ts": epoch}, "week": {...}}
+#   {"session": {"pct": int, "at": epoch, "ts": epoch}, "week": {...},
+#    "fable": {"pct": int, "fonte": "cota"|"gasto", "ts": epoch}}
 #
 # Os limites são da CONTA e não da sessão: a janela de 5h e a de 7 dias
 # continuam correndo com todo terminal fechado. Antes disto, fechar o último
@@ -315,7 +316,7 @@ def load_state():
         lembrados = gravado.get("limites")
         if isinstance(lembrados, dict):
             for janela, rec in lembrados.items():
-                if janela in ("session", "week") and isinstance(rec, dict):
+                if janela in ("session", "week", "fable") and isinstance(rec, dict):
                     _limites_mem[janela] = rec
         for sid, rec in saved.items():
             if isinstance(rec, dict) and "ts" in rec:
@@ -490,6 +491,41 @@ def lembrar_limites(mem, janela, pct, resets_at, now):
     return True
 
 
+def lembrar_fable(mem, pct, fonte, now):
+    """Guarda a última leitura utilizável do Fable.
+
+    Diferente de sessão/semana, Fable não traz um instante de reset. Portanto a
+    memória não tenta adivinhar quando ele virou: só preserva o último número e
+    a sua fonte, para o painel não apagá-lo durante uma queda de conexão, fim de
+    projeto ou reinício da API.
+    """
+    if (isinstance(pct, bool) or not isinstance(pct, (int, float))
+            or fonte not in ("cota", "gasto")):
+        return False
+    pct = max(0, min(100, int(round(pct))))
+    velho = mem.get("fable") or {}
+    if velho.get("pct") == pct and velho.get("fonte") == fonte:
+        return False
+    mem["fable"] = {"pct": pct, "fonte": fonte, "ts": now}
+    return True
+
+
+def fable_lembrado(mem):
+    """Última leitura Fable íntegra, ou None se não houver uma para mostrar."""
+    if not isinstance(mem, dict):
+        return None
+    rec = mem.get("fable")
+    if not isinstance(rec, dict):
+        return None
+    pct = rec.get("pct")
+    fonte = rec.get("fonte")
+    if (isinstance(pct, bool) or not isinstance(pct, (int, float))
+            or fonte not in ("cota", "gasto")):
+        return None
+    return {"pct": max(0, min(100, int(round(pct)))), "fonte": fonte,
+            "ts": rec.get("ts") or 0}
+
+
 def limites_lembrados(mem, now):
     """O que a memória ainda sustenta, no mesmo formato que a leitura produz.
 
@@ -600,6 +636,9 @@ def campos_de_limites(lim, now):
         # periodo, e ai a barra nem aparece.
         "fable_pct": lim.get("fable_pct") or 0,
         "fable_known": lim.get("fable_pct") is not None,
+        # Valor resgatado após a fonte ficar indisponível. Continua visível, mas
+        # a placa o esmaece para não fingir que acabou de ser consultado.
+        "fable_memoria": bool(lim.get("fable_memoria")),
         # De ONDE veio o numero acima: "cota" e a janela semanal do modelo, a
         # mesma do `/cost`; "gasto" e a reserva local (a fatia do custo de 24h)
         # que entra quando o endpoint da cota nao responde. Sao perguntas
@@ -1542,7 +1581,7 @@ _fable_cache = {"regs": None, "minuto": None, "valor": None}
 FABLE_JANELA = 86400
 
 
-def fable_pct(now):
+def fable_atual(now):
     """A cota semanal do Fable, em porcento, ou None.
 
     DUAS FONTES, com hierarquia clara — a mesma ideia da statusline com os
@@ -1561,12 +1600,36 @@ def fable_pct(now):
     payload, para o painel poder dizer qual dos dois está mostrando.
     """
     real = cota.fable(now)
-    return real if real is not None else fable_recente(now)
+    if real is not None:
+        return real, "cota"
+    reserva = fable_recente(now)
+    return reserva, "gasto" if reserva is not None else ""
 
 
-def fable_fonte(now):
-    """"cota" quando o número veio do /cost; "gasto" quando é a reserva."""
-    return "cota" if cota.fable(now) is not None else "gasto"
+def fable_para_status(now):
+    """Leitura atual do Fable ou a última boa, com origem e sinal de memória."""
+    pct, fonte = fable_atual(now)
+    with _lock:
+        lembrado = fable_lembrado(_limites_mem)
+        # `cota` e `gasto` respondem perguntas diferentes. Se a leitura real da
+        # cota sumiu, uma reserva local de 0% não pode apagar o último percentual
+        # semanal conhecido: mantemos a cota lembrada, marcada como velha, até a
+        # API oficial voltar. Sem uma cota anterior, ou quando a própria reserva
+        # é a última fonte, `gasto` continua sendo a melhor leitura disponível.
+        trocar_por_reserva = (fonte == "gasto" and lembrado
+                               and lembrado["fonte"] == "cota")
+        mudou = False if trocar_por_reserva else lembrar_fable(_limites_mem, pct, fonte, now)
+        if not trocar_por_reserva:
+            lembrado = fable_lembrado(_limites_mem)
+        if mudou:
+            save_state()
+    if trocar_por_reserva:
+        return lembrado["pct"], lembrado["fonte"], True
+    if pct is not None:
+        return pct, fonte, False
+    if lembrado:
+        return lembrado["pct"], lembrado["fonte"], True
+    return None, "", False
 
 
 def fable_recente(now):
@@ -1788,11 +1851,13 @@ def build_status():
         # a unica coisa que ainda valia. Ver `limites_lembrados`.
         with _lock:
             lembrado = limites_lembrados(_limites_mem, now)
+        fable, fable_fonte_atual, fable_memoria = fable_para_status(now)
         # A fatia do Fable sai do livro-caixa e nao das sessoes vivas, entao ela
         # continua valendo com todo terminal fechado — como os proprios limites.
         limites = campos_de_limites(
-            {**lembrado, "fable_pct": fable_pct(now),
-             "fable_fonte": fable_fonte(now)}, now)
+            {**lembrado, "fable_pct": fable,
+             "fable_fonte": fable_fonte_atual,
+             "fable_memoria": fable_memoria}, now)
         return {
             "online": False,
             "sessions": 0,
@@ -1976,13 +2041,15 @@ def build_status():
         week_lembrada = True
     de_memoria = sess_lembrada or week_lembrada
 
+    fable, fable_fonte_atual, fable_memoria = fable_para_status(now)
     limites = campos_de_limites(
         {"session_pct": session_pct, "session_resets_at": session_resets_at,
          "session_known": session_known, "session_inferred": session_inferred,
          "week_pct": week_pct, "week_resets_at": week_resets_at,
          "week_known": week_known, "memoria": de_memoria,
-         "fable_pct": fable_pct(now),
-         "fable_fonte": fable_fonte(now)}, now)
+         "fable_pct": fable,
+         "fable_fonte": fable_fonte_atual,
+         "fable_memoria": fable_memoria}, now)
 
     model = short_model(newest["data"].get("model"))
     effort = effort_label(newest["data"].get("effort"))
