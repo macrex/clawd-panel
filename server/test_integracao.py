@@ -220,6 +220,65 @@ class TesteIntegracaoStatus(unittest.TestCase):
         self.assertNotIn("s1", api._divergencias)
 
 
+class TestePodaDaBloqueadaMorta(unittest.TestCase):
+    """A regra 3 de prune() e a sessao `blocked` cujo terminal ja fechou.
+
+    Caso real de 21/09/2026: a API foi derrubada para um deploy, a sessao
+    respondeu a permissao, terminou o turno e fechou enquanto a API estava fora
+    — `Stop` e `SessionEnd` se perderam. Restaurada do state.json em `blocked`,
+    com PID morto, ela ficaria 12 h (HOOKED_TTL) na tela como "aguardando".
+    """
+
+    def setUp(self):
+        api._sessions.clear()
+        api._divergencias.clear()
+        herdr._retrato = {"online": False, "agents": [], "ts": 0.0}
+
+    def tearDown(self):
+        api._sessions.clear()
+        api._divergencias.clear()
+        herdr._retrato = {"online": False, "agents": [], "ts": 0.0}
+
+    def bloqueada(self, pane="w1:p1"):
+        calada = time.time() - api.DEAD_PID_GRACE - 1
+        rec = {"data": {}, "ts": calada, "state": api.BLOCKED,
+               "state_ts": calada, "event": "Notification",
+               "hooked": True, "pid": "17584"}
+        if pane:
+            rec["herdr_pane_id"] = pane
+        api._sessions["s1"] = rec
+
+    def podar(self):
+        with mock.patch.object(api, "save_state"),                 mock.patch.object(api, "pid_alive", return_value=False):
+            api.prune()
+
+    def test_pid_morto_e_pane_sumido_do_herdr_remove(self):
+        self.bloqueada()
+        herdr._aplicar([dele("w5:p1", "working")])
+        self.podar()
+        self.assertNotIn("s1", api._sessions)
+
+    def test_pid_morto_mas_pane_ainda_no_herdr_mantem(self):
+        # O medo original: o PID aponta para um filho transitorio enquanto a
+        # sessao esta viva e travada numa pergunta. O herdr ainda ve o pane.
+        self.bloqueada()
+        herdr._aplicar([dele("w1:p1", "blocked")])
+        self.podar()
+        self.assertIn("s1", api._sessions)
+
+    def test_pid_morto_com_herdr_fora_do_ar_mantem(self):
+        self.bloqueada()
+        self.podar()
+        self.assertIn("s1", api._sessions)
+
+    def test_pid_morto_em_sessao_sem_pane_mantem(self):
+        # Aberta fora do herdr: nao ha pane para conferir, vale a regra antiga.
+        self.bloqueada(pane=None)
+        herdr._aplicar([dele("w5:p1", "working")])
+        self.podar()
+        self.assertIn("s1", api._sessions)
+
+
 class TestePlanos(unittest.TestCase):
     """O bloco `planos` do /status e o modelo dos orfaos.
 

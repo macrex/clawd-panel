@@ -1450,6 +1450,19 @@ def fechar_trabalho(rec, now, motivo=None):
     return reg
 
 
+def pane_sumiu(rec, retrato):
+    """O herdr está no ar e já não lista o pane desta sessão.
+
+    É a única prova que libera a regra 3 de prune() para uma sessão `blocked`:
+    terminal fechado, o herdr deixa de listar o pane; sessão viva e travada
+    numa pergunta, ele continua listando. Sessão aberta fora do herdr (sem
+    pane) ou herdr fora do ar: não há prova, vale a regra antiga.
+    """
+    pane = rec.get("herdr_pane_id")
+    return bool(pane) and retrato["online"] and \
+        all(a["pane_id"] != pane for a in retrato["agents"])
+
+
 def prune():
     """Remove sessões mortas. Chamado sob _lock.
 
@@ -1462,13 +1475,17 @@ def prune():
     3. PID morto   — último recurso, para queda bruta (janela fechada no X,
                      reboot) em que o SessionEnd nunca dispara.
 
-    A regra 3 NUNCA se aplica a uma sessão `blocked`. Motivo medido: o PID
-    publicado pode apontar para um processo filho transitório já morto enquanto
-    a sessão está viva e travada numa pergunta. Confiar nele apagaria justamente
-    o agente que espera por você.
+    A regra 3 só se aplica a uma sessão `blocked` quando o herdr está no ar e
+    já não vê o pane dela (pane_sumiu). Motivo medido: o PID publicado pode
+    apontar para um processo filho transitório já morto enquanto a sessão está
+    viva e travada numa pergunta — e nesse caso o herdr continua listando o
+    pane. Sem a exceção, uma sessão que fechou enquanto a API estava fora do ar
+    (o `Stop` e o `SessionEnd` se perdem) voltava do state.json em `blocked` e
+    ficava HOOKED_TTL na tela como "aguardando" (visto em 21/09/2026).
     """
     now = _now()
     dead = []
+    retrato = herdr.snapshot()
     for sid, rec in _sessions.items():
         # O trabalho que ficou pendente e nunca recebeu o heartbeat de
         # fechamento. Cobrado aqui e não por um timer: `prune` já roda sob o
@@ -1486,7 +1503,8 @@ def prune():
             continue
 
         # Só custa uma chamada de sistema, e só para quem já está em silêncio.
-        if quiet > DEAD_PID_GRACE and resolve_state(rec, now) != BLOCKED:
+        if quiet > DEAD_PID_GRACE and (resolve_state(rec, now) != BLOCKED
+                                       or pane_sumiu(rec, retrato)):
             alive = pid_alive(rec.get("pid"))
             rec["proc_alive"] = alive
             if alive is False:
