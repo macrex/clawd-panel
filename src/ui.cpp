@@ -261,26 +261,6 @@ void drawLogo(Arduino_Canvas *g, int x, int y, int sx, uint16_t color) {
                 g->fillRect(x + c * sx, y + r * sy, sx, sy, color);
 }
 
-// Temperatura com o sinal de grau. A fonte embutida do Arduino_GFX so tem
-// ASCII, entao nao existe caractere de grau para imprimir — trocar de fonte so
-// por isso custaria flash e mudaria de lugar todo o resto da interface. Um anel
-// de 2 px de raio faz o papel e custa uma chamada. Devolve a largura ocupada.
-int drawTemp(Arduino_Canvas *g, int x, int y, int temp, uint16_t cor, int sz = 2) {
-    char n[8];
-    snprintf(n, sizeof(n), "%d", temp);
-    const int cw = 6 * sz;                    // largura de um caractere no corpo sz
-    const int nw = (int)strlen(n) * cw;
-
-    g->setTextColor(cor);
-    g->setTextSize(sz);
-    g->setCursor(x, y);
-    g->print(n);
-    g->drawCircle(x + nw + sz * 3 / 2, y + 2 * sz, sz, cor);   // grau proporcional
-    g->setCursor(x + nw + sz * 9 / 2, y);
-    g->print("C");
-    return nw + sz * 9 / 2 + cw;
-}
-
 
 
 void drawFooter(Arduino_Canvas *g, const Status &s, int page, int staleSeconds) {
@@ -3579,7 +3559,7 @@ void drawPageNivel(Arduino_Canvas *g, const Status &s, const nivel::Estado &e,
 // permite. SEM A FILEIRA DE BICHOS: deitado a faixa barata do flush e de
 // COLUNAS, entao um bicho no meio da tela custaria o quadro inteiro (~64 ms)
 // em vez dos ~9 do prefixo — e o espaco deles vira tamanho de anel, que era o
-// pedido. O que sobra do topo cabe a temperatura, que em pe nao tinha largura.
+// pedido. O que sobra do topo cabe a folhinha, que em pe nao tinha largura.
 //
 // Os cartoes de sessao viram uma FILEIRA de cinco em vez de uma pilha: deitado
 // ha 480 px de largura e 320 de altura, o inverso do retrato, e empilhar
@@ -3596,7 +3576,7 @@ const int L_ANEL_R1 = 68;                  // diametro 136, contra os 128 de ant
 const int L_ANEL_R2 = 52;                  // 16 px de espessura
 // O VERTICAL INTEIRO, de cima para baixo, e ele e apertado de proposito:
 //
-//   0..42     cabecalho (nome, temperatura, hora)
+//   0..42     cabecalho (nome, folhinha, hora)
 //   50..186   os dois aneis (CY 118, raio 68)
 //   195..203  a linha do Fable
 //   206..262  a fileira de cartoes
@@ -3800,8 +3780,34 @@ void drawCartaoDeitado(Arduino_Canvas *g, int x, int y, int w, const Agent &a) {
     }
 }
 
+// A FOLHINHA: o dia da semana numa faixa laranja e o dia do mes grande
+// embaixo, no lugar onde morava a temperatura. O laranja e o do nome, entao o
+// topo ganha um segundo ponto da cor da marca. O mes ficou de fora a pedido.
+const int FOLHA_W   = 36;
+const int FOLHA_H   = 34;
+const int FOLHA_GAP = 12;               // da folhinha ate a hora
+
+void drawFolhinha(Arduino_Canvas *g, int x, int y, const Clock &c) {
+    if (c.date.size() < 2) return;
+    g->fillRoundRect(x, y, FOLHA_W, FOLHA_H, 5, SUBCARD);
+    // Faixa com os cantos de cima redondos e a base reta: o retangulo cobre
+    // a metade de baixo da faixa arredondada.
+    g->fillRoundRect(x, y, FOLHA_W, 12, 5, LARANJA);
+    g->fillRect(x, y + 6, FOLHA_W, 6, LARANJA);
+    g->setTextSize(1);
+    g->setTextColor(BG);
+    g->setCursor(x + (FOLHA_W - (int)c.weekday.size() * 6) / 2, y + 2);
+    g->print(c.weekday.c_str());
+    const std::string dia = c.date.substr(0, 2);    // "22/09" -> "22"
+    g->setTextSize(2);
+    g->setTextColor(fgColor());
+    g->setCursor(x + (FOLHA_W - 24) / 2, y + 15);
+    g->print(dia.c_str());
+    g->setTextSize(1);
+}
+
 // O CABECALHO DE TODAS AS TELAS DEITADAS: o nome digitando a esquerda, a
-// temperatura e a hora a direita.
+// folhinha e a hora a direita.
 //
 // Ele nasceu na tela nova e virou o cabecalho de todas a pedido — e a troca
 // vale por si: o bicho que morava no canto esquerdo era enfeite ocupando o
@@ -3813,10 +3819,10 @@ void drawCartaoDeitado(Arduino_Canvas *g, int x, int y, int w, const Agent &a) {
 // cobre o nome inteiro, entao o gesto nao mudou de lugar — mudou de desenho.
 void drawHeaderDeitado(Arduino_Canvas *g, const Status &s, int staleSeconds) {
     // O limite do nome e onde comeca o que vem da direita. Medido, e nao fixo:
-    // com temperatura ele e mais apertado que sem.
+    // sem relogio conhecido nao ha hora nem folhinha.
     int esq = SCREEN_W - L_MARG;
-    if (s.clock.known) esq -= (int)s.clock.hm.size() * 6 * 4;
-    if (s.weather.known) esq -= 52;
+    if (s.clock.known)
+        esq -= (int)s.clock.hm.size() * 6 * 4 + FOLHA_GAP + FOLHA_W;
     drawNomeCabecalho(g, esq - 8);
 
     if (s.clock.known) {
@@ -3825,10 +3831,7 @@ void drawHeaderDeitado(Arduino_Canvas *g, const Status &s, int staleSeconds) {
         g->setTextSize(4);
         g->setCursor(SCREEN_W - L_MARG - w, 6);
         g->print(s.clock.hm.c_str());
-        if (s.weather.known)
-            drawTemp(g, SCREEN_W - L_MARG - w - 52, 12, s.weather.temp, MUTED, 2);
-    } else if (s.weather.known) {
-        drawTemp(g, SCREEN_W - L_MARG - 52, 12, s.weather.temp, MUTED, 2);
+        drawFolhinha(g, SCREEN_W - L_MARG - w - FOLHA_GAP - FOLHA_W, 4, s.clock);
     }
 
     // O selo VIA vai ABAIXO da linha, encostado na margem direita: no
@@ -4147,7 +4150,7 @@ void drawStatus(const Status &s, int page, const std::string &selectedId,
 
     g->fillScreen(BG);
     // O MESMO cabecalho da tela nova em TODAS as paginas deitadas: nome
-    // digitando, temperatura e hora. O antigo (mago no canto, titulo ao lado,
+    // digitando, folhinha e hora. O antigo (mago no canto, titulo ao lado,
     // hora em corpo 3) saiu inteiro — ver drawHeaderDeitado.
     drawHeaderDeitado(g, s, staleSeconds);
 
