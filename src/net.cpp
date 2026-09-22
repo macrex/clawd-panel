@@ -687,7 +687,9 @@ NetResult fetchCiclo(Status &out) {
         if (r2 == NetResult::Ok) fundirAgentes(out, s2);
         return NetResult::Ok;
     }
-    if (r2 == NetResult::Ok) {
+    // So depois de o master ficar calado de verdade (ver usarReserva): um
+    // soluco dele devolve r1 e a tela segue com o ultimo dado do master.
+    if (r2 == NetResult::Ok && usarReserva(agora - g_masterFalhaMs)) {
         // Fallback: o /status inteiro e o do PC2. Mesma conta, entao os
         // limites continuam verdadeiros; o selo VIA e o rodape contam o resto.
         out = std::move(s2);

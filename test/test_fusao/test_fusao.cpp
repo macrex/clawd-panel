@@ -162,8 +162,25 @@ void test_janela_desconhecida_no_master_aceita_a_do_pc2(void) {
     TEST_ASSERT_EQUAL_INT(93, base.week.pct);
 }
 
+// Uma volta perdida do master nao e o master caido. Trocar a tela inteira
+// pelo /status do PC2 nesse soluco apagava os cartoes do master e, com o PC2
+// ocioso, acendia a tela de offline (semSessao) com o dado de 6 s.
+void test_soluco_do_master_nao_entrega_a_tela_ao_pc2(void) {
+    TEST_ASSERT_FALSE(usarReserva(0));
+    TEST_ASSERT_FALSE(usarReserva(RESERVA_APOS_MS - 1));
+}
+
+void test_master_calado_de_verdade_passa_a_vez_ao_pc2(void) {
+    TEST_ASSERT_TRUE(usarReserva(RESERVA_APOS_MS));
+    // A reserva tem que assumir ANTES da tela de servidor fora (45 s), senao
+    // ela nunca chega a aparecer.
+    TEST_ASSERT_TRUE(RESERVA_APOS_MS < 45000);
+}
+
 int main(int, char **) {
     UNITY_BEGIN();
+    RUN_TEST(test_soluco_do_master_nao_entrega_a_tela_ao_pc2);
+    RUN_TEST(test_master_calado_de_verdade_passa_a_vez_ao_pc2);
     RUN_TEST(test_fusao_concatena_e_carimba_origem);
     RUN_TEST(test_bloqueado_do_pc2_vai_para_o_topo);
     RUN_TEST(test_sem_contexto_vai_para_o_fim_do_estado);

@@ -92,6 +92,10 @@ void fundirAgentes(Status &base, const Status &pc2) {
     // Somar seria manter um numero que ninguem olha.
 }
 
+bool usarReserva(uint32_t masterCaladoMs) {
+    return masterCaladoMs >= RESERVA_APOS_MS;
+}
+
 void marcarOrigem(Status &s, int origem) {
     for (Agent &a : s.agents) a.origem = origem;
     if (s.bloqueio.known) s.bloqueio.origem = origem;
