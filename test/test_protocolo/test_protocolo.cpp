@@ -133,8 +133,64 @@ void test_origem_desconhecida_cai_no_master(void) {
     TEST_ASSERT_FALSE(pedidoNovo(s, -1, 3));
 }
 
+// ---- A escrita com prazo total (a foto da tela) ----
+// Sem prazo, o envio de 300 KB num Wi-Fi fraco saia aos pingos, cada pingo
+// zerava a paciencia do NetworkClient, e a tarefa de rede ficava presa ate o
+// vigia de 60 s reiniciar a placa.
+
+static uint32_t g_relogio = 0;
+static uint32_t g_passo = 0;          // quanto o relogio anda a cada escrita
+static int g_chamadas = 0;
+static size_t g_maiorBloco = 0;
+static uint32_t relogio() { return g_relogio; }
+static size_t escritorCheio(const uint8_t *, size_t k) {
+    g_chamadas++;
+    if (k > g_maiorBloco) g_maiorBloco = k;
+    g_relogio += g_passo;
+    return k;
+}
+
+void test_escrita_no_prazo_manda_tudo_em_blocos(void) {
+    uint8_t buf[1000] = {};
+    g_relogio = 0; g_passo = 0; g_chamadas = 0; g_maiorBloco = 0;
+    TEST_ASSERT_EQUAL_UINT32(1000, escreverComPrazo(buf, 1000, 300, 100,
+                                                    escritorCheio, relogio));
+    TEST_ASSERT_EQUAL_INT(4, g_chamadas);            // 300 + 300 + 300 + 100
+    TEST_ASSERT_EQUAL_UINT32(300, g_maiorBloco);
+}
+
+void test_escrita_para_no_prazo(void) {
+    uint8_t buf[1000] = {};
+    g_relogio = 0; g_passo = 10; g_chamadas = 0;
+    // Escritas em t=0, 10 e 20; em t=30 o prazo (25) ja passou.
+    TEST_ASSERT_EQUAL_UINT32(300, escreverComPrazo(buf, 1000, 100, 25,
+                                                   escritorCheio, relogio));
+    TEST_ASSERT_EQUAL_INT(3, g_chamadas);
+}
+
+static size_t escritorMorto(const uint8_t *, size_t) { return 0; }
+
+void test_escrita_para_quando_o_socket_desiste(void) {
+    uint8_t buf[1000] = {};
+    g_relogio = 0;
+    TEST_ASSERT_EQUAL_UINT32(0, escreverComPrazo(buf, 1000, 100, 100,
+                                                 escritorMorto, relogio));
+}
+
+// millis() da a volta em 49 dias; o prazo tem que atravessar a virada.
+void test_prazo_atravessa_a_virada_do_millis(void) {
+    uint8_t buf[200] = {};
+    g_relogio = 0xFFFFFFF0u; g_passo = 0; g_chamadas = 0;
+    TEST_ASSERT_EQUAL_UINT32(200, escreverComPrazo(buf, 200, 100, 5,
+                                                   escritorCheio, relogio));
+}
+
 int main(int, char **) {
     UNITY_BEGIN();
+    RUN_TEST(test_escrita_no_prazo_manda_tudo_em_blocos);
+    RUN_TEST(test_escrita_para_no_prazo);
+    RUN_TEST(test_escrita_para_quando_o_socket_desiste);
+    RUN_TEST(test_prazo_atravessa_a_virada_do_millis);
     RUN_TEST(test_crc_bate_com_os_vetores_conhecidos);
     RUN_TEST(test_crc_em_pedacos_e_igual_ao_de_uma_vez);
     RUN_TEST(test_crc_de_pedaco_vazio_nao_muda_nada);

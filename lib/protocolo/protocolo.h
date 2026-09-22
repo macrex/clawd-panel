@@ -1,6 +1,7 @@
 #pragma once
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <string>
 
 // O que a placa precisa para FALAR com a API, sem depender do Arduino.
@@ -59,3 +60,19 @@ struct IdsPorFonte {
 // `origem` fora de {0, 1} cai no master — a config so tem duas fontes, e um
 // numero novo vindo de uma API futura nao pode indexar fora do vetor.
 bool pedidoNovo(IdsPorFonte &s, int origem, long id);
+
+// Escreve `n` bytes em blocos de ate `bloco`, e DESISTE quando `agora()` passa
+// de `fimMs`. Devolve quanto saiu; menos que `n` e falha.
+//
+// Existe por causa da foto da tela: o HTTPClient manda o corpo inteiro numa
+// chamada so, e o NetworkClient so desiste depois de 10 s SEM progresso. Num
+// Wi-Fi fraco os 300 KB saem aos pingos, cada pingo zera essa paciencia, e a
+// tarefa de rede ficava presa ate o vigia de 60 s reiniciar a placa. O bloco
+// pequeno limita quanto uma escrita presa passa do prazo.
+//
+// Para tambem quando `escrever` devolve 0 (o socket desistiu). A comparacao do
+// prazo e com sinal, para atravessar a virada do millis().
+using Escritor = std::function<size_t(const uint8_t *, size_t)>;
+size_t escreverComPrazo(const uint8_t *buf, size_t n, size_t bloco, uint32_t fimMs,
+                        const Escritor &escrever,
+                        const std::function<uint32_t()> &agora);

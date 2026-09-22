@@ -1,6 +1,19 @@
 #include "protocolo.h"
 #include <cstdio>
 
+size_t escreverComPrazo(const uint8_t *buf, size_t n, size_t bloco, uint32_t fimMs,
+                        const Escritor &escrever,
+                        const std::function<uint32_t()> &agora) {
+    size_t enviado = 0;
+    while (enviado < n && (int32_t)(agora() - fimMs) < 0) {
+        const size_t pedaco = n - enviado < bloco ? n - enviado : bloco;
+        const size_t r = escrever(buf + enviado, pedaco);
+        if (!r) break;
+        enviado += r;
+    }
+    return enviado;
+}
+
 uint32_t crc32Passo(uint32_t crc, const uint8_t *dados, size_t n) {
     crc = ~crc;
     for (size_t i = 0; i < n; i++) {

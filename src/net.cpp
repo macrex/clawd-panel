@@ -346,11 +346,32 @@ void enviarResposta(const std::string &pane, int n, const std::string &rotulo,
 // um compressor, um modulo separado so para poder testa-lo no PC e um caso de
 // estouro numa tela chapada. Tamanho fixo faz a validacao do outro lado ser uma
 // comparacao de inteiros.
+// O cliente da foto, com PRAZO TOTAL: toda escrita do HTTPClient (cabecalho e
+// corpo) passa por escreverComPrazo (ver lib/protocolo). Estourado o prazo, a
+// escrita devolve 0, o HTTPClient desiste com HTTPC_ERROR_SEND_PAYLOAD_FAILED
+// e a volta segue para o /status.
+//
+// 12 s sao oito vezes o pior envio medido num sinal bom (1,5 s). Somados aos
+// ~10 s que uma escrita de bloco presa pode passar dele, a volta fica bem
+// abaixo dos 60 s do vigia da tarefa de rede, que reiniciava a placa.
+const uint32_t CAPTURA_PRAZO_MS = 12000;
+
+struct ClienteComPrazo : WiFiClient {
+    uint32_t fimMs = 0;
+    using WiFiClient::write;
+    size_t write(const uint8_t *buf, size_t n) override {
+        return escreverComPrazo(
+            buf, n, 1460, fimMs,
+            [this](const uint8_t *b, size_t k) { return WiFiClient::write(b, k); },
+            [] { return (uint32_t)millis(); });
+    }
+};
+
 void enviarQuadro(long id, int origem, bool retrato, const uint8_t *buf,
                   size_t n) {
     if (WiFi.status() != WL_CONNECTED) { g_capCode = -1; return; }
 
-    WiFiClient client;
+    ClienteComPrazo client;
     HTTPClient http;
     const std::string url = urlIrma(urlBase(origem), "tela");
     if (!http.begin(client, url.c_str())) { g_capCode = -1000; return; }
@@ -371,6 +392,7 @@ void enviarQuadro(long id, int origem, bool retrato, const uint8_t *buf,
     // volta alongada pode acender "SEM CONTATO" por um ciclo. Isso e transitorio
     // e honesto; a tarefa presa nao seria.
     http.setTimeout(10000);
+    client.fimMs = millis() + CAPTURA_PRAZO_MS;
     g_capCode = http.POST(const_cast<uint8_t *>(buf), n);
     http.end();
     client.stop();
