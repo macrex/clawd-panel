@@ -3599,7 +3599,7 @@ const int L_ANEL_R2 = 52;                  // 16 px de espessura
 //   0..42     cabecalho (nome, temperatura, hora)
 //   50..186   os dois aneis (CY 118, raio 68)
 //   195..203  a linha do Fable
-//   210..252  a fileira de cartoes
+//   206..262  a fileira de cartoes
 //   267..312  a turma, no canto inferior esquerdo
 //
 // A turma pisa em SCREEN_H-8 e mede ~45 px de altura no tema South Park, entao
@@ -3607,12 +3607,12 @@ const int L_ANEL_R2 = 52;                  // 16 px de espessura
 // altura quando os bichos voltaram para o rodape.
 const int L_ANEL_CY = 118;
 const int L_FABLE_Y = 196;
-const int L_CARD_Y  = 210;
-// 42 e nao 52: os aneis cresceram e a turma voltou ao rodape, e o espaco saiu
-// daqui nas duas vezes. O cartao deitado tem dois andares (nome em cima,
-// provedor e turno embaixo) mais o trilho na base, e 42 e onde os tres ainda
-// cabem sem se encostar.
-const int L_CARD_H  = 42;
+const int L_CARD_Y  = 206;
+// 56: o cartao tem TRES andares — nome; icone, modelo e esforco; turno e
+// contexto — mais o trilho na base. O andar do modelo custou 14 px, tirados do
+// vao que sobrava ate a turma (a fileira comecava em 210 e acabava em 252);
+// agora ela acaba em 262, cinco px acima dos bichos.
+const int L_CARD_H  = 56;
 // O TETO de cartoes na fileira, e nao a divisao dela: a largura sai da
 // quantidade REAL de sessoes (ver drawDeitadaNova), entao com tres na tela cada
 // uma leva um terco da linha. Este numero so decide onde comeca o "+N".
@@ -3704,10 +3704,10 @@ void drawAnelDeitado(Arduino_Canvas *g, int cx, int txtX, const char *titulo,
 }
 
 // Um cartao de sessao na fileira. Mesma linguagem do cartao da tela em pe —
-// faixa de estado na borda, nome, icone da CLI, turno e o contexto como trilho
-// na base — so que mais curto: deitado a fileira tem cinco em 452 px, entao
-// cada um leva ~86 e os chips nao cabem. O que sai sao eles; o que fica e o
-// que se le de longe.
+// faixa de estado na borda, nome, icone da CLI, chips de modelo e esforco,
+// turno e o contexto como trilho na base — em tres andares, porque deitado a
+// fileira divide 452 px por ate seis sessoes e os chips nao cabem na linha do
+// turno.
 void drawCartaoDeitado(Arduino_Canvas *g, int x, int y, int w, const Agent &a) {
     g->fillRoundRect(x, y, w, L_CARD_H, 8, SUBCARD);
     drawNovoLinha(g, a.novo, x, y, w, L_CARD_H, SUBCARD, 8);
@@ -3737,9 +3737,26 @@ void drawCartaoDeitado(Arduino_Canvas *g, int x, int y, int w, const Agent &a) {
         if ((int)nw <= dir - tx) break;
         nome.pop_back();
     }
-    g->setCursor(tx, y + 17);
+    g->setCursor(tx, y + 16);
     g->print(nome.c_str());
     g->setFont();
+
+    // ANDAR DO MEIO: quem esta rodando — o icone da CLI, o modelo e o esforco,
+    // nos mesmos chips da tela em pe. O modelo passa por `modeloNoChip`, que
+    // tira o "(1M)" e, apertado, corta na palavra; o esforco cai de "XHigh"
+    // para "XH" e depois some, como la.
+    int cx = tx;
+    const provedores::Icone ic = provedores::iconeDe(a.agent);
+    if (ic.w) {
+        drawIconeProvedor(g, cx, y + 22 + (14 - ic.h) / 2, ic,
+                          g_stale ? MUTED : provedores::corDe(a.agent), SUBCARD);
+        cx += ic.w + 5;
+    }
+    const int cw = drawChip(g, cx, y + 22, modeloNoChip(a.model, (dir - cx - 8) / 6),
+                            fgColor(), dir);
+    if (cw) cx += cw + 4;
+    if (!drawChip(g, cx, y + 22, a.effort, C_YELL, dir))
+        drawChip(g, cx, y + 22, effortCurto(a.effort), C_YELL, dir);
 
     // O contexto EM CIMA DO TRILHO QUE ELE EXPLICA, e nao na linha do nome.
     //
@@ -3753,18 +3770,11 @@ void drawCartaoDeitado(Arduino_Canvas *g, int x, int y, int w, const Agent &a) {
     const int pctX = dir - (int)strlen(pb) * 6;
     g->setTextColor(a.hasContext ? MUTED : TRACK);
     g->setTextSize(1);
-    g->setCursor(pctX, y + 26);
+    g->setCursor(pctX, y + 40);
     g->print(pb);
 
-    // O icone do fornecedor e o turno na mesma linha: quem esta rodando e ha
-    // quanto tempo, que e a leitura desta fileira.
-    int cx = tx;
-    const provedores::Icone ic = provedores::iconeDe(a.agent);
-    if (ic.w) {
-        drawIconeProvedor(g, cx, y + 24 + (12 - ic.h) / 2, ic,
-                          g_stale ? MUTED : provedores::corDe(a.agent), SUBCARD);
-        cx += ic.w + 5;
-    }
+    // O turno na ponta oposta do contexto: ha quanto tempo, que e a outra
+    // leitura desta fileira.
     if (a.turnoS >= 0) {
         const std::string t = formatTurno(a.turnoS);
         const uint16_t cor = a.state == AgentState::Working ? H_WORKING
@@ -3773,20 +3783,20 @@ void drawCartaoDeitado(Arduino_Canvas *g, int x, int y, int w, const Agent &a) {
         // O turno CEDE ao contexto quando o cartao aperta: e o dado mais barato
         // dos dois nesta linha, e sumir e melhor do que escrever por cima — que
         // e exatamente o defeito que trouxe o numero para ca.
-        if (cx + (int)t.size() * 6 <= pctX - 4) {
+        if (tx + (int)t.size() * 6 <= pctX - 4) {
             g->setTextColor(g_stale ? MUTED : cor);
             g->setTextSize(1);
-            g->setCursor(cx, y + 26);
+            g->setCursor(tx, y + 40);
             g->print(t.c_str());
         }
     }
 
     const int tw = dir - tx;
-    g->fillRoundRect(tx, y + L_CARD_H - 8, tw, 2, 1, TRACK);
+    g->fillRoundRect(tx, y + L_CARD_H - 7, tw, 2, 1, TRACK);
     if (a.hasContext && a.contextPct > 0) {
         int fill = tw * a.contextPct / 100;
         if (fill < 2) fill = 2;
-        g->fillRoundRect(tx, y + L_CARD_H - 8, fill, 2, 1, colorOf(a.level));
+        g->fillRoundRect(tx, y + L_CARD_H - 7, fill, 2, 1, colorOf(a.level));
     }
 }
 

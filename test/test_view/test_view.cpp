@@ -387,8 +387,34 @@ void test_a_forma_curta_cabe_onde_a_longa_nao_cabe(void) {
                      textoVetustez(s, 40, "SEM CONTATO", false).size());
 }
 
+// O "(1M)" sai sempre: todo modelo em uso e 1M, e o percentual de contexto ja
+// e medido contra a janela de cada sessao.
+void test_modelo_no_chip_perde_o_parentese(void) {
+    TEST_ASSERT_EQUAL_STRING("Opus 5.5", modeloNoChip("Opus 5.5 (1M)", 20).c_str());
+    TEST_ASSERT_EQUAL_STRING("Fable 5.1", modeloNoChip("Fable 5.1", 20).c_str());
+}
+
+// Cortar por letra dava "Opus 5", que e OUTRO modelo real. O corte e na
+// fronteira de palavra: sobra a familia, que ainda e verdade.
+void test_modelo_no_chip_corta_na_palavra(void) {
+    TEST_ASSERT_EQUAL_STRING("Opus", modeloNoChip("Opus 5.5 (1M)", 7).c_str());
+    TEST_ASSERT_EQUAL_STRING("Opus", modeloNoChip("Opus 5.5 (1M)", 6).c_str());
+    TEST_ASSERT_EQUAL_STRING("Claude Opus", modeloNoChip("Claude Opus 4.6", 12).c_str());
+}
+
+// Uma palavra so, maior que o chip, e cortada por letra; abaixo de tres letras
+// nao informa e some.
+void test_modelo_no_chip_palavra_unica_e_limite(void) {
+    TEST_ASSERT_EQUAL_STRING("gpt-5", modeloNoChip("gpt-5.5-codex", 5).c_str());
+    TEST_ASSERT_EQUAL_STRING("", modeloNoChip("Opus 5.5 (1M)", 2).c_str());
+    TEST_ASSERT_EQUAL_STRING("", modeloNoChip("", 20).c_str());
+}
+
 int main(int, char **) {
     UNITY_BEGIN();
+    RUN_TEST(test_modelo_no_chip_perde_o_parentese);
+    RUN_TEST(test_modelo_no_chip_corta_na_palavra);
+    RUN_TEST(test_modelo_no_chip_palavra_unica_e_limite);
     RUN_TEST(test_sem_sessao_quando_ninguem_publica);
     RUN_TEST(test_agente_vivo_nao_e_sem_sessao);
     RUN_TEST(test_online_nao_e_sem_sessao);

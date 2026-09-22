@@ -58,6 +58,15 @@ std::string formatTurno(int seconds);
 // cru — numero que anda sobre payload morto mentiria. -1 atravessa.
 int turnoSegundos(int stateAgeS, uint32_t msDesdePoll, bool congelado);
 
+// O modelo no chip do cartao deitado, em no maximo `cabe` caracteres.
+//
+// O parentese sai sempre ("Opus 5.5 (1M)" -> "Opus 5.5"). Faltando espaco, o
+// corte e em FRONTEIRA DE PALAVRA: por letra, "Opus 5.5" virava "Opus 5", que
+// e outro modelo real — a familia sozinha ainda e verdade, a versao truncada
+// mente. Uma palavra unica maior que o chip e cortada por letra, e abaixo de
+// tres letras devolve vazio (nao informa).
+std::string modeloNoChip(const std::string &modelo, int cabe);
+
 // ---- A memoria que impede o contador de andar para tras ----
 //
 // A extrapolacao acima e recalculada do zero a cada payload, e os dois lados

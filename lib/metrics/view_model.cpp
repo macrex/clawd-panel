@@ -72,6 +72,15 @@ std::string formatTurno(int s) {
     return buf;
 }
 
+std::string modeloNoChip(const std::string &modelo, int cabe) {
+    if (cabe < 3) return "";
+    std::string m = modelo.substr(0, modelo.find(" ("));
+    while ((int)m.size() > cabe && m.find(' ') != std::string::npos)
+        m.erase(m.rfind(' '));
+    if ((int)m.size() > cabe) m.resize(cabe);
+    return m;
+}
+
 int turnoSegundos(int stateAgeS, uint32_t msDesdePoll, bool congelado) {
     if (stateAgeS < 0) return -1;
     if (congelado) return stateAgeS;
