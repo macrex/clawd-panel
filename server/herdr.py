@@ -126,6 +126,11 @@ def parse_agentes(saida):
         seq = a.get("state_change_seq")
         if isinstance(seq, bool) or not isinstance(seq, int):
             seq = None
+        # O id da sessao que a CLI informa ao herdr. O Pi poe esse id no nome
+        # do `.jsonl` da sessao, e e assim que modelos.modelo_pi acha o arquivo
+        # sem adivinhar por cwd. Vazio quando o herdr nao sabe.
+        sessao = a.get("agent_session")
+        sessao = sessao.get("value") if isinstance(sessao, dict) else None
         fora.append({
             "pane_id": pane,
             "state": estado,
@@ -135,6 +140,7 @@ def parse_agentes(saida):
             "focused": bool(a.get("focused")),
             "name": a.get("name") or "",
             "seq": seq,
+            "agent_session": sessao if isinstance(sessao, str) else "",
         })
     return fora
 

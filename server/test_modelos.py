@@ -733,6 +733,99 @@ class TestModeloAntigravity(_ComRaiz):
                          "Gemini 3.7 Flash")
 
 
+class TestModeloPi(_ComRaiz):
+    ID = "01a0cbe0-2752-75ef-90fe-054ed0537b78"
+
+    def _sessao(self, sessao, *linhas, pasta="--D--workspace_cd-sigad--"):
+        """Um `.jsonl` do Pi, no formato e no nome que ele grava de verdade."""
+        d = os.path.join(self.raiz, "sessions", pasta)
+        os.makedirs(d, exist_ok=True)
+        f = os.path.join(d, f"2026-09-23T01-27-40-116Z_{sessao}.jsonl")
+        with open(f, "w", encoding="utf-8", newline="") as fh:
+            fh.write("\n".join(l if isinstance(l, str) else json.dumps(l)
+                               for l in linhas))
+        return f
+
+    @staticmethod
+    def troca(modelo):
+        return {"type": "model_change", "provider": "deepseek",
+                "modelId": modelo}
+
+    @staticmethod
+    def resposta(modelo):
+        return {"type": "message",
+                "message": {"role": "assistant", "provider": "deepseek",
+                            "model": modelo}}
+
+    def test_acha_o_modelo_pelo_id_da_sessao(self):
+        self._sessao(self.ID, {"type": "session", "cwd": r"D:\x"},
+                     self.troca("deepseek-flash"),
+                     self.resposta("deepseek-flash"))
+        # Outra sessao na MESMA pasta, com outro modelo: o id e que decide.
+        self._sessao("outra", self.troca("qwen3.6-coding"))
+        self.assertEqual(modelos.modelo_pi(self.ID, raiz=self.raiz),
+                         "Deepseek Flash")
+
+    def test_o_que_vier_por_ultimo_vale(self):
+        # `/model` sem mensagem depois: a troca e o modelo selecionado.
+        self._sessao(self.ID, self.troca("deepseek-flash"),
+                     self.resposta("deepseek-flash"),
+                     self.troca("qwen3.6-coding"))
+        self.assertEqual(modelos.modelo_pi(self.ID, raiz=self.raiz),
+                         "Qwen3.6 Coding")
+
+    def test_a_resposta_mais_nova_tambem_vale(self):
+        self._sessao(self.ID, self.troca("deepseek-flash"),
+                     self.resposta("deepseek-pro"))
+        self.assertEqual(modelos.modelo_pi(self.ID, raiz=self.raiz),
+                         "Deepseek Pro")
+
+    def test_id_ausente_ou_com_curinga_e_none(self):
+        # O id vai para dentro de um glob: `*` casaria qualquer sessao.
+        self._sessao(self.ID, self.troca("deepseek-flash"))
+        for ruim in (None, "", "*", "?" * 36, "[0]*", "../x", 5):
+            self.assertIsNone(modelos.modelo_pi(ruim, raiz=self.raiz),
+                              repr(ruim))
+
+    def _settings(self, **campos):
+        with open(os.path.join(self.raiz, "settings.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump(campos, fh)
+
+    def test_sessao_sem_arquivo_e_sem_settings_e_none(self):
+        self.assertIsNone(modelos.modelo_pi(self.ID, raiz=self.raiz))
+
+    def test_sessao_nova_sem_resposta_usa_o_padrao_do_settings(self):
+        # O Pi so cria o `.jsonl` na primeira resposta; ate la o modelo da
+        # sessao e o `defaultModel`, que todo `/model` regrava.
+        self._settings(defaultProvider="deepseek", defaultModel="deepseek-flash")
+        self.assertEqual(modelos.modelo_pi(self.ID, raiz=self.raiz),
+                         "Deepseek Flash")
+
+    def test_o_arquivo_da_sessao_ganha_do_settings(self):
+        self._settings(defaultModel="qwen3.6-coding")
+        self._sessao(self.ID, self.troca("deepseek-flash"))
+        self.assertEqual(modelos.modelo_pi(self.ID, raiz=self.raiz),
+                         "Deepseek Flash")
+
+    def test_settings_podre_nao_levanta(self):
+        for cru in ("nao e json", "[]", '{"defaultModel": 7}'):
+            with open(os.path.join(self.raiz, "settings.json"), "w",
+                      encoding="utf-8") as fh:
+                fh.write(cru)
+            self.assertIsNone(modelos.modelo_pi(self.ID, raiz=self.raiz),
+                              repr(cru))
+
+    def test_linhas_podres_nao_levantam(self):
+        self._sessao(self.ID, self.troca("deepseek-flash"), "nao e json", "[]",
+                     {"type": "message", "message": ["x"]},
+                     {"type": "message", "message": {"role": "user",
+                                                     "model": "x"}},
+                     {"type": "model_change", "modelId": 7})
+        self.assertEqual(modelos.modelo_pi(self.ID, raiz=self.raiz),
+                         "Deepseek Flash")
+
+
 class TestBlobCitaPasta(unittest.TestCase):
     """A regra de fronteira do casamento por diretorio, sem passar pelo banco.
 

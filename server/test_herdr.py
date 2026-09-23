@@ -64,6 +64,20 @@ class TesteParse(unittest.TestCase):
                  '"agent_status":"working"' + cru + '}]}}')
             self.assertIsNone(herdr.parse_agentes(s)[0]["seq"], repr(cru))
 
+    def test_id_da_sessao_e_guardado(self):
+        # E por ele que o Pi casa o pane com o `.jsonl` dele (modelos.modelo_pi).
+        s = ('{"result":{"agents":[{"pane_id":"w1:p1","agent_status":"idle",'
+             '"agent_session":{"agent":"pi","kind":"id","value":"01a0"}}]}}')
+        self.assertEqual(herdr.parse_agentes(s)[0]["agent_session"], "01a0")
+
+    def test_sem_sessao_ou_com_sessao_estranha_vira_vazio(self):
+        for cru in ('', ',"agent_session":null', ',"agent_session":"x"',
+                    ',"agent_session":{"value":5}'):
+            s = ('{"result":{"agents":[{"pane_id":"w1:p1",'
+                 '"agent_status":"idle"' + cru + '}]}}')
+            self.assertEqual(herdr.parse_agentes(s)[0]["agent_session"], "",
+                             repr(cru))
+
     def test_repo_sai_do_cwd_nos_dois_separadores(self):
         self.assertEqual(herdr.repo_de(r"E:\OneDrive\projetos\esp32-s3"), "esp32-s3")
         self.assertEqual(herdr.repo_de("/home/x/proj/"), "proj")

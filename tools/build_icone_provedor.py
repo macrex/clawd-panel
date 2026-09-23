@@ -57,6 +57,12 @@ MARCAS = {
     # Codex: LANCZOS cava halo, e aqui ele apagaria os olhos vazados.
     "ollama": dict(arquivo="ollama.svg", nome="OLLAMA",
                    modo="silhueta", alt=12, filtro=Image.BOX),
+    # O Pi tambem nasce em grade: 4x4 celulas quadradas de 117,36 no viewBox.
+    # 12x12 amostras poem 3 em cada celula, reducao exata como a do Claude.
+    # As tres pecas coloridas viram uma mascara so; a cor e a de `corDe`.
+    # `LOGO_PI` e nao `PI`: o Arduino.h define PI como macro.
+    "pi":     dict(arquivo="pi.svg", nome="LOGO_PI",
+                   modo="alfa", grade=(12, 12), escala=1),
 }
 
 

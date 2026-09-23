@@ -89,6 +89,7 @@ def bonito(model_id):
 
 RAIZ_CODEX = os.path.expanduser("~/.codex")
 RAIZ_GEMINI = os.path.expanduser("~/.gemini")
+RAIZ_PI = os.path.expanduser("~/.pi/agent")
 
 # Quantos arquivos de sessao olhar, do mais novo para o mais velho. O Codex
 # guarda meses de historico; varrer tudo a cada consulta seria caro e inutil —
@@ -309,6 +310,59 @@ def modelo_codex(cwd, raiz=None):
         # modelo de OUTRA sessao do mesmo diretorio — mais velha, e por isso
         # justamente a que nao esta na tela.
         return None
+    return None
+
+
+def modelo_pi(sessao, raiz=None):
+    """O modelo da sessao do Pi com este id. None quando nao da para saber.
+
+    Casamento EXATO, ao contrario do Codex: o herdr entrega o id da sessao
+    (`agent_session`), e o Pi grava `sessions/<cwd>/<instante>_<id>.jsonl`. O
+    id entra num glob, entao so passa se for letra, numero, `_` ou hifen — um
+    `*` casaria a sessao de qualquer um.
+    """
+    if not isinstance(sessao, str) or not re.fullmatch(r"[\w-]+", sessao):
+        return None
+    base = str(raiz or RAIZ_PI)
+    achados = glob.glob(os.path.join(base, "sessions", "*",
+                                     f"*_{sessao}.jsonl"))
+    if not achados:
+        # O Pi so cria o arquivo na PRIMEIRA resposta (`_persist` do
+        # session-manager dele). Ate la a sessao roda no `defaultModel`, que
+        # todo `/model` regrava em settings.json.
+        # ponytail: e global, entao um `pi --model X` ou um `/model` em OUTRO
+        # Pi mostra o padrao errado ate a primeira resposta desta sessao.
+        try:
+            with open(os.path.join(base, "settings.json"),
+                      encoding="utf-8") as fh:
+                m = _dict(json.load(fh)).get("defaultModel")
+        except (OSError, ValueError):
+            return None
+        return bonito(m) or None
+    try:
+        with open(achados[0], "rb") as fh:
+            linhas = _cauda(fh)
+    except OSError:
+        return None
+
+    # De tras para frente, e o primeiro que aparecer vale: `model_change` sai
+    # no inicio e a cada `/model`, e toda resposta traz o modelo que a gerou.
+    for l in reversed(linhas):
+        try:
+            d = json.loads(l)
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(d, dict):
+            continue
+        if d.get("type") == "model_change":
+            m = d.get("modelId")
+        elif d.get("type") == "message":
+            msg = _dict(d.get("message"))
+            m = msg.get("model") if msg.get("role") == "assistant" else None
+        else:
+            continue
+        if isinstance(m, str) and m:
+            return bonito(m)
     return None
 
 

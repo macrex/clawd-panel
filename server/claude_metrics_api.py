@@ -958,10 +958,14 @@ def _podar_modelos(agora):
         _modelos_cache.pop(chave, None)
 
 
-def modelo_do_orfao(agente, cwd):
-    """O modelo de um agente que so o herdr enxerga. None quando nao se sabe."""
+def modelo_do_orfao(agente, cwd, sessao=None):
+    """O modelo de um agente que so o herdr enxerga. None quando nao se sabe.
+
+    `sessao` e o `agent_session` do herdr. So o Pi usa, mas ele entra na chave
+    do cache: dois Pi na mesma pasta sao duas sessoes com modelos diferentes.
+    """
     global _sondas_falhas
-    chave = (agente, cwd)
+    chave = (agente, cwd, sessao)
     agora = _now()
     with _cache_lock:
         c = _modelos_cache.get(chave)
@@ -988,6 +992,8 @@ def modelo_do_orfao(agente, cwd):
         # certo — pior do que "—".
         elif agente == "agy":
             v = modelos.modelo_antigravity(cwd)
+        elif agente == "pi":
+            v = modelos.modelo_pi(sessao)
         else:
             v = None
     except Exception:
@@ -1156,7 +1162,8 @@ def build_agents(live_items, retrato=None):
         estado = DO_HERDR.get(a["state"], UNKNOWN)
         # O modelo do orfao vem do disco da CLI dele — ver modelos.py. Era None
         # fixo, e o card desenhava "-" para todo agente que nao fosse o Claude.
-        modelo_orfao = modelo_do_orfao(a["agent"], a["cwd"])
+        modelo_orfao = modelo_do_orfao(a["agent"], a["cwd"],
+                                       a.get("agent_session"))
         # O rodape da tela dele, quando a CLI escreve um. E de onde sai o
         # contexto — e o modelo, para as CLIs que nao gravam turno em disco.
         rodape = tela_do_orfao(a["pane_id"])

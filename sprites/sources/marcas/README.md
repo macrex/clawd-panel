@@ -10,6 +10,7 @@ arrays daquele arquivo **são a saída do compilador**, não arte editada à mã
 | `claude-code.svg` | Claude Code (Anthropic) | ícone oficial |
 | `antigravity.svg` | Antigravity (Google) | ícone oficial, **só a silhueta** |
 | `codex.svg` | Codex / OpenAI | ícone oficial |
+| `pi.svg` | Pi | ícone oficial (versão para fundo escuro) |
 | `ollama.svg` | Ollama — **o reserva**, vale por toda CLI sem arte própria | ícone oficial (simple-icons), **preenchido** |
 
 ## Por que o Antigravity está reduzido

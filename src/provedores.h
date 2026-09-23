@@ -26,7 +26,7 @@ struct Icone {
     int            h;
 };
 
-// O icone de um agente do herdr ("claude", "codex", "agy"). Qualquer outro
+// O icone de um agente do herdr ("claude", "codex", "agy", "pi"). Qualquer outro
 // identificador — e o herdr reconhece dezenove — cai na lhama do Ollama, o
 // icone do grupo "uma CLI que este painel nao tem arte para distinguir".
 // Nunca devolve vazio; quem desenha ainda checa `w`, que custa nada.

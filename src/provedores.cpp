@@ -95,6 +95,25 @@ const uint8_t CODEX[] = {
       0,   0,   0,   0,   3, 229, 250, 252,  66,   0,   0,   0,
 };
 
+// ---- Pi ----
+// O logo do Pi e uma grade 4x4 de celulas quadradas (um P e um i), entao entra
+// como o Claude: amostra exata, so 0 e 255. As tres pecas do SVG tem cores
+// diferentes; aqui viram uma mascara so, na cor da peca do P.
+const uint8_t LOGO_PI[] = {
+    255, 255, 255, 255, 255, 255, 255, 255, 255,   0,   0,   0,
+    255, 255, 255, 255, 255, 255, 255, 255, 255,   0,   0,   0,
+    255, 255, 255, 255, 255, 255, 255, 255, 255,   0,   0,   0,
+    255, 255, 255,   0,   0,   0, 255, 255, 255,   0,   0,   0,
+    255, 255, 255,   0,   0,   0, 255, 255, 255,   0,   0,   0,
+    255, 255, 255,   0,   0,   0, 255, 255, 255,   0,   0,   0,
+    255, 255, 255, 255, 255, 255,   0,   0,   0, 255, 255, 255,
+    255, 255, 255, 255, 255, 255,   0,   0,   0, 255, 255, 255,
+    255, 255, 255, 255, 255, 255,   0,   0,   0, 255, 255, 255,
+    255, 255, 255,   0,   0,   0,   0,   0,   0, 255, 255, 255,
+    255, 255, 255,   0,   0,   0,   0,   0,   0, 255, 255, 255,
+    255, 255, 255,   0,   0,   0,   0,   0,   0, 255, 255, 255,
+};
+
 // ---- Ollama (o reserva) ----
 // A lhama do Ollama vale por QUALQUER CLI que nao seja uma das tres de cima:
 // nao ha arte por marca para as dezenove que o herdr reconhece, e um grupo sem
@@ -127,6 +146,7 @@ const uint8_t OLLAMA[] = {
 const uint16_t COR_CLAUDE = RGB565(217, 119,  87);
 const uint16_t COR_AGY    = RGB565(138, 180, 248);
 const uint16_t COR_CODEX  = RGB565( 16, 163, 127);
+const uint16_t COR_PI     = RGB565(240, 144, 130);   // #F09082, a peca do P
 const uint16_t COR_OUTRO  = RGB565(130, 140, 155);   // o MUTED do painel
 
 }   // namespace
@@ -135,6 +155,7 @@ Icone iconeDe(const std::string &agente) {
     if (agente == "claude" || agente.empty()) return {CLAUDE, 16, 10};
     if (agente == "agy")                      return {AGY,    13, 12};
     if (agente == "codex")                    return {CODEX,  12, 12};
+    if (agente == "pi")                       return {LOGO_PI, 12, 12};
     // Qualquer outra CLI: a lhama, e nao o vazio. Um grupo sem icone abria a
     // linha num buraco, e quem olha nao tem como saber se aquilo e "uma CLI
     // que o painel nao conhece" ou "o painel esqueceu de desenhar".
@@ -145,6 +166,7 @@ uint16_t corDe(const std::string &agente) {
     if (agente == "claude" || agente.empty()) return COR_CLAUDE;
     if (agente == "agy")                      return COR_AGY;
     if (agente == "codex")                    return COR_CODEX;
+    if (agente == "pi")                       return COR_PI;
     return COR_OUTRO;
 }
 
@@ -156,6 +178,7 @@ std::string nomeDe(const std::string &agente) {
     // uma pessoa, e "agy" nao diz nada a ela.
     if (agente == "agy")   return "Antigravity";
     if (agente == "codex") return "Codex";
+    if (agente == "pi")    return "Pi";
     return agente;
 }
 

@@ -409,6 +409,17 @@ class TestePlanos(unittest.TestCase):
         # so "Codex", com o modelo certo no campo ao lado.
         self.assertIn("GPT-5.6 Terra", orfao["line"])
 
+    def test_pi_acha_o_modelo_pelo_id_da_sessao_do_herdr(self):
+        a = dele("w9:p9", "idle", agente="pi", repo="sigad")
+        a["agent_session"] = "01a0"
+        herdr._aplicar([a])
+        with mock.patch.object(api.modelos, "modelo_pi",
+                               return_value="Deepseek Flash") as sonda:
+            s = api.build_status()
+        sonda.assert_called_once_with("01a0")
+        orfao = next(a for a in s["labels"] if a["agent"] == "pi")
+        self.assertEqual(orfao["model"], "Deepseek Flash")
+
     def test_orfao_ganha_o_contexto_do_rodape_da_tela(self):
         """O contexto de quem nao e o Claude Code so existe na TELA dele.
 
@@ -567,7 +578,8 @@ class TestePlanos(unittest.TestCase):
             api.modelo_do_orfao("codex", "D:\\vivo")
         self.assertLess(len(api._modelos_cache), antes)
         # A entrada nova sobrevive a propria poda que ela disparou.
-        self.assertEqual(api._modelos_cache[("codex", "D:\\vivo")]["valor"], "X")
+        self.assertEqual(
+            api._modelos_cache[("codex", "D:\\vivo", None)]["valor"], "X")
 
 
 class TesteHealth(unittest.TestCase):
