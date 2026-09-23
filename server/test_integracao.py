@@ -409,16 +409,24 @@ class TestePlanos(unittest.TestCase):
         # so "Codex", com o modelo certo no campo ao lado.
         self.assertIn("GPT-5.6 Terra", orfao["line"])
 
-    def test_pi_acha_o_modelo_pelo_id_da_sessao_do_herdr(self):
+    def test_pi_le_modelo_e_contexto_da_sessao_e_nao_da_tela(self):
+        # O rodape que o Pi desenha nao traz o `context N% used`: a barra dele
+        # ficava vazia. Os dois numeros vem do arquivo da sessao, pelo id que o
+        # herdr informa, e a tela nem e lida.
         a = dele("w9:p9", "idle", agente="pi", repo="sigad")
         a["agent_session"] = "01a0"
         herdr._aplicar([a])
-        with mock.patch.object(api.modelos, "modelo_pi",
-                               return_value="Deepseek Flash") as sonda:
+        with mock.patch.object(api.modelos, "rodape_pi",
+                               return_value={"model": "Deepseek Flash",
+                                             "context_pct": 3}) as sonda, \
+             mock.patch.object(api.herdr, "ler_pane") as ler:
             s = api.build_status()
         sonda.assert_called_once_with("01a0")
+        ler.assert_not_called()
         orfao = next(a for a in s["labels"] if a["agent"] == "pi")
         self.assertEqual(orfao["model"], "Deepseek Flash")
+        self.assertEqual(orfao["context_pct"], 3)
+        self.assertIn("3%", orfao["line"])
 
     def test_orfao_ganha_o_contexto_do_rodape_da_tela(self):
         """O contexto de quem nao e o Claude Code so existe na TELA dele.
@@ -578,8 +586,7 @@ class TestePlanos(unittest.TestCase):
             api.modelo_do_orfao("codex", "D:\\vivo")
         self.assertLess(len(api._modelos_cache), antes)
         # A entrada nova sobrevive a propria poda que ela disparou.
-        self.assertEqual(
-            api._modelos_cache[("codex", "D:\\vivo", None)]["valor"], "X")
+        self.assertEqual(api._modelos_cache[("codex", "D:\\vivo")]["valor"], "X")
 
 
 class TesteHealth(unittest.TestCase):

@@ -1,4 +1,5 @@
 #include <unity.h>
+#include <initializer_list>
 #include "acao.h"
 
 void setUp(void) {}
@@ -466,8 +467,126 @@ void test_a_noite_so_acorda(void) {
     TEST_ASSERT_EQUAL(Acao::Nada, act(GestureKind::None, c));
 }
 
+// ---- O quadro de animacao ----
+static CenaAnimacao cena(bool emPe, int page) {
+    CenaAnimacao c;
+    c.emPe = emPe;
+    c.page = page;
+    return c;
+}
+
+static void confere(const QuadroAnimacao &q, bool inteiro, bool parcial,
+                    bool nome, bool turma) {
+    TEST_ASSERT_EQUAL(inteiro, q.inteiro);
+    TEST_ASSERT_EQUAL(parcial, q.parcial);
+    TEST_ASSERT_EQUAL(nome, q.nome);
+    TEST_ASSERT_EQUAL(turma, q.turma);
+}
+
+// Deitado, TODA pagina barata tem o nome no cabecalho e a turma no rodape, e o
+// quadro leva os dois — o passo da turma e o do nome. Foi a pagina 0 fora desta
+// regra que deixou a turma dela lenta, e as outras fora dela, o nome.
+void test_deitado_toda_pagina_barata_leva_nome_e_turma(void) {
+    const int paginas[] = {0, 1, 2, 5, 6};
+    for (int p : paginas) {
+        CenaAnimacao c = cena(false, p);
+        c.avancouFaixa = true;
+        confere(quadroDeAnimacao(c), false, true, true, true);
+        c.avancouFaixa = false;
+        c.avancouNome  = true;
+        confere(quadroDeAnimacao(c), false, true, true, true);
+    }
+}
+
+// Em pe o nome so existe na tela nova; nas outras o canto e do bicho, e o passo
+// do nome nao tem o que mostrar.
+void test_em_pe_so_a_tela_nova_tem_o_nome(void) {
+    CenaAnimacao c = cena(true, 0);
+    c.avancouNome = true;
+    confere(quadroDeAnimacao(c), false, true, true, true);
+
+    c = cena(true, 1);
+    c.avancouFaixa = true;
+    confere(quadroDeAnimacao(c), false, true, false, true);
+    c.avancouFaixa = false;
+    c.avancouNome  = true;
+    confere(quadroDeAnimacao(c), false, false, false, false);
+}
+
+// O Clawd grande nao cabe na faixa barata: o passo da turma e o quadro inteiro.
+// Deitado o nome ainda tem caminho barato proprio, sem turma.
+void test_o_clawd_grande_pede_a_tela_inteira(void) {
+    for (bool emPe : {true, false}) {
+        CenaAnimacao c = cena(emPe, 3);
+        c.avancouFaixa = true;
+        confere(quadroDeAnimacao(c), true, false, false, false);
+    }
+    CenaAnimacao c = cena(false, 3);
+    c.avancouNome = true;
+    confere(quadroDeAnimacao(c), false, true, true, false);
+    c.emPe = true;
+    confere(quadroDeAnimacao(c), false, false, false, false);
+}
+
+// A pagina do nivel nao anima nada — deitado, menos o nome do cabecalho, que e o
+// mesmo de toda pagina e parava nela.
+void test_o_nivel_so_anima_o_nome_deitado(void) {
+    CenaAnimacao c = cena(false, 4);
+    c.avancouFaixa = true;
+    confere(quadroDeAnimacao(c), false, false, false, false);
+    c.avancouNome = true;
+    confere(quadroDeAnimacao(c), false, true, true, false);
+
+    c.emPe = true;
+    confere(quadroDeAnimacao(c), false, false, false, false);
+}
+
+// A tela do Token (ou do servidor fora) toma o painel em qualquer pagina e nao
+// tem turma. Em pe o canto do cabecalho e o bicho, e anda com a faixa; deitado o
+// cabecalho e o nome, e anda com o passo dele.
+void test_a_tela_de_bicho_nao_tem_turma(void) {
+    for (int p : {0, 1, 3, 4}) {
+        CenaAnimacao c = cena(true, p);
+        c.telaBicho    = true;
+        c.avancouFaixa = true;
+        confere(quadroDeAnimacao(c), false, true, false, false);
+
+        c = cena(false, p);
+        c.telaBicho    = true;
+        c.avancouFaixa = true;
+        confere(quadroDeAnimacao(c), false, false, false, false);
+        c.avancouNome = true;
+        confere(quadroDeAnimacao(c), false, true, true, false);
+    }
+}
+
+// A danca do reset tem quadro proprio (ui::redrawReset), e ganha de tudo.
+void test_o_reset_tem_caminho_proprio(void) {
+    for (int p : {0, 1, 3}) {
+        CenaAnimacao c = cena(true, p);
+        c.reset        = true;
+        c.telaBicho    = true;
+        c.avancouFaixa = true;
+        c.avancouNome  = true;
+        confere(quadroDeAnimacao(c), false, false, false, false);
+    }
+}
+
+void test_sem_passo_nao_ha_quadro(void) {
+    for (bool emPe : {true, false})
+        for (int p = 0; p < 7; p++)
+            confere(quadroDeAnimacao(cena(emPe, p)), false, false, false, false);
+}
+
 int main(int, char **) {
     UNITY_BEGIN();
+    RUN_TEST(test_deitado_toda_pagina_barata_leva_nome_e_turma);
+    RUN_TEST(test_em_pe_so_a_tela_nova_tem_o_nome);
+    RUN_TEST(test_o_clawd_grande_pede_a_tela_inteira);
+    RUN_TEST(test_o_nivel_so_anima_o_nome_deitado);
+    RUN_TEST(test_a_tela_de_bicho_nao_tem_turma);
+    RUN_TEST(test_o_reset_tem_caminho_proprio);
+    RUN_TEST(test_sem_passo_nao_ha_quadro);
     RUN_TEST(test_swipe_anda_entre_as_paginas);
     RUN_TEST(test_swipe_vale_em_pe_tambem);
     RUN_TEST(test_o_icone_do_cabecalho_ganha_de_tudo);

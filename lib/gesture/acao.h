@@ -152,3 +152,31 @@ int paginaVizinha(int page, int paginas, int passo);
 // passou a redesenhar a tela inteira a cada passo da turma, o Clawd grande
 // parou de andar, e a turma passou a ser desenhada por cima da pagina do nivel.
 bool paginaDeBicho(int page);
+
+// ---- O quadro de animacao ----
+// O que uma volta do laco repinta quando algo que anima deu um passo: a turma
+// (e o bicho do canto do cabecalho, que anda no mesmo relogio) ou o nome
+// digitando.
+//
+// Pelo mesmo motivo de `paginaDeBicho`: a regra morava no laco, uma pagina por
+// vez, e cada pagina que ficava de fora dela animava devagar sem ninguem notar —
+// a turma da pagina 0 deitada, depois o nome das outras paginas deitadas.
+struct CenaAnimacao {
+    bool emPe         = false;
+    int  page         = 0;
+    bool telaBicho    = false;   // a tela do Token ou do servidor fora no ar
+    bool reset        = false;   // a danca do reset no ar
+    bool avancouFaixa = false;   // a turma (e o bicho do canto) deu um passo
+    bool avancouNome  = false;   // o nome digitando deu um passo
+};
+
+struct QuadroAnimacao {
+    bool inteiro = false;   // so o redesenho completo mostra o passo
+    bool parcial = false;   // o quadro barato (ui::redrawAnimacao) mostra
+    // Com `parcial`: o nome digitando entra (em pe ele e o canto do cabecalho;
+    // sem ele, o canto e o bicho) e a turma entra.
+    bool nome  = false;
+    bool turma = false;
+};
+
+QuadroAnimacao quadroDeAnimacao(const CenaAnimacao &c);

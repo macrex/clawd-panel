@@ -127,7 +127,7 @@ def parse_agentes(saida):
         if isinstance(seq, bool) or not isinstance(seq, int):
             seq = None
         # O id da sessao que a CLI informa ao herdr. O Pi poe esse id no nome
-        # do `.jsonl` da sessao, e e assim que modelos.modelo_pi acha o arquivo
+        # do `.jsonl` da sessao, e e assim que modelos.rodape_pi acha o arquivo
         # sem adivinhar por cwd. Vazio quando o herdr nao sabe.
         sessao = a.get("agent_session")
         sessao = sessao.get("value") if isinstance(sessao, dict) else None

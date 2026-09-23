@@ -65,7 +65,7 @@ class TesteParse(unittest.TestCase):
             self.assertIsNone(herdr.parse_agentes(s)[0]["seq"], repr(cru))
 
     def test_id_da_sessao_e_guardado(self):
-        # E por ele que o Pi casa o pane com o `.jsonl` dele (modelos.modelo_pi).
+        # E por ele que o Pi casa o pane com o `.jsonl` dele (modelos.rodape_pi).
         s = ('{"result":{"agents":[{"pane_id":"w1:p1","agent_status":"idle",'
              '"agent_session":{"agent":"pi","kind":"id","value":"01a0"}}]}}')
         self.assertEqual(herdr.parse_agentes(s)[0]["agent_session"], "01a0")

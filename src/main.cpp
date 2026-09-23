@@ -345,7 +345,7 @@ bool telaResetAtiva(uint32_t now) {
 //
 // Ela morre pelo RELOGIO, e nao por um toque, e essa e a diferenca que custou
 // um defeito: sem ninguem pedindo o redesenho completo no instante da saida, a
-// tela dele ficava no ar e o redrawBadge — que volta a desenhar a turma assim
+// tela dele ficava no ar e o redrawAnimacao — que volta a desenhar a turma assim
 // que ela nao esta mais ativa — ia pintando os quatro por cima da cabeca dele.
 // Os icones voltavam antes do resto da tela.
 bool resetEstavaAtiva = false;
@@ -661,7 +661,7 @@ void loop() {
     // MEDIDO na placa pelo `pulso` (contador de voltas a cada 5 s): com este
     // delay em 20 ms a volta inteira custava ~58 ms, e nao os ~20 que o numero
     // sugeria — o resto e o trabalho de toda volta (leitura de toque, poll de
-    // rede, e o `redrawBadge` da fileira, que dispara quase toda volta agora
+    // rede, e o `redrawAnimacao` da fileira, que dispara quase toda volta agora
     // que os sprites pedem 50 ms por quadro). Baixar para 8 ms nao muda esse
     // trabalho: so devolve os 12 ms que o `delay` estava segurando a toa,
     // levando a volta para ~46 ms e o toque de ~17 para ~22 leituras por
@@ -1511,13 +1511,41 @@ void animarClawd(uint32_t now, bool dedoNaTela, bool &redraw) {
         // 5 s pelo `pulso` (ver enviosFaixaJanela()).
         if (avancouFaixa) g_enviosFaixa++;
         // O nome da tela nova digita no proprio relogio. Anda sempre, pela
-        // mesma regra dos contadores da turma; so vira quadro na pagina 0 em
-        // pe, onde ele esta em cena.
+        // mesma regra dos contadores da turma; onde ele vira quadro, quem diz
+        // e `quadroDeAnimacao`.
         const bool avancouNome = ui::tickNome(now);
 
+        // A saida da tela do Cartman pede a tela inteira de volta, e pede
+        // ANTES de qualquer redesenho parcial deste ciclo.
+        if (page != 4 && resetAcabouAgora(now)) redraw = true;
+
+        // O que este passo repinta: a MESMA regra para toda pagina, tela e
+        // orientacao, e ela mora em lib/gesture, com teste (ver
+        // quadroDeAnimacao). O quadro barato e o mesmo em todas (ver
+        // ui::redrawAnimacao): em pe a turma esta SEMPRE no topo, e a faixa
+        // barata do flush a alcanca por ~11 ms; deitado o nome e a turma saem
+        // num envio de colunas.
+        //
+        // Na tela do RESET o quadro barato nao roda: os 50 mil pixels que ele
+        // enviaria ja vao dentro do prefixo do `redrawReset`, e o bicho do
+        // cabecalho e desenhado la — pagar um envio proprio seria tirar 6 ms
+        // de um orcamento de 70.
+        if (!redraw) {
+            CenaAnimacao cena;
+            cena.emPe         = emPe;
+            cena.page         = page;
+            cena.telaBicho    = telaTokenAtiva() || clawdDorme(now);
+            cena.reset        = telaResetAtiva(now);
+            cena.avancouFaixa = avancouFaixa;
+            cena.avancouNome  = avancouNome;
+            const QuadroAnimacao q = quadroDeAnimacao(cena);
+            if (q.inteiro)      redraw = true;
+            else if (q.parcial) ui::redrawAnimacao(last, staleSec, q);
+        }
+
         if (page == 4) {
-            // A PAGINA DO NIVEL nao anima NADA, e por isso este ramo esta
-            // vazio de proposito.
+            // A PAGINA DO NIVEL nao anima mais NADA alem do nome deitado (o
+            // quadro acima), e por isso este ramo esta vazio de proposito.
             //
             // Ela animava o bicho do nivel e o fundo — as duas coisas que a
             // pagina existia para mostrar —, e os dois sairam com os
@@ -1526,55 +1554,11 @@ void animarClawd(uint32_t now, bool dedoNaTela, bool &redraw) {
             //
             // O mago e o bicho do clima continuam parados aqui pela razao
             // de sempre: cada quadro deles custaria um flush de tela
-            // INTEIRA para mexer um enfeite de canto. O resultado de `tick`
-            // segue ignorado pelo mesmo motivo — nada do que ele avanca
-            // aparece nesta pagina.
+            // INTEIRA para mexer um enfeite de canto.
         } else {
-            // A saida da tela do Cartman pede a tela inteira de volta, e
-            // pede ANTES de qualquer redesenho parcial deste ciclo.
-            if (resetAcabouAgora(now)) redraw = true;
-
-            if ((avancouFaixa || (avancouNome && page == 0)) && !redraw) {
-                const bool bichoDeitado =
-                    !emPe && (telaTokenAtiva() || clawdDorme(now));
-                if (caro) {
-                    redraw = true;
-                } else if (bichoDeitado) {
-                    // DEITADO, com uma tela de bicho no ar, nao ha redesenho
-                    // parcial: o cabecalho dela e o da tela nova (o nome
-                    // digitando), e `redrawBadge` pintaria o bicho do
-                    // cabecalho por cima do nome — o defeito de 28/08 de
-                    // volta. O topo continua andando junto com o quadro do
-                    // bicho, que ja pede a tela inteira a cada 900 ms.
-                } else if (page == 0 && !telaTokenAtiva() &&
-                           !clawdDorme(now) && !telaResetAtiva(now)) {
-                    // O topo da tela nova e outro desenho — o nome digitando,
-                    // mais a fileira com o bicho no centro quando em pe. Vale
-                    // nas DUAS orientacoes: deitado, `redrawBadge` pintaria o
-                    // bicho do cabecalho em (14,40), que nesta tela e onde o
-                    // NOME esta escrito.
-                    ui::redrawTopoNova(last, staleSec);
-                } else if (!telaResetAtiva(now)) {
-                    // Em pe a turma esta SEMPRE no topo nas paginas
-                    // baratas — a inicial e a de contexto usam o mesmo
-                    // lugar (ver ui.cpp, R1_C1_Y) —, e a faixa barata do
-                    // flush a alcanca nas duas: ~11 ms por quadro.
-                    // A tela do Token e a excecao: la o topo e da cabeca
-                    // do bicho, e sem isto o redrawBadge pintava a turma
-                    // por cima dela.
-                    //
-                    // Na tela do RESET este caminho nao roda: os 50 mil
-                    // pixels que ele enviaria ja vao dentro do prefixo do
-                    // `redrawReset`, e o bicho do cabecalho e desenhado la
-                    // — pagar um envio proprio seria tirar 6 ms de um
-                    // orcamento de 70.
-                    ui::redrawBadge(last, staleSec,
-                                    telaTokenAtiva() || clawdDorme(now));
-                }
-            }
             // O bicho do CLIMA e caso a parte, e caro. Ele vive no
             // cabecalho, fora da faixa do flush de prefixo, entao
-            // `redrawBadge` nao o alcanca: so um redesenho INTEIRO o
+            // `redrawAnimacao` nao o alcanca: so um redesenho INTEIRO o
             // mostra.
             //
             // Em pe ele nao esta na tela (o cabecalho la e so o bicho e a

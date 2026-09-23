@@ -1,6 +1,7 @@
 #pragma once
 #include "status.h"
 #include "nivel.h"
+#include "acao.h"     // QuadroAnimacao: o que um passo da animacao repinta
 #include <string>
 
 namespace ui {
@@ -102,15 +103,6 @@ void valoresAjustes(const ValoresAjustes &v);
 // conhecida: `known` falso nao estoura nada.
 bool limiteEstourado(const Status &s);
 
-// Redesenha SO o selo do rodape e envia so a faixa esquerda da tela.
-//
-// Custa ~9 ms contra os ~64 ms de um redesenho completo, e e isso que torna a
-// animacao do rodape viavel. So funciona porque o selo mora na faixa esquerda:
-// ver display::flushPrefix.
-// `semTurma` e a tela do Token no ar: o cabecalho continua animando, mas a
-// faixa da turma pertence a cabeca do bicho e nao pode ser redesenhada.
-void redrawBadge(const Status &s, int staleSeconds, bool semTurma = false);
-
 // O relogio da animacao do nome da tela nova: o CLAUDINHO se escreve letra a
 // letra, o cursor pisca sobre o nome completo e o ciclo recomeca. Devolve true
 // quando o quadro mudou — e ai o topo precisa ser reenviado.
@@ -120,11 +112,18 @@ void redrawBadge(const Status &s, int staleSeconds, bool semTurma = false);
 // contadores da turma em clawd::tick).
 bool tickNome(uint32_t nowMs);
 
-// Um quadro do TOPO da tela nova — nome digitando, hora e a fileira com o
-// bicho no centro — enviado pelo prefixo barato (as primeiras 106 linhas).
-// E o irmao do redrawBadge para a pagina 0 em pe, onde o canto esquerdo e do
-// nome e a turma tem uma fatia a mais.
-void redrawTopoNova(const Status &s, int staleSeconds);
+// O QUADRO DE ANIMACAO: repinta so o que anima — o canto do cabecalho (o nome
+// digitando ou o bicho) e a turma — pelos MESMOS moldes do desenho completo, e
+// envia so a faixa que os contem (ver display::flushPrefix). O que entra no
+// quadro vem de `quadroDeAnimacao` (lib/gesture/acao.h).
+//
+// EM PE a faixa e o topo: 106 linhas com a turma, ~11 ms; sem ela (a tela do
+// Token ou do servidor fora), so ate a divisoria do cabecalho. Com `q.nome` o
+// canto e o nome e a turma tem o bicho no centro (a tela nova).
+// DEITADO o nome mora no cabecalho e a turma no rodape, e o envio e de colunas
+// ate o que acabar mais a direita: ~194 so com o nome, ~290 com a turma, contra
+// as 480 (~48 ms) de um redesenho completo.
+void redrawAnimacao(const Status &s, int staleSeconds, const QuadroAnimacao &q);
 
 // Um quadro do bicho da tela de RESET, sem repintar o resto dela.
 //
@@ -133,7 +132,7 @@ void redrawTopoNova(const Status &s, int staleSeconds);
 // e os 48 do flush inteiro que o desenho completo paga. So vale depois que a
 // tela ja foi desenhada por inteiro uma vez: os dois textos de baixo vem de la.
 // O bicho do cabecalho vai junto, porque cai dentro do mesmo prefixo — enquanto
-// esta tela esta no ar, `redrawBadge` nao deve ser chamado.
+// esta tela esta no ar, `redrawAnimacao` nao deve ser chamado.
 //
 // Medido na placa com a danca antiga do Cartman, de caixa 262x240: 14,6 ms de
 // desenho e 29,9 de envio, contra os 70 ms que aquele arquivo dava por quadro.

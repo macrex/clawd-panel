@@ -4,12 +4,12 @@
 namespace provedores {
 namespace {
 
-// A arte destes tres icones sai dos SVGs oficiais, versionados em
+// A arte destes icones sai dos SVGs oficiais, versionados em
 // `sprites/sources/marcas/`. Nenhum deles foi redesenhado a mao: os arrays
 // abaixo SAO a saida de `python tools\build_icone_provedor.py`, e mexer neles
 // aqui e perder a mudanca no proximo compilador que alguem rodar — a receita de
 // cada marca (como recortar, em que altura, com qual reducao) mora la, porque
-// as tres sao diferentes e o porque de cada diferenca esta comentado nos dois
+// elas sao diferentes e o porque de cada diferenca esta comentado nos dois
 // lugares.
 //
 // O que esta guardado aqui e a MASCARA, nao a cor: quem desenha mistura a cor
@@ -115,7 +115,7 @@ const uint8_t LOGO_PI[] = {
 };
 
 // ---- Ollama (o reserva) ----
-// A lhama do Ollama vale por QUALQUER CLI que nao seja uma das tres de cima:
+// A lhama do Ollama vale por QUALQUER CLI que nao seja uma das de cima:
 // nao ha arte por marca para as dezenove que o herdr reconhece, e um grupo sem
 // icone nenhum lia como defeito do painel (medido com uma sessao do qwen).
 //

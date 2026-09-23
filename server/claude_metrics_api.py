@@ -958,14 +958,10 @@ def _podar_modelos(agora):
         _modelos_cache.pop(chave, None)
 
 
-def modelo_do_orfao(agente, cwd, sessao=None):
-    """O modelo de um agente que so o herdr enxerga. None quando nao se sabe.
-
-    `sessao` e o `agent_session` do herdr. So o Pi usa, mas ele entra na chave
-    do cache: dois Pi na mesma pasta sao duas sessoes com modelos diferentes.
-    """
+def modelo_do_orfao(agente, cwd):
+    """O modelo de um agente que so o herdr enxerga. None quando nao se sabe."""
     global _sondas_falhas
-    chave = (agente, cwd, sessao)
+    chave = (agente, cwd)
     agora = _now()
     with _cache_lock:
         c = _modelos_cache.get(chave)
@@ -992,8 +988,6 @@ def modelo_do_orfao(agente, cwd, sessao=None):
         # certo — pior do que "—".
         elif agente == "agy":
             v = modelos.modelo_antigravity(cwd)
-        elif agente == "pi":
-            v = modelos.modelo_pi(sessao)
         else:
             v = None
     except Exception:
@@ -1015,7 +1009,7 @@ def modelo_do_orfao(agente, cwd, sessao=None):
     return v
 
 
-def tela_do_orfao(pane_id):
+def tela_do_orfao(pane_id, agente="", sessao=None):
     """O rodape da tela de um pane: `{"model", "context_pct"}`, ou `{}`.
 
     A sonda irma de `modelo_do_orfao`, e ela existe porque as CLIs da familia
@@ -1033,6 +1027,12 @@ def tela_do_orfao(pane_id):
     para os dois nunca colidirem: e a mesma pergunta ("o que da para saber de um
     agente que so o herdr enxerga?"), feita a cada /status, e um cache proprio
     seria a segunda copia da mesma trava.
+
+    O PI e a excecao, e por isso `agente` e `sessao`: o rodape que ele desenha
+    muda com o tema e as extensoes, e nao escreve o `context N% used` que o
+    parser procura — a barra de contexto dele ficava vazia. Os mesmos dois
+    numeros saem do arquivo da sessao dele, pelo id que o herdr informa (ver
+    `modelos.rodape_pi`).
     """
     global _sondas_falhas
     if not pane_id:
@@ -1046,8 +1046,11 @@ def tela_do_orfao(pane_id):
 
     falhou = False
     try:
-        v = modelos.rodape_da_tela(
-            herdr.ler_pane(pane_id, linhas=3, source="visible"))
+        if agente == "pi":
+            v = modelos.rodape_pi(sessao)
+        else:
+            v = modelos.rodape_da_tela(
+                herdr.ler_pane(pane_id, linhas=3, source="visible"))
     except Exception:
         # Mesmo cinto de seguranca de `modelo_do_orfao`, e pelo mesmo motivo: um
         # defeito na sonda nao pode derrubar o /status, mas tem que deixar
@@ -1162,11 +1165,11 @@ def build_agents(live_items, retrato=None):
         estado = DO_HERDR.get(a["state"], UNKNOWN)
         # O modelo do orfao vem do disco da CLI dele — ver modelos.py. Era None
         # fixo, e o card desenhava "-" para todo agente que nao fosse o Claude.
-        modelo_orfao = modelo_do_orfao(a["agent"], a["cwd"],
-                                       a.get("agent_session"))
+        modelo_orfao = modelo_do_orfao(a["agent"], a["cwd"])
         # O rodape da tela dele, quando a CLI escreve um. E de onde sai o
         # contexto — e o modelo, para as CLIs que nao gravam turno em disco.
-        rodape = tela_do_orfao(a["pane_id"])
+        rodape = tela_do_orfao(a["pane_id"], a["agent"],
+                               a.get("agent_session"))
         ctx_orfao = rodape.get("context_pct")
         agents.append({
             "session_id": a["pane_id"],

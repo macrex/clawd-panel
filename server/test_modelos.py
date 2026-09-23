@@ -733,7 +733,7 @@ class TestModeloAntigravity(_ComRaiz):
                          "Gemini 3.7 Flash")
 
 
-class TestModeloPi(_ComRaiz):
+class TestRodapePi(_ComRaiz):
     ID = "01a0cbe0-2752-75ef-90fe-054ed0537b78"
 
     def _sessao(self, sessao, *linhas, pasta="--D--workspace_cd-sigad--"):
@@ -746,16 +746,36 @@ class TestModeloPi(_ComRaiz):
                                for l in linhas))
         return f
 
+    def _json(self, nome, conteudo):
+        with open(os.path.join(self.raiz, nome), "w", encoding="utf-8") as fh:
+            fh.write(conteudo if isinstance(conteudo, str)
+                     else json.dumps(conteudo))
+
+    def _janela(self, modelo="deepseek-flash", janela=1_000_000,
+                provedor="deepseek"):
+        """O catalogo que o Pi baixa (models-store.json), com uma janela."""
+        self._json("models-store.json", {provedor: {"models": [
+            {"id": modelo, "contextWindow": janela}]}})
+
+    def rodape(self, *sessao):
+        return modelos.rodape_pi(sessao[0] if sessao else self.ID,
+                                 raiz=self.raiz)
+
     @staticmethod
     def troca(modelo):
         return {"type": "model_change", "provider": "deepseek",
                 "modelId": modelo}
 
     @staticmethod
-    def resposta(modelo):
+    def resposta(modelo, tokens=0, parou="stop"):
         return {"type": "message",
                 "message": {"role": "assistant", "provider": "deepseek",
-                            "model": modelo}}
+                            "model": modelo, "stopReason": parou,
+                            "usage": {"input": 2963, "output": 835,
+                                      "cacheRead": 27264, "cacheWrite": 0,
+                                      "totalTokens": tokens}}}
+
+    # ---- o modelo ----
 
     def test_acha_o_modelo_pelo_id_da_sessao(self):
         self._sessao(self.ID, {"type": "session", "cwd": r"D:\x"},
@@ -763,67 +783,113 @@ class TestModeloPi(_ComRaiz):
                      self.resposta("deepseek-flash"))
         # Outra sessao na MESMA pasta, com outro modelo: o id e que decide.
         self._sessao("outra", self.troca("qwen3.6-coding"))
-        self.assertEqual(modelos.modelo_pi(self.ID, raiz=self.raiz),
-                         "Deepseek Flash")
+        self.assertEqual(self.rodape()["model"], "Deepseek Flash")
 
     def test_o_que_vier_por_ultimo_vale(self):
         # `/model` sem mensagem depois: a troca e o modelo selecionado.
         self._sessao(self.ID, self.troca("deepseek-flash"),
                      self.resposta("deepseek-flash"),
                      self.troca("qwen3.6-coding"))
-        self.assertEqual(modelos.modelo_pi(self.ID, raiz=self.raiz),
-                         "Qwen3.6 Coding")
+        self.assertEqual(self.rodape()["model"], "Qwen3.6 Coding")
 
     def test_a_resposta_mais_nova_tambem_vale(self):
         self._sessao(self.ID, self.troca("deepseek-flash"),
                      self.resposta("deepseek-pro"))
-        self.assertEqual(modelos.modelo_pi(self.ID, raiz=self.raiz),
-                         "Deepseek Pro")
+        self.assertEqual(self.rodape()["model"], "Deepseek Pro")
 
-    def test_id_ausente_ou_com_curinga_e_none(self):
+    def test_id_ausente_ou_com_curinga_e_vazio(self):
         # O id vai para dentro de um glob: `*` casaria qualquer sessao.
         self._sessao(self.ID, self.troca("deepseek-flash"))
         for ruim in (None, "", "*", "?" * 36, "[0]*", "../x", 5):
-            self.assertIsNone(modelos.modelo_pi(ruim, raiz=self.raiz),
-                              repr(ruim))
+            self.assertEqual(self.rodape(ruim), {}, repr(ruim))
 
-    def _settings(self, **campos):
-        with open(os.path.join(self.raiz, "settings.json"), "w",
-                  encoding="utf-8") as fh:
-            json.dump(campos, fh)
-
-    def test_sessao_sem_arquivo_e_sem_settings_e_none(self):
-        self.assertIsNone(modelos.modelo_pi(self.ID, raiz=self.raiz))
+    def test_sessao_sem_arquivo_e_sem_settings_nao_sabe_nada(self):
+        self.assertEqual(self.rodape(), {"model": None, "context_pct": None})
 
     def test_sessao_nova_sem_resposta_usa_o_padrao_do_settings(self):
         # O Pi so cria o `.jsonl` na primeira resposta; ate la o modelo da
         # sessao e o `defaultModel`, que todo `/model` regrava.
-        self._settings(defaultProvider="deepseek", defaultModel="deepseek-flash")
-        self.assertEqual(modelos.modelo_pi(self.ID, raiz=self.raiz),
-                         "Deepseek Flash")
+        self._json("settings.json", {"defaultProvider": "deepseek",
+                                     "defaultModel": "deepseek-flash"})
+        self.assertEqual(self.rodape(),
+                         {"model": "Deepseek Flash", "context_pct": None})
 
     def test_o_arquivo_da_sessao_ganha_do_settings(self):
-        self._settings(defaultModel="qwen3.6-coding")
+        self._json("settings.json", {"defaultModel": "qwen3.6-coding"})
         self._sessao(self.ID, self.troca("deepseek-flash"))
-        self.assertEqual(modelos.modelo_pi(self.ID, raiz=self.raiz),
-                         "Deepseek Flash")
+        self.assertEqual(self.rodape()["model"], "Deepseek Flash")
 
     def test_settings_podre_nao_levanta(self):
         for cru in ("nao e json", "[]", '{"defaultModel": 7}'):
-            with open(os.path.join(self.raiz, "settings.json"), "w",
-                      encoding="utf-8") as fh:
-                fh.write(cru)
-            self.assertIsNone(modelos.modelo_pi(self.ID, raiz=self.raiz),
-                              repr(cru))
+            self._json("settings.json", cru)
+            self.assertIsNone(self.rodape()["model"], repr(cru))
 
     def test_linhas_podres_nao_levantam(self):
         self._sessao(self.ID, self.troca("deepseek-flash"), "nao e json", "[]",
                      {"type": "message", "message": ["x"]},
                      {"type": "message", "message": {"role": "user",
                                                      "model": "x"}},
+                     {"type": "message", "message": {"role": "assistant",
+                                                     "usage": [1, 2]}},
                      {"type": "model_change", "modelId": 7})
-        self.assertEqual(modelos.modelo_pi(self.ID, raiz=self.raiz),
-                         "Deepseek Flash")
+        self.assertEqual(self.rodape()["model"], "Deepseek Flash")
+
+    # ---- o contexto ----
+
+    def test_contexto_e_o_uso_da_ultima_resposta_sobre_a_janela(self):
+        # A conta do proprio Pi (getContextUsage): 31062 de 1M e 3%, o numero
+        # que o rodape dele mostrava na mesma hora.
+        self._janela()
+        self._sessao(self.ID, self.resposta("deepseek-flash", 5000),
+                     self.resposta("deepseek-flash", 31062))
+        self.assertEqual(self.rodape()["context_pct"], 3)
+
+    def test_sem_total_soma_as_quatro_parcelas(self):
+        # `calculateContextTokens`: totalTokens, ou a soma quando ele falta.
+        self._janela(janela=100_000)
+        self._sessao(self.ID, self.resposta("deepseek-flash", 0))
+        self.assertEqual(self.rodape()["context_pct"], 31)   # 31062 / 100k
+
+    def test_resposta_abortada_ou_com_erro_nao_mede(self):
+        self._janela(janela=100_000)
+        self._sessao(self.ID, self.resposta("deepseek-flash", 10_000),
+                     self.resposta("deepseek-flash", 90_000, parou="aborted"),
+                     self.resposta("deepseek-flash", 80_000, parou="error"))
+        self.assertEqual(self.rodape()["context_pct"], 10)
+
+    def test_depois_de_compactar_o_uso_velho_nao_vale(self):
+        # O uso da resposta de antes mede o contexto de ANTES da compactacao.
+        self._janela(janela=100_000)
+        self._sessao(self.ID, self.resposta("deepseek-flash", 90_000),
+                     {"type": "compaction"})
+        self.assertIsNone(self.rodape()["context_pct"])
+        self._sessao(self.ID, self.resposta("deepseek-flash", 90_000),
+                     {"type": "compaction"},
+                     self.resposta("deepseek-flash", 12_000))
+        self.assertEqual(self.rodape()["context_pct"], 12)
+
+    def test_janela_de_provedor_proprio_vem_do_models_json(self):
+        # Modelo local (llama.cpp, Ollama): a janela esta no models.json que a
+        # pessoa escreveu, e nao no catalogo baixado.
+        self._json("models.json", {"providers": {"llamacpp": {"models": [
+            {"id": "qwen3.6-coding-mtp", "contextWindow": 65536}]}}})
+        r = self.resposta("qwen3.6-coding-mtp", 32768)
+        r["message"]["provider"] = "llamacpp"
+        self._sessao(self.ID, r)
+        self.assertEqual(self.rodape()["context_pct"], 50)
+
+    def test_sem_janela_conhecida_nao_ha_contexto(self):
+        self._sessao(self.ID, self.resposta("deepseek-flash", 31062))
+        self.assertIsNone(self.rodape()["context_pct"])
+        for cru in ("nao e json", "[]", '{"deepseek": {"models": [{"id": '
+                    '"deepseek-flash", "contextWindow": "1M"}]}}'):
+            self._json("models-store.json", cru)
+            self.assertIsNone(self.rodape()["context_pct"], repr(cru))
+
+    def test_contexto_passado_de_cem_fica_em_cem(self):
+        self._janela(janela=1000)
+        self._sessao(self.ID, self.resposta("deepseek-flash", 5000))
+        self.assertEqual(self.rodape()["context_pct"], 100)
 
 
 class TestBlobCitaPasta(unittest.TestCase):

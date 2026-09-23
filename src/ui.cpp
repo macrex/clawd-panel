@@ -32,6 +32,9 @@ void drawTelaBichoDeitado(Arduino_Canvas *g, const Status &s, int staleSeconds,
                           int larg, int alt, int num, int den,
                           bool (*desenhar)(Arduino_Canvas *, int, int, int, int),
                           const char *frase, const char *sub);
+// Onde o nome do cabecalho deitado termina — o nome e desenhado pelo codigo em
+// pe (drawNomeCabecalho), e a conta usa as constantes da paisagem.
+int limiteDoNomeDeitado(const Status &s);
 }
 
 namespace {
@@ -280,18 +283,36 @@ void drawLogo(Arduino_Canvas *g, int x, int y, int sx, uint16_t color) {
                 g->fillRect(x + c * sx, y + r * sy, sx, sy, color);
 }
 
-
+// A turma DEITADA, no canto inferior esquerdo do rodape, limpa e redesenhada. O
+// rodape completo (drawFooter) e o quadro de animacao (ui::redrawAnimacao) passam
+// os dois por aqui, e por isso ela e a mesma em toda tela deitada.
+//
+// Tres bichos animados, so o da esquerda falando de estado (ver clawd.h). Todos
+// pisam na MESMA linha, e nao centrados: os quadros tem alturas diferentes e
+// centrar faria cada um flutuar na sua. O logo antigo carregava a cor da pior
+// metrica; essa informacao migrou para o cabecalho, com numero e tudo. Sem o
+// cartao, cai no logo de sempre — laranja, ja que o papel de indicador nao e
+// mais dele.
+//
+// Devolve onde a turma termina (x), para o rodape saber ate onde ela vai e o
+// quadro de animacao ate onde enviar; zero quando o que ficou foi o logo, que
+// nao anima.
+int drawTurmaDeitada(Arduino_Canvas *g) {
+    const int chao = SCREEN_H - 8;
+    const int w = clawd::crewW();
+    const int h = clawd::crewH();
+    // Limpa a faixa INTEIRA antes de blitar. O blit pula os pixels
+    // transparentes, entao sem limpar os quadros se acumulam uns sobre os
+    // outros. E a caixa maxima da fileira, e nao a do quadro atual, para que
+    // trocar de animacao nao deixe resto da anterior.
+    if (w && h) g->fillRect(14, chao - h, w, h, BG);
+    if (w && clawd::drawCrewInto(g, 14, chao)) return 14 + w;
+    const int fs = 3;
+    drawLogo(g, 14, chao - logoH(fs) - 6, fs, g_stale ? MUTED : LARANJA);
+    return 0;
+}
 
 void drawFooter(Arduino_Canvas *g, const Status &s, int page, int staleSeconds) {
-    // A turma no lugar do logo: tres bichos animados, so o da esquerda falando
-    // de estado (ver clawd.h). Todos pisam na MESMA linha, e nao centrados: os
-    // quadros tem alturas diferentes e centrar faria cada um flutuar na sua.
-    //
-    // O logo antigo carregava a cor da pior metrica; essa informacao migrou
-    // para o cabecalho, com numero e tudo. Sem o cartao, cai no logo de sempre
-    // — laranja, ja que o papel de indicador nao e mais dele.
-    const int chao = SCREEN_H - 8;
-
     // Fora das paginas de bicho grande: nelas o caranguejo ja ocupa a tela
     // inteira e o trio seria o mesmo desenho de novo. Na do nivel o rodape
     // ainda e usado — pela barra de XP, que precisa da largura toda.
@@ -299,11 +320,7 @@ void drawFooter(Arduino_Canvas *g, const Status &s, int page, int staleSeconds) 
     // A TELA NOVA TEM a fileira, no mesmo canto inferior esquerdo das outras.
     // Ela saiu do MIOLO — que era onde ela morava em pe, e onde deitado ela
     // custaria caro e roubaria o espaco dos aneis —, nao do painel.
-    if (!paginaDeBicho(page)) {
-        const int fs = 3;
-        if (!clawd::crewW() || !clawd::drawCrewInto(g, 14, chao))
-            drawLogo(g, 14, chao - logoH(fs) - 6, fs, g_stale ? MUTED : LARANJA);
-    }
+    const int turmaFim = paginaDeBicho(page) ? 0 : drawTurmaDeitada(g);
 
     // Passo de 16 e nao os 18 de quando eram cinco: as duas bolinhas novas
     // comeriam 36 px da faixa da idade do dado, que ja divide o rodape com a
@@ -337,8 +354,7 @@ void drawFooter(Arduino_Canvas *g, const Status &s, int page, int staleSeconds) 
     // x=14 para caber na faixa do flush de prefixo (ver display::flushPrefix).
     // So o aviso de contato perdido chega a esse tamanho; a idade normal ("12s")
     // nao tem como encostar em nada.
-    const int trioFim = (!paginaDeBicho(page) && clawd::crewW())
-                            ? 14 + clawd::crewW() : 14;
+    const int trioFim = turmaFim ? turmaFim : 14;
     if (staleSeconds > 0 && dotEsq - 12 - (int)txt.size() * 6 < trioFim + 8)
         txt = textoVetustezCurto(s, staleSeconds);
     // O AVISO DE CARTAO AUSENTE SAIU DAQUI, e a razao dele e que sumiu.
@@ -1973,25 +1989,57 @@ const int R_STATUS_Y   = 462;
 // O tamanho dele mora em lib/layout (`alvoIconeCabecalho`), com o porque das
 // medidas e um teste que as confere contra uma foto da tela real.
 
-// Cabecalho em pe: SO o bicho e a hora, na mesma linha.
-//
-// O nome e a temperatura saem a pedido, e o resultado e melhor do que uma
-// traducao do cabecalho deitado: sem eles a hora cabe em corpo 5 (40 px de
-// altura contra os 24 de la), que e o tamanho que se le do outro lado da sala.
-// O nome tambem nao faz falta como marca — o bicho ja e a marca, e agora ele e
-// tambem o unico controle desta tela.
-void drawHeaderRetrato(Arduino_Canvas *g, const Status &s, int staleSeconds,
-                       bool climaNoCanto = false) {
+// O nome digitando (a tela nova, nas duas orientacoes). Mora mais abaixo, com o
+// relogio da animacao dele; devolve onde a faixa do nome termina.
+int drawNomeCabecalho(Arduino_Canvas *g, const Status &s);
+
+// A hora dos cabecalhos, em corpo 4 nas duas orientacoes. A largura dela e lida
+// por quem desenha a hora e por quem mora a esquerda dela (o nome, o selo VIA,
+// a folhinha): uma conta so, ou o vizinho passa a pisar no primeiro digito.
+const int HORA_SZ = 4;
+int larguraHora(const Clock &c) { return (int)c.hm.size() * 6 * HORA_SZ; }
+
+// O bicho do canto do cabecalho em pe, limpo e redesenhado: ele anima, entao o
+// cabecalho completo, o quadro de animacao (ui::redrawAnimacao) e a danca do reset
+// (ui::redrawReset) passam todos por aqui. Sem arte, o logo.
+void drawBichoCabecalho(Arduino_Canvas *g) {
+    const int iw = clawd::iconW(false);
+    const int ih = clawd::iconH(false);
+    if (iw && ih) {
+        g->fillRect(R_MARG, R_HDR_BASE - ih, iw, ih, BG);
+        clawd::drawIconInto(g, R_MARG, R_HDR_BASE - ih, false);
+    } else {
+        drawLogo(g, R_MARG, R_HDR_BASE - logoH(2) - 4, 2, LARANJA);
+    }
+}
+
+// Quem ocupa o canto esquerdo do cabecalho em pe. E a unica parte do cabecalho
+// que muda de pagina para pagina; a hora, o selo e a divisoria sao os mesmos.
+enum class Canto { Bicho, Clima, Nome };
+
+void drawCantoRetrato(Arduino_Canvas *g, const Status &s, Canto canto) {
     // Na pagina do Clawd em pe o canto e do CLIMA — deitado ele ja mora no
     // cabecalho dessa pagina, e em pe o unico lugar dele e o slot do bicho.
-    if (climaNoCanto && clawd::climaW()) {
+    if (canto == Canto::Clima && clawd::climaW())
         clawd::drawClimaInto(g, R_MARG, R_HDR_BASE - clawd::climaH());
-    } else {
-        const int iw = clawd::iconW(false);
-        const int ih = clawd::iconH(false);
-        if (iw && ih) clawd::drawIconInto(g, R_MARG, R_HDR_BASE - ih, false);
-        else          drawLogo(g, R_MARG, R_HDR_BASE - logoH(2) - 4, 2, LARANJA);
-    }
+    else if (canto == Canto::Nome)
+        drawNomeCabecalho(g, s);
+    else
+        drawBichoCabecalho(g);
+}
+
+// O CABECALHO DE TODAS AS TELAS EM PE: o canto (bicho, clima ou o nome da tela
+// nova) e a hora, na mesma linha.
+//
+// O nome e a temperatura saem a pedido nas paginas com o bicho no canto, e o
+// resultado e
+// melhor do que uma traducao do cabecalho deitado: sem eles a hora cabe em
+// corpo 4, que e o tamanho que se le do outro lado da sala. O nome tambem nao
+// faz falta como marca — o bicho ja e a marca, e agora ele e tambem o unico
+// controle desta tela. A tela nova e a excecao: la o canto e do nome.
+void drawHeaderRetrato(Arduino_Canvas *g, const Status &s, int staleSeconds,
+                       Canto canto = Canto::Bicho) {
+    drawCantoRetrato(g, s, canto);
 
     if (s.clock.known) {
         // Corpo 4, depois de rodar por 5, 4, 3 e 4 de novo na placa.
@@ -2000,22 +2048,21 @@ void drawHeaderRetrato(Arduino_Canvas *g, const Status &s, int staleSeconds,
         // painel. O 3 conviveu bem ate a tela inteira crescer um degrau — ai o
         // relogio ficou o menor elemento do topo. O 4 (32) e o ponto em que
         // ele acompanha sem passar do bicho.
-        const int sz = 4;
-        const int w  = (int)s.clock.hm.size() * 6 * sz;
         g->setTextColor(fgColor());
-        g->setTextSize(sz);
+        g->setTextSize(HORA_SZ);
         // Centrado na ALTURA do cabecalho (0..48), e nao apoiado na base do
         // bicho: apoiado, sobrava todo o respiro em cima e o relogio parecia
         // escorregando para a divisoria.
-        g->setCursor(PANEL_W - R_MARG - w, (R_HDR_LINHA - 8 * sz) / 2);
+        g->setCursor(PANEL_W - R_MARG - larguraHora(s.clock),
+                     (R_HDR_LINHA - 8 * HORA_SZ) / 2);
         g->print(s.clock.hm.c_str());
     }
 
     if (s.viaSlave) {
         // A esquerda do relogio, centrado na faixa: procedencia ao lado da
         // informacao que ela qualifica.
-        const int rw = s.clock.known ? (int)s.clock.hm.size() * 6 * 4 + 10 : 0;
-        const int sw = (s.tag.empty() ? 11 : (int)s.tag.size() + 4) * 6 + 10;
+        const int rw = s.clock.known ? larguraHora(s.clock) + 10 : 0;
+        const int sw = larguraSeloVia(s.tag);
         drawSeloVia(g, PANEL_W - R_MARG - rw - sw, (R_HDR_LINHA - 16) / 2, s.tag);
     }
 
@@ -2479,9 +2526,11 @@ void drawSessoesRetrato(Arduino_Canvas *g, int x, int y, int w, int h,
     }
 }
 
-// A turma e a linha de idade do dado. Nao ha bolinhas de pagina: em pe existe
-// uma pagina so, e um indicador de quatro com uma acesa seria mentira.
-void drawTurmaRetrato(Arduino_Canvas *g) {
+// A turma EM PE, na faixa do topo, limpa e redesenhada, com a divisoria de
+// baixo. O desenho completo de toda pagina e o quadro de animacao
+// (ui::redrawAnimacao) passam os dois por aqui. `comCentro` e a tela nova, onde o
+// bicho do cabecalho desce para o meio da fileira.
+void drawTurmaRetrato(Arduino_Canvas *g, bool comCentro) {
     // A turma se espalha pelos 292 px do card, em quatro fatias iguais, e nao
     // na fileira compacta de larguras variaveis. Medido na placa antes: os vaos
     // entre os quatro eram 47, 45 e 27 px — o ultimo colava no penultimo e
@@ -2492,14 +2541,32 @@ void drawTurmaRetrato(Arduino_Canvas *g) {
     // Em pe isto e de graca: a faixa da turma mora dentro do prefixo de LINHAS
     // (ver drawRetrato), e alargar na horizontal nao muda quantas linhas o flush
     // envia. Deitado seria caro, e por isso la a fileira continua compacta.
-    if (!clawd::crewW(R_CARD_W) ||
-        !clawd::drawCrewInto(g, R_MARG, R_TURMA_CHAO, R_CARD_W))
+    const int cw = clawd::crewW(R_CARD_W);
+    // A caixa com o CENTRO na conta: o bicho do cabecalho pode ser mais baixo
+    // ou mais alto que o trio. Limpar so o trio deixaria resto dele.
+    const int ch = comCentro ? clawd::crewComCentroH() : clawd::crewH();
+    if (cw && ch) g->fillRect(R_MARG, R_TURMA_CHAO - ch, cw, ch, BG);
+    const bool desenhou =
+        cw && (comCentro ? clawd::drawCrewComCentroInto(g, R_MARG, R_TURMA_CHAO,
+                                                        R_CARD_W)
+                         : clawd::drawCrewInto(g, R_MARG, R_TURMA_CHAO,
+                                               R_CARD_W));
+    if (!desenhou)
         drawLogo(g, R_MARG, R_TURMA_CHAO - logoH(3) - 4, 3,
                  g_stale ? MUTED : LARANJA);
     g->drawFastHLine(R_MARG, R_TOPO_FIM, R_CARD_W, TRACK);
 }
 
-void drawStatusRetrato(Arduino_Canvas *g, const Status &s, int staleSeconds) {
+// O rodape EM PE de toda pagina: as bolinhas de pagina no meio e a idade do
+// dado na direita, na mesma linha.
+void drawRodapeRetrato(Arduino_Canvas *g, const Status &s, int page,
+                       int staleSeconds) {
+    for (int i = 0; i < ui::paginas(); i++) {
+        const int cx = PANEL_W / 2 - (ui::paginas() - 1) * 10 + i * 20;
+        if (i == page) g->fillCircle(cx, R_STATUS_Y + 4, 4, fgColor());
+        else           g->drawCircle(cx, R_STATUS_Y + 4, 3, TRACK);
+    }
+
     // O mesmo texto do rodape deitado, e agora literalmente o mesmo codigo (ver
     // lib/metrics/view_model.h). `true` liga o ramo do master fora, que so
     // existe aqui: em pe ha largura para ele, e o rodape nao divide espaco com a
@@ -2691,16 +2758,6 @@ void drawTelaOffline(Arduino_Canvas *g, const Status &s, int staleSeconds) {
     g->setCursor((PANEL_W - (int)sw) / 2, PANEL_H - 68);
     g->print(sub);
     g->setFont();
-}
-
-// As bolinhas de pagina, agora que em pe ha para onde ir. Centradas na linha
-// da idade do dado, que continua na direita.
-void drawBolinhasRetrato(Arduino_Canvas *g, int page) {
-    for (int i = 0; i < ui::paginas(); i++) {
-        const int cx = PANEL_W / 2 - (ui::paginas() - 1) * 10 + i * 20;
-        if (i == page) g->fillCircle(cx, R_STATUS_Y + 4, 4, fgColor());
-        else           g->drawCircle(cx, R_STATUS_Y + 4, 3, TRACK);
-    }
 }
 
 // ---- Pagina de contexto, em pe ----
@@ -3005,8 +3062,9 @@ const char NOME_PAINEL[]   = "CLAUDINHO";
 const int  NOME_SZ         = 3;
 const int  NOME_LEN        = 9;
 // Uma letra a cada 320 ms; nome completo, o cursor pisca por ~2,5 s e o ciclo
-// recomeca. Todos os quadros saem pelo prefixo barato (~11 ms), entao a
-// animacao custa o mesmo que a turma ja paga.
+// recomeca. Todos os quadros saem pelo quadro barato (ui::redrawAnimacao): em
+// pe ~11 ms, junto com a turma; deitado, onde o nome e o cabecalho de toda
+// tela, ~19 ms quando so ele anda.
 const uint32_t NOME_LETRA_MS  = 320;
 const uint32_t NOME_CURSOR_MS = 400;
 const int      NOME_PISCADAS  = 6;      // 6 meias-fases = ~2,4 s de pausa
@@ -3028,11 +3086,33 @@ uint32_t g_nomeMs      = 0;
 //
 // Cortar o cursor em vez de encolher o nome e a escolha certa: o corpo do nome
 // e proporcional ao da hora de proposito, e o cursor e enfeite da digitacao. Na
-// pratica ele pisca ate a oitava letra e some na nona, o que le como "terminou
-// de escrever".
-void drawNomeCabecalho(Arduino_Canvas *g, int xLimite) {
+// pratica, em pe, ele pisca ate a oitava letra e some na nona, o que le como
+// "terminou de escrever". Deitado sobra largura, e ele pisca no fim do nome.
+//
+// Onde o cabecalho deixa de ser do nome: o inicio da hora em pe, o da folhinha
+// deitado (ver ui::limiteDoNomeDeitado). Uma funcao so para as duas, e e ela
+// que o nome consulta — com o desenho completo e o redesenho parcial medindo
+// cada um o seu, o cursor deitado sumia no parcial e o piscar so aparecia no
+// redesenho inteiro, a cada ~2 s.
+int limiteDoNome(const Status &s) {
+    if (!display::retrato()) return ui::limiteDoNomeDeitado(s);
+    if (!s.clock.known) return PANEL_W - R_MARG;
+    return PANEL_W - R_MARG - larguraHora(s.clock) - 6;
+}
+
+// O nome, na faixa dele LIMPA antes: o quadro novo pode ter menos letras que o
+// anterior, e o blit nao apaga nada sozinho. A faixa e o que o nome PODE
+// ocupar — as nove letras e o cursor depois delas, ate o limite, porque passar
+// dele apagaria o primeiro digito da hora. O cabecalho completo e o quadro de
+// animacao (ui::redrawAnimacao) passam os dois por aqui; o fim da faixa volta
+// para o quadro saber ate onde enviar.
+int drawNomeCabecalho(Arduino_Canvas *g, const Status &s) {
+    const int xLimite = limiteDoNome(s);
+    const int maximo  = R_MARG + NOME_LEN * 6 * NOME_SZ + 2 + 4 * NOME_SZ;
+    const int fim     = maximo < xLimite ? maximo : xLimite;
     // Centrado na faixa do cabecalho como a hora (ver drawHeaderRetrato).
     const int y = (R_HDR_LINHA - 8 * NOME_SZ) / 2;
+    if (fim > R_MARG) g->fillRect(R_MARG, y, fim - R_MARG, 8 * NOME_SZ, BG);
     g->setTextColor(LARANJA);
     g->setTextSize(NOME_SZ);
     g->setCursor(R_MARG, y);
@@ -3045,13 +3125,7 @@ void drawNomeCabecalho(Arduino_Canvas *g, int xLimite) {
         if (cx + cw <= xLimite)
             g->fillRect(cx, y, cw, 8 * NOME_SZ, LARANJA);
     }
-}
-
-// Onde o cabecalho da tela nova deixa de ser do nome. E o inicio da hora menos
-// um respiro; sem relogio conhecido, a margem direita.
-int limiteDoNome(const Status &s) {
-    if (!s.clock.known) return PANEL_W - R_MARG;
-    return PANEL_W - R_MARG - (int)s.clock.hm.size() * 6 * 4 - 6;
+    return fim;
 }
 
 // ---- Os aneis de limite ----
@@ -3305,41 +3379,11 @@ void drawFableRetrato(Arduino_Canvas *g, const Status &s) {
     if (fill > 0) g->fillRoundRect(bx, FABLE_Y + 1, fill, 3, 1, cor);
 }
 
-void drawTurmaNova(Arduino_Canvas *g) {
-    if (!clawd::crewW(R_CARD_W) ||
-        !clawd::drawCrewComCentroInto(g, R_MARG, R_TURMA_CHAO, R_CARD_W))
-        drawLogo(g, R_MARG, R_TURMA_CHAO - logoH(3) - 4, 3,
-                 g_stale ? MUTED : LARANJA);
-    g->drawFastHLine(R_MARG, R_TOPO_FIM, R_CARD_W, TRACK);
-}
-
-void drawHeaderNova(Arduino_Canvas *g, const Status &s, int staleSeconds) {
-    drawNomeCabecalho(g, limiteDoNome(s));
-
-    // A hora e o selo VIA sao os mesmos do cabecalho da principal — e a mesma
-    // informacao no mesmo lugar, so o canto esquerdo mudou de dono.
-    if (s.clock.known) {
-        const int sz = 4;
-        const int w  = (int)s.clock.hm.size() * 6 * sz;
-        g->setTextColor(fgColor());
-        g->setTextSize(sz);
-        g->setCursor(PANEL_W - R_MARG - w, (R_HDR_LINHA - 8 * sz) / 2);
-        g->print(s.clock.hm.c_str());
-    }
-    if (s.viaSlave) {
-        const int rw = s.clock.known ? (int)s.clock.hm.size() * 6 * 4 + 10 : 0;
-        const int sw = (s.tag.empty() ? 11 : (int)s.tag.size() + 4) * 6 + 10;
-        drawSeloVia(g, PANEL_W - R_MARG - rw - sw, (R_HDR_LINHA - 16) / 2, s.tag);
-    }
-    g->drawFastHLine(R_MARG, R_HDR_LINHA, R_CARD_W,
-                     staleSeconds > 0 ? C_YELL : TRACK);
-}
-
 void drawRetratoNova(Arduino_Canvas *g, const Status &s, int staleSeconds,
                      int opcaoArmada) {
     g->fillScreen(BG);
-    drawHeaderNova(g, s, staleSeconds);
-    drawTurmaNova(g);
+    drawHeaderRetrato(g, s, staleSeconds, Canto::Nome);
+    drawTurmaRetrato(g, true);
 
     if (!s.online && s.agents.empty() && !s.doCache) {
         g->setTextColor(MUTED);
@@ -3363,8 +3407,7 @@ void drawRetratoNova(Arduino_Canvas *g, const Status &s, int staleSeconds,
                            R_SES_FIM - R_SES_Y, s);
     }
 
-    drawBolinhasRetrato(g, 0);
-    drawStatusRetrato(g, s, staleSeconds);
+    drawRodapeRetrato(g, s, 0, staleSeconds);
 }
 
 void drawRetrato(Arduino_Canvas *g, const Status &s, int staleSeconds,
@@ -3396,7 +3439,7 @@ void drawRetrato(Arduino_Canvas *g, const Status &s, int staleSeconds,
 
     g->fillScreen(BG);
     drawHeaderRetrato(g, s, staleSeconds);
-    drawTurmaRetrato(g);
+    drawTurmaRetrato(g, false);
 
     // `!doCache` pela mesma razao da tela deitada: um retrato do cartao nao pode
     // afirmar que nao ha sessao ativa — ele nem guarda a lista. Aqui ele cede o
@@ -3425,8 +3468,7 @@ void drawRetrato(Arduino_Canvas *g, const Status &s, int staleSeconds,
     }
 
     // Pagina 1 agora: a tela nova tomou a bolinha da frente.
-    drawBolinhasRetrato(g, 1);
-    drawStatusRetrato(g, s, staleSeconds);
+    drawRodapeRetrato(g, s, 1, staleSeconds);
 }
 }  // namespace
 
@@ -4105,6 +4147,19 @@ void drawFolhinha(Arduino_Canvas *g, int x, int y, const Clock &c) {
     g->setTextSize(1);
 }
 
+// Onde a folhinha comeca: a esquerda da hora, com o vao entre as duas. Quem
+// desenha a folhinha e quem mede o nome contam a partir daqui.
+int xFolhinha(const Status &s) {
+    return SCREEN_W - L_MARG - larguraHora(s.clock) - FOLHA_GAP - FOLHA_W;
+}
+
+// Onde o nome do cabecalho deitado deixa de ser dele: o comeco do que vem da
+// direita, menos um respiro. Sem relogio conhecido nao ha hora nem folhinha.
+// Ninguem chama direto: e o ramo deitado de `limiteDoNome`.
+int limiteDoNomeDeitado(const Status &s) {
+    return (s.clock.known ? xFolhinha(s) : SCREEN_W - L_MARG) - 8;
+}
+
 // O CABECALHO DE TODAS AS TELAS DEITADAS: o nome digitando a esquerda, a
 // folhinha e a hora a direita.
 //
@@ -4117,20 +4172,14 @@ void drawFolhinha(Arduino_Canvas *g, int x, int y, const Clock &c) {
 // O CANTO CONTINUA SENDO O BOTAO DE GIRAR (ver alvoIconeCabecalho): o alvo
 // cobre o nome inteiro, entao o gesto nao mudou de lugar — mudou de desenho.
 void drawHeaderDeitado(Arduino_Canvas *g, const Status &s, int staleSeconds) {
-    // O limite do nome e onde comeca o que vem da direita. Medido, e nao fixo:
-    // sem relogio conhecido nao ha hora nem folhinha.
-    int esq = SCREEN_W - L_MARG;
-    if (s.clock.known)
-        esq -= (int)s.clock.hm.size() * 6 * 4 + FOLHA_GAP + FOLHA_W;
-    drawNomeCabecalho(g, esq - 8);
+    drawNomeCabecalho(g, s);
 
     if (s.clock.known) {
-        const int w = (int)s.clock.hm.size() * 6 * 4;
         g->setTextColor(fgColor());
-        g->setTextSize(4);
-        g->setCursor(SCREEN_W - L_MARG - w, 6);
+        g->setTextSize(HORA_SZ);
+        g->setCursor(SCREEN_W - L_MARG - larguraHora(s.clock), 6);
         g->print(s.clock.hm.c_str());
-        drawFolhinha(g, SCREEN_W - L_MARG - w - FOLHA_GAP - FOLHA_W, 4, s.clock);
+        drawFolhinha(g, xFolhinha(s), 4, s.clock);
     }
 
     // O selo VIA vai ABAIXO da linha, encostado na margem direita: no
@@ -4340,8 +4389,8 @@ void drawDeitadaNova(Arduino_Canvas *g, const Status &s, int staleSeconds,
         g->print("nenhuma sessao ativa");
     }
 
-    // O rodape e o de sempre, MENOS os bichos: `drawFooter` os desenha, e aqui
-    // eles nao existem. As bolinhas e a idade do dado vem dele.
+    // O rodape e o de toda tela deitada: a turma, as bolinhas e a idade do
+    // dado vem dele.
     drawFooter(g, s, 0, staleSeconds);
 
     // As que nao couberam, na ponta direita do ULTIMO cartao: o rodape voltou a
@@ -4363,8 +4412,8 @@ void drawDeitadaNova(Arduino_Canvas *g, const Status &s, int staleSeconds,
 // PRECISA DE VOCE. Os aneis viram duas barras numa faixa so e o espaco que eles
 // soltam vira linhas de sessao de largura inteira, ordenadas por urgencia (ver
 // grupos::ordemDaFila). Cabecalho e rodape sao os da tela nova, na mesma
-// geometria: `redrawTopoNova` e `redrawBadge` repintam o nome e a turma por
-// prefixo sem saber qual das duas esta na tela.
+// geometria: `redrawAnimacao` repinta o nome e a turma por prefixo sem saber
+// qual das duas esta na tela.
 //
 // O VERTICAL:
 //
@@ -4375,7 +4424,8 @@ void drawDeitadaNova(Arduino_Canvas *g, const Status &s, int staleSeconds,
 //   267..312  a turma, no canto inferior esquerdo
 //
 // As linhas terminam em 262 pelo mesmo motivo da fileira de cartoes: a turma
-// comeca em 267, e `redrawBadge` limpa a caixa dela sem olhar o que ha em cima.
+// comeca em 267, e `redrawAnimacao` limpa a caixa dela sem olhar o que ha em
+// cima.
 const int FL_LIM_VAO  = 20;
 const int FL_LIM_W    = (SCREEN_W - L_MARG * 2 - FL_LIM_VAO) / 2;   // 216
 const int FL_ROT_Y    = 52;     // rotulo e previsao, corpo 1
@@ -4635,7 +4685,8 @@ void drawStatus(const Status &s, int page, const std::string &selectedId,
             // (20 arquivos), e a particao de flash so cabe o que o painel usa
             // em toda tela. Ver src/assets.h.
             g->fillScreen(BG);
-            drawHeaderRetrato(g, s, staleSeconds, page == 3);
+            drawHeaderRetrato(g, s, staleSeconds,
+                              page == 3 ? Canto::Clima : Canto::Bicho);
             // Bloqueio em qualquer pagina em pe vira a pergunta em tela
             // cheia: em pe o painel e de relance, e a pergunta e o unico
             // evento que pede acao.
@@ -4644,13 +4695,13 @@ void drawStatus(const Status &s, int page, const std::string &selectedId,
                 // topo, no lugar da primeira tela, e nao onde a pagina de
                 // contexto a poe: dali para baixo e tudo da pergunta. Sem
                 // isto, abrir um bloqueio fora da P0 fazia os quatro sumirem.
-                drawTurmaRetrato(g);
+                drawTurmaRetrato(g, false);
                 drawPerguntaP0(g, s, opcaoArmada);
             } else if (page == 2) {
                 // A turma no MESMO lugar da tela inicial, e pela mesma razao:
                 // so no topo a faixa barata do flush a alcanca, e so assim ela
                 // anima na cadencia dos outros bichos (ver R1_C1_Y).
-                drawTurmaRetrato(g);
+                drawTurmaRetrato(g, false);
                 drawPageContextRetrato(g, s, indexOfId(s, selectedId),
                                        botaoArmado, opcaoArmada);
             } else if (page == 3) {
@@ -4658,8 +4709,7 @@ void drawStatus(const Status &s, int page, const std::string &selectedId,
             } else {
                 drawPageNivel(g, s, nivelNoCartao, xpDoDia);
             }
-            drawBolinhasRetrato(g, page);
-            drawStatusRetrato(g, s, staleSeconds);
+            drawRodapeRetrato(g, s, page, staleSeconds);
         }
         enviarQuadro(g);
         return;
@@ -4688,8 +4738,9 @@ void drawStatus(const Status &s, int page, const std::string &selectedId,
         return;
     }
 
-    // A TELA NOVA DEITADA tem cabecalho proprio (o nome digitando no lugar do
-    // mago e do titulo), entao ela sai antes do `drawHeader` comum.
+    // A TELA NOVA DEITADA (e a fila, que mora na mesma pagina) desenha a tela
+    // inteira por conta propria — com o MESMO cabecalho e o mesmo rodape das
+    // outras paginas —, entao ela sai antes do caminho comum.
     if (page == 0) {
         if (g_fila) drawFilaDeitada(g, s, staleSeconds, opcaoArmada);
         else        drawDeitadaNova(g, s, staleSeconds, opcaoArmada);
@@ -4769,113 +4820,38 @@ bool tickNome(uint32_t nowMs) {
     return true;
 }
 
-void redrawTopoNova(const Status &s, int staleSeconds) {
+void redrawAnimacao(const Status &s, int staleSeconds,
+                    const QuadroAnimacao &q) {
     g_stale = staleSeconds > 0;
     Arduino_Canvas *g = display::canvas();
 
-    // A faixa do nome e limpa INTEIRA (nome + celula do cursor): o quadro novo
-    // pode ter menos letras que o anterior, e o blit nao apaga nada sozinho.
-    // A limpeza para no MESMO limite do desenho — passar dele apagaria o
-    // primeiro digito da hora, que este redesenho nao repinta.
-    const int y   = (R_HDR_LINHA - 8 * NOME_SZ) / 2;
-    const int lim = limiteDoNome(s);
-    if (lim > R_MARG)
-        g->fillRect(R_MARG, y, lim - R_MARG, 8 * NOME_SZ, BG);
-    drawNomeCabecalho(g, lim);
-
-    // DEITADO nao ha fileira: a tela nova em paisagem nao tem bichos, e o
-    // prefixo aqui e de COLUNAS (ver display::flushPrefix). Enviar ate o fim do
-    // nome custa ~18 ms — mais que os ~11 do retrato, e ainda muito abaixo dos
-    // ~64 de um quadro inteiro, que era o que a digitacao estava pagando por
-    // nao ter caminho proprio deste lado.
+    // DEITADO o nome mora no cabecalho e a turma no rodape de toda tela, e sao
+    // os mesmos moldes do desenho completo (drawHeaderDeitado, drawFooter). O
+    // prefixo e de COLUNAS (ver display::flushPrefix), entao um envio so leva os
+    // dois, ate o que acabar mais a direita — e o quadro so do nome para no fim
+    // do nome, ~194 colunas contra as ~290 da turma.
     if (!display::retrato()) {
-        display::flushPrefix(lim + 4);
+        const int nomeFim  = q.nome  ? drawNomeCabecalho(g, s) : 0;
+        const int turmaFim = q.turma ? drawTurmaDeitada(g)     : 0;
+        const int cNome    = prefixColumns(0, nomeFim, 4, SCREEN_W);
+        const int cTurma   = prefixColumns(0, turmaFim, 6, SCREEN_W);
+        display::flushPrefix(cTurma > cNome ? cTurma : cNome);
         return;
     }
 
-    // A mesma faixa da turma do redrawBadge, com a caixa do CENTRO na conta —
-    // o bicho do cabecalho pode ser mais baixo ou mais alto que o trio.
-    const int cw = clawd::crewW(R_CARD_W);
-    const int ch = clawd::crewComCentroH();
-    if (cw && ch) {
-        g->fillRect(R_MARG, R_TURMA_CHAO - ch, cw, ch, BG);
-        clawd::drawCrewComCentroInto(g, R_MARG, R_TURMA_CHAO, R_CARD_W);
-    }
-    display::flushPrefix(R_TOPO_FIM);
-}
-
-void redrawBadge(const Status &s, int staleSeconds, bool semTurma) {
-    // O Status nao e lido aqui: a animacao ja foi escolhida por clawd::select
-    // quando o estado chegou. O parametro fica pela simetria com drawStatus, e
-    // porque o esmaecimento depende de staleSeconds.
-    (void)s;
-    g_stale = staleSeconds > 0;
-
-    Arduino_Canvas *g = display::canvas();
-
-    // EM PE a faixa barata e o TOPO, e o bicho do cabecalho e a turma ja foram
+    // EM PE a faixa barata e o TOPO, e o canto do cabecalho e a turma ja foram
     // postos la de proposito (ver drawRetrato). Entao o prefixo aqui e fixo:
-    // vai do topo ate a divisoria da turma, e cobre os dois de uma vez.
-    if (display::retrato()) {
-        const int iw = clawd::iconW(false);
-        const int ih = clawd::iconH(false);
-        if (iw && ih) {
-            g->fillRect(R_MARG, R_HDR_BASE - ih, iw, ih, BG);
-            clawd::drawIconInto(g, R_MARG, R_HDR_BASE - ih, false);
-        }
-        // `semTurma` e a tela do Token (e a do Reset): ali a faixa do topo
-        // pertence a cabeca do bicho. Nas paginas normais em pe a turma mora
-        // sempre no mesmo lugar, entao nao ha caso por pagina.
-        if (!semTurma) {
-            // A MESMA faixa do desenho completo (ver drawTurmaRetrato): limpar
-            // a fileira compacta e redesenhar a espalhada deixaria resto do
-            // quadro anterior na direita.
-            const int cw = clawd::crewW(R_CARD_W);
-            const int ch = clawd::crewH();
-            if (cw && ch) {
-                g->fillRect(R_MARG, R_TURMA_CHAO - ch, cw, ch, BG);
-                clawd::drawCrewInto(g, R_MARG, R_TURMA_CHAO, R_CARD_W);
-            }
-        }
-        display::flushPrefix(semTurma ? R_HDR_LINHA + 2 : R_TOPO_FIM);
-        return;
-    }
-
-    int colunas = 0;
-
-    // DEITADO O CANTO DO CABECALHO NAO E MAIS DO BICHO. Ele era desenhado aqui
-    // em (14, 40) junto com a turma, porque os dois moravam na mesma tira do
-    // prefixo e um envio so levava ambos. Com o cabecalho novo (nome digitando
-    // a partir da margem, ver drawHeaderDeitado) esse canto passou a ser do
-    // NOME — e este redesenho continuava pintando o bicho por cima dele, e
-    // ainda limpava a caixa antes, comendo as primeiras letras. O desenho
-    // completo nao o mostrava mais; so este caminho barato o ressuscitava, e
-    // por isso ele so aparecia nas paginas que animam.
-    //
-    // O bicho segue vivo EM PE (ramo acima) e na tela de reset, onde o canto
-    // ainda e dele.
-
-    const int chao = SCREEN_H - 8;
-
-    const int w = clawd::crewW();
-    const int h = clawd::crewH();
-    if (w && h) {
-        // Limpa a faixa INTEIRA antes de blitar. O blit pula os pixels
-        // transparentes, entao sem limpar os quadros se acumulam uns sobre os
-        // outros. E a caixa maxima da fileira, e nao a do quadro atual, para
-        // que trocar de animacao nao deixe resto da anterior.
-        g->fillRect(14, chao - h, w, h, BG);
-        clawd::drawCrewInto(g, 14, chao);
-        const int c = prefixColumns(14, w, 6, SCREEN_W);
-        if (c > colunas) colunas = c;
-    }
-
-    display::flushPrefix(colunas);
+    // vai do topo ate a divisoria da turma, e cobre os dois de uma vez. Sem
+    // turma (a tela do Token ou do servidor fora, onde a faixa do topo e da
+    // cabeca do bicho), so o canto anima e o envio para na divisoria.
+    drawCantoRetrato(g, s, q.nome ? Canto::Nome : Canto::Bicho);
+    if (q.turma) drawTurmaRetrato(g, q.nome);
+    display::flushPrefix(q.turma ? R_TOPO_FIM : R_HDR_LINHA + 2);
 }
 
 // Um quadro da danca do bicho da vez, e nada mais.
 //
-// O irmao do `redrawBadge`, pela mesma razao e com a mesma conta. A medida saiu
+// O irmao do `redrawAnimacao`, pela mesma razao e com a mesma conta. A medida saiu
 // da danca antiga do Cartman, de 24 quadros a 70 ms, em que o desenho completo
 // nao cabia no intervalo: 15,7 ms de `fillScreen`, o cabecalho e os dois textos
 // repintados a toa, e 48 ms de flush de tela inteira. A animacao andava um
@@ -4893,14 +4869,10 @@ void redrawReset() {
     Arduino_Canvas *g = display::canvas();
     const int x = (PANEL_W - w) / 2;
 
-    // O bicho do cabecalho vem JUNTO, e nao pelo `redrawBadge`: ele mora dentro
+    // O bicho do cabecalho vem JUNTO, e nao pelo `redrawAnimacao`: ele mora dentro
     // do prefixo que este envio ja manda, entao aqui ele custa o decode e mais
     // nada. Pelo outro caminho custaria um envio proprio de 50 linhas.
-    const int iw = clawd::iconW(false), ih = clawd::iconH(false);
-    if (iw && ih) {
-        g->fillRect(R_MARG, R_HDR_BASE - ih, iw, ih, BG);
-        clawd::drawIconInto(g, R_MARG, R_HDR_BASE - ih, false);
-    }
+    drawBichoCabecalho(g);
     // Opaco, e por isso sem limpar a caixa antes: o decode ja entrega o vazio
     // pintado de BG (ver clawd::drawResetOpacoInto).
     clawd::drawResetOpacoInto(g, x, R_RESET_Y, BG);
@@ -5465,9 +5437,9 @@ void drawAjustes(Arduino_Canvas *g) {
 int ajusteAt(int x, int y) { return ::ajustes::noPonto(x, y, display::retrato()); }
 
 // ---- O MODO NOITE ----
-// A maquete F2: fundo preto, a hora grande em laranja apagado, os dois limites e
-// uma linha de estado. Deitada, a turma dorme embaixo: um quadro parado dela,
-// apagado — a noite nao anima nada.
+// A maquete F2: fundo preto, a hora grande em laranja, os dois limites e uma
+// linha de estado. Deitada, a turma dorme embaixo: um quadro parado dela, a
+// meia luz — a noite nao anima nada.
 //
 // Devolve se DESENHOU. A tela so muda quando um dos tres textos muda: o poll
 // chega a cada 2 s e redesenhar o mesmo quadro seriam ~50 ms de flush por nada.
@@ -5495,28 +5467,34 @@ bool drawNoite(Arduino_Canvas *g, const Status &s, int staleSeconds) {
     const int oy = (display::telaH() - SCREEN_H) / 2;
     g->fillScreen(PRETO);
 
-    // A turma a um quarto do brilho. O quadro inteiro e escurecido de uma vez,
+    // A turma a metade do brilho. O quadro inteiro e escurecido de uma vez,
     // ANTES dos textos: o preto continua preto, e so o que foi desenhado ate
     // aqui (a fileira) apaga. Em pe a maquete nao tem turma.
+    //
+    // O escuro da noite e quase todo do BACKLIGHT (BRILHO_NOITE). As cores
+    // ficaram so um degrau abaixo das do dia, para a hora mandar: somar as duas
+    // quedas por inteiro (um quarto da turma, 30% dos limites) deixava a tela
+    // quase invisivel. Cor mais forte nao ilumina o quarto: o preto continua
+    // preto, so o traco acende.
     if (!display::retrato() && clawd::crewW()) {
         clawd::drawCrewInto(g, (W - clawd::crewW()) / 2, SCREEN_H - 8);
         uint16_t *fb = g->getFramebuffer();
         const int n = display::quadroW() * display::quadroH();
-        for (int i = 0; fb && i < n; i++) fb[i] = (fb[i] >> 2) & 0x39E7;
+        for (int i = 0; fb && i < n; i++) fb[i] = (fb[i] >> 1) & 0x7BEF;
     }
 
     g->setTextSize(8);
-    g->setTextColor(misturar(PRETO, LARANJA, 55, 100));
+    g->setTextColor(LARANJA);
     g->setCursor((W - (int)hm.size() * 48) / 2, oy + 70);
     g->print(hm.c_str());
 
     g->setTextSize(2);
-    g->setTextColor(misturar(PRETO, velho ? MUTED : FG, 30, 100));
+    g->setTextColor(misturar(PRETO, velho ? MUTED : FG, 60, 100));
     g->setCursor((W - (int)lim.size() * 12) / 2, oy + 160);
     g->print(lim.c_str());
 
     g->setTextSize(1);
-    g->setTextColor(misturar(PRETO, velho ? C_YELL : MUTED, 50, 100));
+    g->setTextColor(misturar(PRETO, velho ? C_YELL : MUTED, 80, 100));
     g->setCursor((W - (int)linha.size() * 6) / 2, oy + 196);
     g->print(linha.c_str());
     return true;

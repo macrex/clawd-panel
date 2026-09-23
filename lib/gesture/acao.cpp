@@ -223,3 +223,41 @@ int paginaVizinha(int page, int paginas, int passo) {
 }
 
 bool paginaDeBicho(int page) { return page == 3 || page == 4; }
+
+QuadroAnimacao quadroDeAnimacao(const CenaAnimacao &c) {
+    QuadroAnimacao q;
+    // A danca do reset tem quadro proprio, que ja leva o canto do cabecalho.
+    if (c.reset) return q;
+
+    // O nome digitando e o cabecalho de TODA tela deitada, as de bicho
+    // inclusive; em pe, so da tela nova.
+    const bool nomeNaTela = !c.emPe || (c.page == 0 && !c.telaBicho);
+    const bool passoNome  = c.avancouNome && nomeNaTela;
+
+    // A tela do bicho toma o painel em qualquer pagina, e nela nao ha turma. Em
+    // pe o canto e do bicho do cabecalho, que anda com a faixa; deitado e do
+    // nome. O bicho grande dela anda no relogio proprio, por quadro inteiro.
+    if (c.telaBicho) {
+        q.parcial = c.emPe ? c.avancouFaixa : passoNome;
+        q.nome    = q.parcial && !c.emPe;
+        return q;
+    }
+
+    // As paginas de bicho grande nao tem turma. No Clawd (3) o passo da faixa e
+    // o quadro inteiro — ele nao cabe na faixa barata do envio. O nivel (4) nao
+    // anima nada alem do nome deitado.
+    if (paginaDeBicho(c.page)) {
+        if (c.page == 3 && c.avancouFaixa) {
+            q.inteiro = true;
+            return q;
+        }
+        q.parcial = passoNome;
+        q.nome    = passoNome;
+        return q;
+    }
+
+    q.parcial = c.avancouFaixa || passoNome;
+    q.nome    = q.parcial && nomeNaTela;
+    q.turma   = q.parcial;
+    return q;
+}

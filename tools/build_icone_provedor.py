@@ -2,7 +2,7 @@
 """Compila os SVGs de marca em `sprites/sources/marcas/` nas mascaras de alfa
 que `src/provedores.cpp` carrega.
 
-    python tools\build_icone_provedor.py            # imprime os tres arrays
+    python tools\build_icone_provedor.py            # imprime todos os arrays
     python tools\build_icone_provedor.py codex      # so um
 
 POR QUE MASCARA DE ALFA E NAO 1 BIT
@@ -28,13 +28,16 @@ RAIZ  = pathlib.Path(__file__).resolve().parent.parent
 FONTE = RAIZ / "sprites" / "sources" / "marcas"
 PX    = 512      # a rasterizacao intermediaria; a reducao final sai daqui
 
-# Cada marca traz a receita que ela EXIGE, e as tres sao diferentes de proposito.
+# Cada marca traz a receita que ela EXIGE, e elas sao diferentes de proposito.
 #
 # `modo`  como separar o desenho do fundo. "alfa" quando o SVG ja vem recortado;
 #         "escuro" para o Codex, que e um knot preto dentro de um quadrado
 #         branco — ali quem separa e a luminancia, nao a transparencia.
 # `grade` quando o logotipo NASCE em grade de pixels, o par (colunas, linhas)
-#         dela. A reducao vira amostragem exata: sem meio-tom, sem franja.
+#         de AMOSTRAS: a grade dele, ou um multiplo inteiro dela quando cada
+#         celula ocupa mais de um pixel nas duas direcoes (o Pi e 4x4 celulas
+#         amostradas em 12x12). A reducao vira amostragem exata: sem meio-tom,
+#         sem franja.
 #         `escala` diz quantas linhas cada celula ocupa (o Claude Code e
 #         16x5 celulas de 32x64 px — celula duas vezes mais alta que larga, e
 #         guardar 16x5 achatava o icone pela metade).
@@ -50,7 +53,7 @@ MARCAS = {
                    modo="alfa", alt=12, filtro=Image.LANCZOS),
     "codex":  dict(arquivo="codex.svg", nome="CODEX",
                    modo="escuro", alt=12, filtro=Image.BOX, contraste=1.6),
-    # O reserva: vale para TODA CLI que nao seja uma das tres de cima (ver o
+    # O reserva: vale para TODA CLI que nao seja uma das de cima (ver o
     # fallback de `iconeDe`). Unico com `modo="silhueta"` — a lhama e desenhada
     # a traco, e traco de um terco de pixel nao sobrevive a reducao; o porque
     # esta em `preencher`. A reducao e por MEDIA DE AREA pela mesma razao do

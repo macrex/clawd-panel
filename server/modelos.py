@@ -2,12 +2,14 @@
 """O modelo em uso de um agente que nao e o Claude Code.
 
 POR QUE ISTO EXISTE
-Um agente do Codex ou do Antigravity chega ao painel pelo herdr, que ve a tela
-e sabe QUAL ferramenta e — mas nao qual modelo. O card desenhava "-". As duas
-CLIs gravam o modelo em disco a cada turno; este modulo vai buscar.
+Um agente do Codex, do Antigravity ou do Pi chega ao painel pelo herdr, que ve
+a tela e sabe QUAL ferramenta e — mas nao qual modelo. O card desenhava "-". As
+tres CLIs gravam o modelo em disco a cada turno; este modulo vai buscar.
 
 COMO ELE CASA UM PANE COM UM ARQUIVO
-Pelo `cwd` do pane mais a recencia do arquivo. E heuristico e assumido como
+O Pi casa EXATO: o herdr entrega o id da sessao dele, e o id esta no nome do
+arquivo (ver `rodape_pi`). Codex e Antigravity casam pelo `cwd` do pane mais a
+recencia do arquivo. E heuristico e assumido como
 tal: dois Codex no MESMO diretorio desempatam por mtime, e a tela pode trocar
 de modelo por alguns segundos. Um hook dentro de cada CLI daria pareamento
 exato pelo HERDR_PANE_ID; foi descartado pelo custo de manter duas pecas
@@ -313,8 +315,57 @@ def modelo_codex(cwd, raiz=None):
     return None
 
 
-def modelo_pi(sessao, raiz=None):
-    """O modelo da sessao do Pi com este id. None quando nao da para saber.
+def _ler_json(caminho):
+    """O JSON de um arquivo, ou None — sumido, podre ou de tipo errado."""
+    try:
+        with open(caminho, encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return None
+
+
+def _janela_pi(base, provedor, modelo):
+    """A janela de contexto (em tokens) do modelo, ou None quando nao se sabe.
+
+    Duas fontes, as mesmas do Pi: o catalogo que ele baixa dos provedores
+    (`models-store.json`, provedor -> {"models": [...]}) e o `models.json` que a
+    pessoa escreve para provedores proprios, como llama.cpp e Ollama
+    (`{"providers": provedor -> {"models": [...]}}`).
+    """
+    loja = _dict(_ler_json(os.path.join(base, "models-store.json")))
+    proprios = _dict(_dict(_ler_json(os.path.join(base, "models.json")))
+                     .get("providers"))
+    for catalogo in (loja, proprios):
+        for m in _dict(catalogo.get(provedor)).get("models") or []:
+            if not isinstance(m, dict) or m.get("id") != modelo:
+                continue
+            janela = m.get("contextWindow")
+            if isinstance(janela, int) and not isinstance(janela, bool) \
+                    and janela > 0:
+                return janela
+    return None
+
+
+def _tokens_pi(uso):
+    """Os tokens em contexto segundo uma resposta: `calculateContextTokens` do
+    Pi, o total, ou a soma das quatro parcelas quando ele falta."""
+    def n(campo):
+        v = uso.get(campo)
+        return v if isinstance(v, (int, float)) and not isinstance(v, bool) \
+            else 0
+    return n("totalTokens") or (n("input") + n("output") + n("cacheRead")
+                                + n("cacheWrite"))
+
+
+def rodape_pi(sessao, raiz=None):
+    """O modelo e o contexto da sessao do Pi com este id: `{"model",
+    "context_pct"}`, cada um None quando nao da para saber; `{}` com id invalido.
+
+    E o "rodape" do Pi, no formato de `rodape_da_tela`. O rodape que ele DESENHA
+    no terminal nao serve: tema e extensoes mudam o formato, e ele nao escreve o
+    `context N% used` que o leitor de tela procura — por isso a barra de
+    contexto do Pi ficava vazia no painel. Os dois numeros saem do arquivo da
+    sessao, que tem formato proprio.
 
     Casamento EXATO, ao contrario do Codex: o herdr entrega o id da sessao
     (`agent_session`), e o Pi grava `sessions/<cwd>/<instante>_<id>.jsonl`. O
@@ -322,48 +373,68 @@ def modelo_pi(sessao, raiz=None):
     `*` casaria a sessao de qualquer um.
     """
     if not isinstance(sessao, str) or not re.fullmatch(r"[\w-]+", sessao):
-        return None
+        return {}
     base = str(raiz or RAIZ_PI)
     achados = glob.glob(os.path.join(base, "sessions", "*",
                                      f"*_{sessao}.jsonl"))
     if not achados:
         # O Pi so cria o arquivo na PRIMEIRA resposta (`_persist` do
         # session-manager dele). Ate la a sessao roda no `defaultModel`, que
-        # todo `/model` regrava em settings.json.
+        # todo `/model` regrava em settings.json, e nao ha uso para medir.
         # ponytail: e global, entao um `pi --model X` ou um `/model` em OUTRO
         # Pi mostra o padrao errado ate a primeira resposta desta sessao.
-        try:
-            with open(os.path.join(base, "settings.json"),
-                      encoding="utf-8") as fh:
-                m = _dict(json.load(fh)).get("defaultModel")
-        except (OSError, ValueError):
-            return None
-        return bonito(m) or None
+        padrao = _dict(_ler_json(os.path.join(base, "settings.json")))
+        return {"model": bonito(padrao.get("defaultModel")) or None,
+                "context_pct": None}
     try:
         with open(achados[0], "rb") as fh:
             linhas = _cauda(fh)
     except OSError:
-        return None
+        return {}
 
-    # De tras para frente, e o primeiro que aparecer vale: `model_change` sai
-    # no inicio e a cada `/model`, e toda resposta traz o modelo que a gerou.
+    # De tras para frente, e o primeiro de cada que aparecer vale. O MODELO:
+    # `model_change` sai no inicio e a cada `/model`, e toda resposta traz o
+    # modelo que a gerou. O CONTEXTO: o uso da ultima resposta que terminou
+    # (`getContextUsage` do Pi) — uma compactacao depois dela zera a conta,
+    # porque aquele uso media o contexto de antes.
+    modelo = None
+    medida = None          # (tokens, provedor, modelo) da resposta que mede
+    contexto_fechado = False
     for l in reversed(linhas):
+        if modelo and (medida or contexto_fechado):
+            break
         try:
             d = json.loads(l)
         except (ValueError, TypeError):
             continue
         if not isinstance(d, dict):
             continue
-        if d.get("type") == "model_change":
+        tipo = d.get("type")
+        if tipo == "compaction":
+            contexto_fechado = contexto_fechado or medida is None
+        elif tipo == "model_change":
             m = d.get("modelId")
-        elif d.get("type") == "message":
+            if not modelo and isinstance(m, str) and m:
+                modelo = m
+        elif tipo == "message":
             msg = _dict(d.get("message"))
-            m = msg.get("model") if msg.get("role") == "assistant" else None
-        else:
-            continue
-        if isinstance(m, str) and m:
-            return bonito(m)
-    return None
+            if msg.get("role") != "assistant":
+                continue
+            m = msg.get("model")
+            if not modelo and isinstance(m, str) and m:
+                modelo = m
+            if medida is None and not contexto_fechado \
+                    and msg.get("stopReason") not in ("aborted", "error"):
+                tokens = _tokens_pi(_dict(msg.get("usage")))
+                if tokens > 0:
+                    medida = (tokens, msg.get("provider"), m)
+
+    pct = None
+    if medida:
+        janela = _janela_pi(base, medida[1], medida[2])
+        if janela:
+            pct = min(100, round(medida[0] * 100 / janela))
+    return {"model": bonito(modelo) or None, "context_pct": pct}
 
 
 # O identificador do modelo dentro do blob de `executor_metadata`. O blob e

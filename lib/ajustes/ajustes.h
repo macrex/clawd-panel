@@ -32,8 +32,9 @@ uint8_t brilhoDoDegrau(int d);        // fora de 0..5 cai na ponta mais proxima
 int     degrauDoBrilho(uint8_t v);
 
 // O backlight da tela da noite. E a calibracao a mexer na placa: abaixo dele a
-// hora some, acima ele volta a iluminar o quarto.
-const uint8_t BRILHO_NOITE = 8;
+// hora some, acima ele volta a iluminar o quarto. Era 8, e na placa a tela lia
+// quase invisivel. 11 e o teto: o teste exige que fique abaixo do degrau 0 (12).
+const uint8_t BRILHO_NOITE = 11;
 
 // ---- A janela da noite ----
 // 23:00 inclusive ate 07:00 exclusive, na hora LOCAL.
