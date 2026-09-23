@@ -2,6 +2,7 @@
 #include "status.h"
 #include <cstdint>
 #include <string>
+#include <vector>
 
 std::string formatAge(int seconds);        // "agora", "ha 2s", "ha 1m", "ha 1h"
 std::string pctText(const Metric &m);      // "26%" ou "-"
@@ -129,6 +130,17 @@ std::string textoVetustez(const Status &s, int staleSeconds, const char *motivo,
 // normal ("12s") nao tem como encostar em nada. Aqui o motivo se perde: com a
 // largura no limite, dizer HA QUANTO TEMPO vale mais do que dizer por que.
 std::string textoVetustezCurto(const Status &s, int staleSeconds);
+
+// As fatias da barra POR MODELO da pagina Hoje: ate `max` modelos com preco e
+// custo > 0, na ordem da API. O percentual e sobre o custo de TODOS os modelos
+// com preco, e nao so dos que entram: um quinto modelo fora da barra nao pode
+// inflar a fatia dos outros. `pct` 0 = fatia que arredonda a zero ("<1%").
+struct FatiaModelo {
+    std::string rotulo;
+    float       custo = 0;
+    int         pct   = 0;
+};
+std::vector<FatiaModelo> fatiasDosModelos(const Uso &u, int max);
 
 // "sync 11:15" — a hora em que os limites que estao na tela foram lidos pela
 // ultima vez. VAZIO quando eles vem de leitura viva.

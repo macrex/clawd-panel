@@ -20,11 +20,17 @@
 #include "cache.h"
 #include "retrato.h"    // o ultimo status bom, na NVS e nao no cartao
 #include "hora.h"
+#include "som.h"
+#include "ajustes.h"     // o painel de ajustes e a janela da noite
+#include "eventos.h"     // o que mudou entre dois polls: festa da turma e som
 
 namespace {
 
 AppConfig       cfg;
 GestureDetector gestos;
+// Entre o sensor e tudo o que le o dedo: o AXS15231B pisca "nenhum ponto" com o
+// dedo apoiado (ver lib/gesture/gesture.h).
+FiltroDeSoltura filtroToque;
 Status          last;              // ultimo status bom conhecido
 bool            haveLast   = false;
 uint32_t        lastOkMs   = 0;    // quando a API respondeu pela ultima vez
@@ -104,6 +110,36 @@ uint32_t opcaoDesdeMs = 0;
 // O seq da ultima pergunta ja respondida daqui. Fecha a pergunta na hora, sem
 // esperar o servidor confirmar que ela saiu no proximo /status.
 int      respondidoSeq = -1;
+
+// ---- Os modos da tela: fila, painel de ajustes e noite ----
+// Quem guarda o estado e o laco; a UI recebe por ui::fila/ajustes/noite.
+bool modoFila       = false;   // a primeira tela deitada mostra a fila
+bool ajustesAbertos = false;   // o painel de ajustes esta por cima
+bool noite          = false;   // o modo noite apagou a tela
+
+// O que o painel escolheu, lido da NVS no boot (ver configstore::lerEscolhas).
+ajustes::Escolhas escolhas;
+
+// Todo gesto e alguem olhando: ele segura o painel aberto e a tela da noite
+// acesa. O painel fecha sozinho depois de PAINEL_MS sem toque — aberto e
+// esquecido, ele esconderia a pagina ate o proximo dedo. A noite volta depois
+// de ACORDADA_MS sem toque e sem evento.
+uint32_t ultimoGestoMs = 0;
+uint32_t acordadaAte   = 0;   // 0 = ninguem acordou a tela
+const uint32_t PAINEL_MS   = 20000;
+const uint32_t ACORDADA_MS = 30000;
+
+// O SILENCIO do painel: uma hora sem som, so em memoria. Um reboot devolve o
+// som, e esta certo — silencio esquecido ligado e aviso perdido amanha.
+uint32_t silencioAte = 0;     // 0 = som livre
+const uint32_t SILENCIO_MS = 60UL * 60UL * 1000UL;
+
+// O brilho da tela ACESA: o degrau do painel quando alguem ja escolheu, o
+// config.json enquanto ninguem escolheu.
+uint8_t brilhoEscolhido() {
+    return escolhas.degrau >= 0 ? ajustes::brilhoDoDegrau(escolhas.degrau)
+                                : cfg.brightness;
+}
 
 // ---- Modo terminal ----
 // Estado a parte e nao uma quinta pagina: aqui os swipes horizontais nao
@@ -404,11 +440,10 @@ bool clawdDorme(uint32_t now) {
 
 void girarTela() {
     display::setRetrato(!display::retrato());
-    // A PAGINA FICA, e agora sem nenhuma traducao: as cinco existem nas duas
-    // orientacoes, na mesma ordem. Houve um degrau aqui enquanto a tela nova
-    // so existia em pe — girar da tela nova caia nos limites, e voltar subia
-    // uma casa. Com a irma deitada pronta, o degrau virou o que ele sempre
-    // deveria ser: nada.
+    // A PAGINA FICA, sem traducao: as cinco primeiras existem nas duas
+    // orientacoes, na mesma ordem. So as do fim (Semanas e Hoje) sao deitadas:
+    // girando nelas, a tela em pe abre na primeira.
+    if (page >= ui::paginas()) page = 0;
     //
     // As duas telas armadas A MAO morrem no giro. Elas ja existem nas duas
     // orientacoes, entao nao e mais uma questao de a tela nao caber la: girar e
@@ -444,6 +479,7 @@ void andarSemAApi(uint32_t now, bool &redraw);
 void atualizarTurnos(uint32_t now, bool &redraw);
 void contarConvivio(uint32_t now, bool &redraw);
 void vigiarTarefaDeRede(uint32_t now);
+void vigiarModos(uint32_t now, bool &redraw);
 void animarClawd(uint32_t now, bool dedoNaTela, bool &redraw);
 void carregarOuSoltarOffline(uint32_t now, bool &redraw);
 void desenhar(uint32_t now, bool redraw);
@@ -535,7 +571,10 @@ void setup() {
                   (unsigned long)cfg.pollMs, (unsigned)cfg.brightness,
                   cfg.tz.c_str(), cfg.ntp.c_str());
 
-    display::setBrightness(cfg.brightness);
+    // O degrau escolhido no painel vale sobre o `brightness` do cartao (ver
+    // brilhoEscolhido); sem escolha, e o do cartao como sempre foi.
+    escolhas = configstore::lerEscolhas();
+    display::setBrightness(brilhoEscolhido());
 
     // Arquivo ausente ou ilegivel deixa o estado zerado, e isso e proposital:
     // um painel que nao sobe por causa de um contador seria pior do que um
@@ -559,6 +598,10 @@ void setup() {
     // fonte so nao ha origem para distinguir. O TEXTO da tag vem do /status de
     // cada maquina, nao daqui.
     ui::duasFontes(!cfg.url2.empty());
+
+    // Sem audio o painel segue mudo, e o botao SOM continua guardando a escolha.
+    // A serial ja diz se o I2S subiu (ver som::iniciar).
+    som::iniciar();
 }
 
 void loop() {
@@ -584,7 +627,14 @@ void loop() {
 
     // Uma leitura de toque por volta, e ela atravessa as fatias: o gesto sai
     // daqui e a animacao das paginas caras congela enquanto ha dedo na tela.
-    const TouchPoint t = touch::read();
+    // FILTRADA antes de tudo: o gesto e a animacao tem que ver o mesmo dedo.
+    TouchPoint t = touch::read();
+    {
+        const Leitura l = filtroToque.update(t.pressed, t.x, t.y, now);
+        t.pressed = l.pressed;
+        t.x = l.x;
+        t.y = l.y;
+    }
 
     tratarToque(now, t, redraw);
     restaurarDoCartao(now, redraw);
@@ -595,6 +645,9 @@ void loop() {
 
     contarConvivio(now, redraw);
     vigiarTarefaDeRede(now);
+    // Antes da animacao: e daqui que sai se a noite (ou o painel) esta no ar, e
+    // com eles no ar a animacao nao pinta nada.
+    vigiarModos(now, redraw);
 
     animarClawd(now, t.pressed, redraw);
 
@@ -628,6 +681,89 @@ namespace {
 
 
 
+void fecharAjustes() {
+    ajustesAbertos = false;
+    ui::ajustes(false);
+}
+
+// A unica porta de entrada e saida da noite: o backlight, a UI e o que a tela
+// apagada nao pode deixar aberto andam juntos.
+void aplicarNoite(bool v) {
+    noite = v;
+    ui::noite(v);
+    display::setBrightness(v ? ajustes::BRILHO_NOITE : brilhoEscolhido());
+    if (!v) return;
+    // O painel fecharia no escuro de qualquer jeito (20 s), e o TERMINAL nao
+    // pode ficar: a API segura a largura do pane enquanto a tela esta aberta, e
+    // o terminal de quem esta no PC passaria a noite estreito.
+    if (ajustesAbertos) fecharAjustes();
+    if (modoTerminal) fecharTerminal();
+}
+
+// O ajuste tocado no painel (n = ui::ajusteAt; ids em lib/ajustes).
+void tocarAjuste(int n, uint32_t now) {
+    // Um degrau de brilho: aplica na hora e guarda. O painel fica aberto — da
+    // para ir tocando ate achar o degrau certo.
+    if (n >= 0 && n < ajustes::DEGRAUS) {
+        escolhas.degrau = n;
+        display::setBrightness(brilhoEscolhido());
+        configstore::guardarEscolhas(escolhas);
+        return;
+    }
+    switch (n) {
+        case ajustes::SOM:
+            escolhas.som = !escolhas.som;
+            configstore::guardarEscolhas(escolhas);
+            break;
+        case ajustes::NOITE:
+            escolhas.noite = !escolhas.noite;
+            configstore::guardarEscolhas(escolhas);
+            break;
+        // Fecha ANTES de girar: a geometria do painel e da outra orientacao.
+        case ajustes::GIRAR: fecharAjustes(); girarTela(); break;
+        // O segundo toque devolve o som antes da hora.
+        case ajustes::SILENCIO:
+            silencioAte = ajustes::noPrazo(silencioAte, now)
+                              ? 0 : (now ? now : 1) + SILENCIO_MS;
+            break;
+        // Fecha ANTES: a foto e do quadro que estiver no ar quando o pedido
+        // voltar no /status, e com o painel aberto ela sairia com ele.
+        case ajustes::FOTO: fecharAjustes(); net::pedirFoto(); break;
+        default: break;    // Wi-Fi so informa
+    }
+}
+
+// O primeiro gesto na tela da noite so acende. O prazo de ACORDADA_MS ja foi
+// armado pelo proprio gesto (ver tratarToque); aqui e so acender.
+void acordar() { aplicarNoite(false); }
+
+// Um evento de sessao: o som, e a tela da noite acesa para mostrar quem foi.
+// Qual som (e se algum) e decisao de lib/ajustes.
+void avisar(const Eventos &ev, uint32_t now) {
+    if (!ev.prontos && !ev.esperas) return;
+    acordadaAte = (now ? now : 1) + ACORDADA_MS;
+    switch (ajustes::avisoDoPoll(ev.prontos, ev.esperas, escolhas.som,
+                                 ajustes::noPrazo(silencioAte, now))) {
+        case ajustes::Aviso::Pronto: som::tocar(som::Aviso::Pronto); break;
+        case ajustes::Aviso::Espera: som::tocar(som::Aviso::Espera); break;
+        case ajustes::Aviso::Nenhum: break;
+    }
+}
+
+// O que o painel de ajustes mostra, lido na hora do desenho. O RSSI e da
+// pilha do Wi-Fi, sem trafego: custa uma consulta ao driver, e so e pedido com
+// o painel aberto.
+ui::ValoresAjustes valoresDoPainel(uint32_t now) {
+    ui::ValoresAjustes v;
+    v.degrau      = ajustes::degrauDoBrilho(brilhoEscolhido());
+    v.som         = escolhas.som;
+    v.noite       = escolhas.noite;
+    v.silencioMin = ajustes::minutosAte(silencioAte, now);
+    v.wifi        = net::connected();
+    v.rssi        = v.wifi ? net::rssi() : 0;
+    return v;
+}
+
 // O toque, sempre responsivo e independente do ciclo de rede.
 //
 // O `TouchPoint` vem de fora porque a animacao tambem o le, la embaixo: quem
@@ -635,6 +771,13 @@ namespace {
 // dentro do mesmo quadro.
 void tratarToque(uint32_t now, const TouchPoint &t, bool &redraw) {
     const Gesture g = gestos.update(t.pressed, t.x, t.y, now);
+
+    // Qualquer gesto e alguem olhando (ver vigiarModos): segura o painel aberto
+    // e a tela da noite acesa. Inclusive o que acorda a tela.
+    if (g.kind != GestureKind::None) {
+        ultimoGestoMs = now;
+        acordadaAte   = (now ? now : 1) + ACORDADA_MS;
+    }
 
     // A decisao — qual acao este gesto significa AQUI — mora em lib/gesture, com
     // teste. Ela era uma cadeia de quatorze `else if` dentro deste laco, e a
@@ -649,13 +792,16 @@ void tratarToque(uint32_t now, const TouchPoint &t, bool &redraw) {
     Contexto ctx;
     ctx.modoTerminal = modoTerminal;
     ctx.page         = page;
-    ctx.paginas      = ui::PAGES;
+    ctx.paginas      = ui::paginas();
     ctx.retrato      = display::retrato();
     ctx.haveLast     = haveLast;
     ctx.temBloqueio  = haveLast && last.bloqueio.known;
     ctx.telaReset    = telaResetAtiva(now);
     ctx.clawdDorme   = clawdDorme(now);
     ctx.telaToken    = telaTokenAtiva();
+    ctx.noite          = noite;
+    ctx.ajustesAbertos = ajustesAbertos;
+    ctx.fila           = modoFila;
 
     if (g.kind != GestureKind::None) {
         ctx.noIconeCabecalho = ui::iconeCabecalhoAt(g.x, g.y);
@@ -664,6 +810,8 @@ void tratarToque(uint32_t now, const TouchPoint &t, bool &redraw) {
         ctx.noPctSessao      = ui::pctSessaoAt(g.x, g.y);
         ctx.noPctSemana      = ui::pctSemanaAt(g.x, g.y);
         ctx.naTurma          = ui::turmaAt(g.x, g.y, page);
+        ctx.inicioNoCabecalho = ui::cabecalhoAt(g.x0, g.y0);
+        ctx.ajusteTocado     = ajustesAbertos ? ui::ajusteAt(g.x, g.y) : -1;
         if (haveLast) {
             ctx.opcaoP0         = ui::perguntaP0At(last, g.x, g.y);
             ctx.opcaoP1         = ui::opcaoAt(last, selectedId, g.x, g.y);
@@ -671,10 +819,12 @@ void tratarToque(uint32_t now, const TouchPoint &t, bool &redraw) {
             ctx.noBotaoLimpeza  = ui::cleanButtonAt(last, selectedId, g.x, g.y);
             ctx.agenteIndex     = ui::agentIndexAt(last, g.x, g.y);
             ctx.cartaoSessao    = ui::cartaoSessaoRetratoAt(last, g.x, g.y);
+            ctx.linhaFila       = ui::linhaFilaAt(last, g.x, g.y);
         }
     }
 
     const Decisao d = decidirGesto(g.kind, ctx);
+    const bool painelAntes = ajustesAbertos;
     switch (d.acao) {
         case Acao::Nada: break;
 
@@ -698,8 +848,15 @@ void tratarToque(uint32_t now, const TouchPoint &t, bool &redraw) {
         case Acao::TerminalRolarCima:  net::terminalRolar(+ui::termRows() / 2); break;
         case Acao::TerminalRolarBaixo: net::terminalRolar(-ui::termRows() / 2); break;
 
-        case Acao::PaginaProxima:  page++; redraw = true; break;
-        case Acao::PaginaAnterior: page--; redraw = true; break;
+        // A volta e circular (ver paginaVizinha): da ultima volta a primeira.
+        case Acao::PaginaProxima:
+            page = paginaVizinha(page, ui::paginas(), +1);
+            redraw = true;
+            break;
+        case Acao::PaginaAnterior:
+            page = paginaVizinha(page, ui::paginas(), -1);
+            redraw = true;
+            break;
 
         case Acao::GirarTela: girarTela(); redraw = true; break;
 
@@ -770,7 +927,25 @@ void tratarToque(uint32_t now, const TouchPoint &t, bool &redraw) {
                 redraw = true;
             }
             break;
+
+        case Acao::AbrirFila:  modoFila = true;  ui::fila(true);  redraw = true; break;
+        case Acao::FecharFila: modoFila = false; ui::fila(false); redraw = true; break;
+
+        case Acao::AbrirAjustes:
+            ajustesAbertos = true;
+            ui::ajustes(true);
+            redraw = true;
+            break;
+        case Acao::FecharAjustes: fecharAjustes(); redraw = true; break;
+        case Acao::TocarAjuste: tocarAjuste(d.n, now); redraw = true; break;
+
+        case Acao::Acordar: acordar(); redraw = true; break;
     }
+
+    // O toque que FECHOU o painel (fora dele, ou GIRAR e FOTO) nao pode abrir
+    // uma dupla: o segundo toque rapido cairia na pagina que acabou de
+    // aparecer, como um duplo toque que ninguem deu nela.
+    if (painelAntes && !ajustesAbertos) gestos.esquecerToque();
 }
 
 // O retrato do cartao, quando nao ha nada melhor.
@@ -820,29 +995,23 @@ bool colherRede(uint32_t now, bool &redraw) {
     Status    s;
     if (net::takeResult(r, s)) {
         if (r == NetResult::Ok) {
-            // ---- Quem acabou de terminar um turno? ----
+            // ---- Quem acabou de terminar um turno, ou parou pedindo? ----
             // ANTES de `last = s`, que e a unica janela em que os dois estados
             // existem ao mesmo tempo.
             //
-            // Isto existe SO para a comemoracao da turma, que e um evento e
-            // portanto precisa de uma borda. O realce da linha nao passa por
-            // aqui: ele desenha por `done`, que a API ja publica e que continua
-            // verdadeiro enquanto ninguem viu.
+            // Isto existe para os EVENTOS — a comemoracao da turma e o som —,
+            // que precisam de uma borda. O realce da linha nao passa por aqui:
+            // ele desenha por `done`, que a API ja publica e que continua
+            // verdadeiro enquanto ninguem viu. As regras (so conta quem
+            // continua na lista, uma festa por sessao) moram em eventos.h.
             //
-            // So conta quem CONTINUA na lista. Uma sessao que termina e some no
-            // mesmo poll nao tem linha nem estado para acompanhar a festa.
+            // `haveLast` e o que cala o primeiro poll depois do boot: sem um
+            // anterior, tudo pareceria novo. O retrato da NVS nao guarda
+            // sessoes, entao ele tambem nao inventa evento nenhum.
             if (haveLast) {
-                for (const Agent &a : s.agents) {
-                    if (a.state == AgentState::Working) continue;
-                    for (const Agent &b : last.agents) {
-                        if (b.id != a.id) continue;
-                        // Uma comemoracao POR SESSAO: com dois turnos
-                        // terminando juntos a turma comemora duas vezes, em
-                        // sequencia.
-                        if (b.state == AgentState::Working) clawd::comemorar();
-                        break;
-                    }
-                }
+                const Eventos ev = eventosDoPoll(last.agents, s.agents);
+                for (int i = 0; i < ev.comemoracoes; i++) clawd::comemorar();
+                avisar(ev, now);
             }
 
             // A janela virou? O detector guarda o poll anterior e devolve qual
@@ -1231,6 +1400,29 @@ void contarConvivio(uint32_t now, bool &redraw) {
     }
 }
 
+// O painel de ajustes esquecido aberto, e a tela da noite.
+void vigiarModos(uint32_t now, bool &redraw) {
+    // Prazo vencido vira 0 na hora: a comparacao com sinal so vale ate ~24,9
+    // dias, e um prazo esquecido voltaria a parecer futuro (ver prazoVivo).
+    silencioAte = ajustes::prazoVivo(silencioAte, now);
+    acordadaAte = ajustes::prazoVivo(acordadaAte, now);
+
+    if (ajustesAbertos && (now - ultimoGestoMs) >= PAINEL_MS) {
+        fecharAjustes();
+        redraw = true;
+    }
+
+    // A noite e decidida a cada volta, e nao so na virada do minuto: acordar
+    // e voltar a dormir dependem de um prazo em millis. A conta e barata — o
+    // relogio da placa e uma soma, e a janela e pura (ver lib/ajustes).
+    const bool escura = ajustes::telaDeNoite(escolhas.noite, hora::agoraLocal(),
+                                             ajustes::noPrazo(acordadaAte, now));
+    if (escura != noite) {
+        aplicarNoite(escura);
+        redraw = true;
+    }
+}
+
 // A tarefa de rede travou? A placa reinicia.
 void vigiarTarefaDeRede(uint32_t now) {
     // Tarefa de rede travada: reinicia a placa. Ela e quem faz a requisicao,
@@ -1285,7 +1477,13 @@ void animarClawd(uint32_t now, bool dedoNaTela, bool &redraw) {
     // `!modoTerminal`: la a tela e do agente, e um quadro de animacao do rodape
     // escreveria o selo por cima do texto. Os contadores param junto, e isso nao
     // se ve — voltar do terminal cai no quadro em que a animacao estava.
-    if (redraw || !haveLast || modoTerminal) return;
+    //
+    // A NOITE e o PAINEL DE AJUSTES param tudo pela mesma razao: os
+    // redesenhos parciais daqui (o nome digitando, a turma, a danca do reset)
+    // pintam direto no canvas, e pintariam por cima da tela preta ou do painel.
+    // Os quadros inteiros que a animacao pede tambem param — a noite nao anima
+    // nada, e com o painel aberto a pagina esta esmaecida por baixo dele.
+    if (redraw || !haveLast || modoTerminal || noite || ajustesAbertos) return;
 
     // Nas paginas 3 e 4 o bicho ocupa a tela e o quadro custa um redesenho
     // inteiro (~64 ms), que cega o toque — por isso a animacao para
@@ -1297,10 +1495,9 @@ void animarClawd(uint32_t now, bool dedoNaTela, bool &redraw) {
     // dez minutos de espera nao tem pressa nenhuma para insistir agora.
     if (clawd::tickIconeCabecalho(now, !mexendo)) redraw = true;
 
-    // Em pe as paginas de bicho grande desceram uma casa: a tela nova entrou
-    // na frente e empurrou Clawd e nivel para 3 e 4.
+    // As paginas de bicho grande (Clawd e nivel), nas duas orientacoes.
     const bool emPe = display::retrato();
-    const bool caro = emPe ? (page == 3 || page == 4) : (page == 2 || page == 3);
+    const bool caro = paginaDeBicho(page);
     if (!(caro && mexendo)) {
         // `clawd::tick` avanca o selo, o trio e o bicho do cabecalho. Roda
         // em TODA pagina, inclusive onde eles nao aparecem: congelar o que
@@ -1318,8 +1515,8 @@ void animarClawd(uint32_t now, bool dedoNaTela, bool &redraw) {
         // pe, onde ele esta em cena.
         const bool avancouNome = ui::tickNome(now);
 
-        if (page == (emPe ? 4 : 3)) {
-            // A QUARTA PAGINA nao anima NADA, e por isso este ramo esta
+        if (page == 4) {
+            // A PAGINA DO NIVEL nao anima NADA, e por isso este ramo esta
             // vazio de proposito.
             //
             // Ela animava o bicho do nivel e o fundo — as duas coisas que a
@@ -1454,11 +1651,12 @@ void desenhar(uint32_t now, bool redraw) {
         return;
     }
 
-    if (redraw && haveLast)
-        ui::drawStatus(last, page, selectedId, staleSec, armadoMs != 0,
-                       nivelEstado, xpDoDia, opcaoArmada, telaTokenAtiva(),
-                       telaResetAtiva(now) ? resetQual : nullptr,
-                       clawdDorme(now));
+    if (!redraw || !haveLast) return;
+    if (ajustesAbertos) ui::valoresAjustes(valoresDoPainel(now));
+    ui::drawStatus(last, page, selectedId, staleSec, armadoMs != 0,
+                   nivelEstado, xpDoDia, opcaoArmada, telaTokenAtiva(),
+                   telaResetAtiva(now) ? resetQual : nullptr,
+                   clawdDorme(now));
 }
 
 // O PULSO — contrato de diagnostico desta placa, e nao codigo temporario.
@@ -1489,12 +1687,15 @@ void pulso(uint32_t now) {
     static uint32_t voltas = 0;
     voltas++;
     if (now - ultimoPulso >= 5000) {
+        uint32_t falhasToque = 0;
+        const uint32_t maiorFalhaToque = filtroToque.colherMaiorFalha(falhasToque);
         Serial.printf("pulso t=%lus voltas=%lu envFaixa=%lu/5s wifi=%d rssi=%d http=%d/%dms "
                       "motivo=%s "
                       "ciclos=%lu fetch=%lums contato=%lus "
                       "spr(clima=%d) "
                       "cap=%lu/%d "
-                      "heap=%u min=%u psram=%u stale=%d pg=%d\n",
+                      "heap=%u min=%u psram=%u stale=%d pg=%d "
+                      "toque=%lu/%lums\n",
                       (unsigned long)(now / 1000), (unsigned long)voltas,
                       (unsigned long)enviosFaixaJanela(),
                       (int)net::connected(), net::rssi(), net::lastHttpCode(),
@@ -1522,7 +1723,11 @@ void pulso(uint32_t now) {
                       (unsigned long)net::capturasPedidas(),
                       net::lastCapturaCode(),
                       (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMinFreeHeap(),
-                      (unsigned)ESP.getFreePsram(), staleSec, page);
+                      (unsigned)ESP.getFreePsram(), staleSec, page,
+                      // As falhas do sensor que o filtro cobriu na janela, e a
+                      // maior delas: e o numero que diz se o limiar de soltura
+                      // (FiltroDeSoltura) esta certo para esta placa.
+                      (unsigned long)falhasToque, (unsigned long)maiorFalhaToque);
         ultimoPulso = now;
         voltas = 0;
     }

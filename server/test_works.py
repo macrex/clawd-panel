@@ -608,5 +608,132 @@ class TestVitalicio(unittest.TestCase):
         self.assertEqual(v["turnos"], 1)
 
 
+def local(dia, hora, minuto=0):
+    """Epoch de uma hora LOCAL de setembro de 2026. Os testes nao dependem do fuso."""
+    return time.mktime((2026, 9, dia, hora, minuto, 0, 0, 0, -1))
+
+
+class TestHoras(unittest.TestCase):
+    """O dia hora a hora, para o grafico da placa."""
+
+    AGORA = local(22, 18)
+
+    def test_turno_que_atravessa_a_hora_e_repartido(self):
+        h = works.horas([{"started": local(22, 13, 50),
+                          "ended": local(22, 14, 10)}], self.AGORA)
+        self.assertEqual(len(h), 24)
+        self.assertEqual((h[13], h[14]), (10, 10))
+        self.assertEqual(sum(h), 20)
+
+    def test_turnos_paralelos_nao_contam_duas_vezes(self):
+        # Dois agentes na mesma meia hora: foi meia hora de trabalho, e nao uma.
+        regs = [{"started": local(22, 10), "ended": local(22, 10, 30)},
+                {"started": local(22, 10, 15), "ended": local(22, 10, 40)}]
+        self.assertEqual(works.horas(regs, self.AGORA)[10], 40)
+
+    def test_hora_cheia_para_em_60(self):
+        h = works.horas([{"started": local(22, 9), "ended": local(22, 11)}],
+                        self.AGORA)
+        self.assertEqual((h[9], h[10], h[11]), (60, 60, 0))
+
+    def test_turno_de_ontem_nao_entra(self):
+        # A regra de `desde`: o turno e do dia em que COMECOU, mesmo que tenha
+        # atravessado a meia-noite.
+        h = works.horas([{"started": local(21, 23, 50),
+                          "ended": local(22, 0, 10)}], self.AGORA)
+        self.assertEqual(h, [0] * 24)
+
+    def test_lixo_e_livro_vazio_dao_24_zeros(self):
+        self.assertEqual(works.horas([], self.AGORA), [0] * 24)
+        lixo = [None, "x", {"started": local(22, 10)},
+                {"started": -5.0, "ended": 10.0},
+                {"started": 1e30, "ended": 2e30},
+                {"started": local(22, 11), "ended": local(22, 10)}]
+        self.assertEqual(works.horas(lixo, self.AGORA), [0] * 24)
+
+    def test_resumo_traz_as_horas(self):
+        r = works.resumo([{"started": local(22, 13, 50), "ended": local(22, 14, 10),
+                           "seconds": 1200.0}], self.AGORA)
+        self.assertEqual(r["horas"][13], 10)
+        # `now=0` e o que os testes antigos passam: nada de `mktime` antes de
+        # 1970, que no Windows levanta.
+        self.assertEqual(works.resumo([], now=0)["horas"], [0] * 24)
+
+
+class TestPorDia(unittest.TestCase):
+    """As cinco semanas, o recorde e a sequencia."""
+
+    AGORA = local(22, 18)
+
+    def turno(self, dia, custo, mes=9, hora=12):
+        t = time.mktime((2026, mes, dia, hora, 0, 0, 0, 0, -1))
+        return {"started": t, "ended": t + 60, "cost_usd": custo}
+
+    def test_35_dias_com_lacunas_do_mais_antigo_ao_de_hoje(self):
+        regs = [self.turno(22, 10.4),
+                self.turno(20, 1.5), self.turno(20, 2.1),   # dois turnos, um dia
+                self.turno(19, 7.0, mes=8),                  # 34 dias atras
+                self.turno(18, 99.0, mes=8)]                 # 35: fora da janela
+        d = works.por_dia(regs, self.AGORA)["dias"]
+        self.assertEqual(len(d), 35)
+        self.assertEqual(d[-1], 10)                          # hoje e o ultimo
+        self.assertEqual(d[-3], 4)
+        self.assertEqual(d[0], 7)
+        self.assertEqual(sum(d), 21)                         # o resto e lacuna
+
+    def test_recorde_olha_o_livro_inteiro(self):
+        # Fora das cinco semanas e ainda assim o recorde.
+        regs = [self.turno(22, 10.0), self.turno(18, 99.4, mes=8)]
+        self.assertEqual(works.por_dia(regs, self.AGORA)["dias_recorde"],
+                         {"data": "18/08", "cost_usd": 99})
+
+    def test_dia_e_o_do_inicio_do_turno(self):
+        # Comecou as 23h de ontem e terminou hoje: o custo e de ontem.
+        regs = [self.turno(21, 5.0, hora=23)]
+        self.assertEqual(works.por_dia(regs, self.AGORA)["dias"][-2:], [5, 0])
+
+    def test_sequencia_termina_hoje_quando_hoje_ja_custou(self):
+        regs = [self.turno(22, 1.0), self.turno(21, 1.0), self.turno(20, 1.0),
+                self.turno(18, 1.0)]                         # o 19 quebra
+        self.assertEqual(works.por_dia(regs, self.AGORA)["dias_seguidos"], 3)
+
+    def test_hoje_zerado_nao_quebra_a_sequencia(self):
+        # De manha cedo, antes do primeiro turno fechar: a sequencia e a de ontem.
+        regs = [self.turno(22, 0.0), self.turno(21, 1.0), self.turno(20, 1.0)]
+        self.assertEqual(works.por_dia(regs, self.AGORA)["dias_seguidos"], 2)
+
+    def test_hoje_e_ontem_zerados_zeram_a_sequencia(self):
+        regs = [self.turno(20, 1.0), self.turno(19, 1.0)]
+        self.assertEqual(works.por_dia(regs, self.AGORA)["dias_seguidos"], 0)
+
+    def test_centavos_contam_para_a_sequencia(self):
+        # US$ 0,30 vira 0 na barra, mas o dia teve trabalho pago.
+        regs = [self.turno(22, 0.3), self.turno(21, 0.3)]
+        fora = works.por_dia(regs, self.AGORA)
+        self.assertEqual(fora["dias"][-1], 0)
+        self.assertEqual(fora["dias_seguidos"], 2)
+
+    def test_livro_vazio(self):
+        fora = works.por_dia([], self.AGORA)
+        self.assertEqual(fora["dias"], [0] * 35)
+        self.assertIsNone(fora["dias_recorde"])
+        self.assertEqual(fora["dias_seguidos"], 0)
+
+    def test_livro_sem_custo_nao_tem_recorde(self):
+        regs = [{"started": local(22, 10)}, {"started": local(21, 10),
+                                            "cost_usd": None}]
+        fora = works.por_dia(regs, self.AGORA)
+        self.assertIsNone(fora["dias_recorde"])
+        self.assertEqual(fora["dias_seguidos"], 0)
+
+    def test_lixo_nao_derruba(self):
+        regs = [None, "x", {"started": "ontem", "cost_usd": 5},
+                {"started": -1e30, "cost_usd": 5}, {"started": 1e30, "cost_usd": 5},
+                self.turno(22, 3.0)]
+        fora = works.por_dia(regs, self.AGORA)
+        self.assertEqual(fora["dias"][-1], 3)
+        self.assertEqual(fora["dias_recorde"]["cost_usd"], 3)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

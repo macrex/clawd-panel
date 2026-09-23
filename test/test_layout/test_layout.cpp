@@ -171,6 +171,39 @@ void test_fatias_degeneradas_nao_estouram(void) {
     TEST_ASSERT_EQUAL_INT(14, evenSlotX(292, 4, -3, 14));
 }
 
+// ---- A barra empilhada da pagina HOJE ----
+
+void test_fatias_da_barra_fecham_a_largura(void) {
+    // O dia da maquete: US$ 97 em quatro modelos, 452 px.
+    const float c[] = {54.72f, 36.82f, 5.33f, 0.43f};
+    int w[4];
+    fatiasDaBarra(c, 4, 452, 3, w);
+    TEST_ASSERT_EQUAL_INT(452, w[0] + w[1] + w[2] + w[3]);
+    TEST_ASSERT_TRUE(w[0] > w[1] && w[1] > w[2]);
+    // A fatia minima ainda aparece.
+    TEST_ASSERT_TRUE(w[3] >= 3);
+}
+
+void test_fatia_sem_custo_nao_ocupa_nada(void) {
+    // Modelo fora da tabela de preco no meio da lista: largura zero, e o ultimo
+    // vivo continua fechando a conta.
+    const float c[] = {10.0f, 0.0f, 10.0f};
+    int w[3];
+    fatiasDaBarra(c, 3, 100, 3, w);
+    TEST_ASSERT_EQUAL_INT(0, w[1]);
+    TEST_ASSERT_EQUAL_INT(100, w[0] + w[2]);
+}
+
+void test_barra_sem_custo_ou_estreita_demais_fica_vazia(void) {
+    const float zero[] = {0.0f, 0.0f};
+    int w[2] = {7, 7};
+    fatiasDaBarra(zero, 2, 100, 3, w);
+    TEST_ASSERT_EQUAL_INT(0, w[0] + w[1]);
+    const float c[] = {1.0f, 1.0f};
+    fatiasDaBarra(c, 2, 5, 3, w);
+    TEST_ASSERT_EQUAL_INT(0, w[0] + w[1]);
+}
+
 // ---- A grade de botoes da pergunta ----
 // A area util da tela deitada, medida no ui.cpp: P0Q_X=20, p0qW()=440,
 // p0qTopo()=78, p0qFim()=236, P0Q_GAP=8, P0Q_ALT_MIN=22.
@@ -268,6 +301,9 @@ int main(int, char **) {
     RUN_TEST(test_centros_das_fatias_sao_equidistantes);
     RUN_TEST(test_resto_da_divisao_cai_dentro_das_fatias);
     RUN_TEST(test_fatias_degeneradas_nao_estouram);
+    RUN_TEST(test_fatias_da_barra_fecham_a_largura);
+    RUN_TEST(test_fatia_sem_custo_nao_ocupa_nada);
+    RUN_TEST(test_barra_sem_custo_ou_estreita_demais_fica_vazia);
     RUN_TEST(test_a_segunda_coluna_so_existe_deitado_e_a_partir_de_quatro);
     RUN_TEST(test_quatro_opcoes_deitadas_dobram_a_altura_do_botao);
     RUN_TEST(test_a_ultima_sozinha_na_fileira_toma_a_largura_inteira);

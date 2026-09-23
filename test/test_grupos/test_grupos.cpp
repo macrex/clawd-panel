@@ -273,6 +273,59 @@ void test_lista_vazia_devolve_vazia(void) {
     TEST_ASSERT_EQUAL_INT(0, (int)grupos::ordemComBloqueadosNoTopo(as).size());
 }
 
+// ---- A fila de atencao ----
+
+static Agent agPronto(const char *repo) {
+    Agent a = agEstado(repo, AgentState::Idle);
+    a.done = true;
+    return a;
+}
+
+// Quem precisa de voce primeiro: espera, pronto, rodando, parado.
+void test_fila_ordena_por_quem_precisa_de_voce(void) {
+    std::vector<Agent> as = {agEstado("parado", AgentState::Idle),
+                             agEstado("rodando", AgentState::Working),
+                             agPronto("pronto"),
+                             agEstado("espera", AgentState::Blocked)};
+    const auto o = grupos::ordemDaFila(as);
+    const int esperado[] = {3, 2, 1, 0};
+    TEST_ASSERT_EQUAL_INT(4, (int)o.size());
+    for (int i = 0; i < 4; i++) TEST_ASSERT_EQUAL_INT(esperado[i], o[i]);
+}
+
+// Dentro do mesmo degrau, a ordem da API: sem isso duas sessoes rodando
+// trocariam de linha a cada poll.
+void test_fila_e_estavel_dentro_do_degrau(void) {
+    std::vector<Agent> as = {agEstado("a", AgentState::Working),
+                             agPronto("b"),
+                             agEstado("c", AgentState::Working),
+                             agPronto("d")};
+    const auto o = grupos::ordemDaFila(as);
+    const int esperado[] = {1, 3, 0, 2};
+    for (int i = 0; i < 4; i++) TEST_ASSERT_EQUAL_INT(esperado[i], o[i]);
+}
+
+// `done` so vale para a ociosa: trabalhando ela e RODANDO, bloqueada e ESPERA —
+// a mesma precedencia da cor da faixa, que nao pode discordar do rotulo.
+void test_fila_done_so_conta_na_ociosa(void) {
+    Agent rodando = agEstado("a", AgentState::Working);
+    rodando.done = true;
+    Agent espera = agEstado("b", AgentState::Blocked);
+    espera.done = true;
+    Agent nemSei = agEstado("c", AgentState::Unknown);
+    nemSei.done = true;
+    TEST_ASSERT_EQUAL_INT(2, grupos::degrauNaFila(rodando));
+    TEST_ASSERT_EQUAL_INT(0, grupos::degrauNaFila(espera));
+    TEST_ASSERT_EQUAL_INT(3, grupos::degrauNaFila(nemSei));
+    TEST_ASSERT_EQUAL_INT(1, grupos::degrauNaFila(agPronto("d")));
+    TEST_ASSERT_EQUAL_INT(3, grupos::degrauNaFila(agEstado("e", AgentState::Idle)));
+}
+
+void test_fila_vazia_devolve_vazia(void) {
+    std::vector<Agent> as;
+    TEST_ASSERT_EQUAL_INT(0, (int)grupos::ordemDaFila(as).size());
+}
+
 int main(int, char **) {
     UNITY_BEGIN();
     RUN_TEST(test_um_provedor_nao_gera_cabecalho);
@@ -297,5 +350,9 @@ int main(int, char **) {
     RUN_TEST(test_a_ordem_relativa_e_preservada);
     RUN_TEST(test_todos_os_indices_aparecem_uma_vez);
     RUN_TEST(test_lista_vazia_devolve_vazia);
+    RUN_TEST(test_fila_ordena_por_quem_precisa_de_voce);
+    RUN_TEST(test_fila_e_estavel_dentro_do_degrau);
+    RUN_TEST(test_fila_done_so_conta_na_ociosa);
+    RUN_TEST(test_fila_vazia_devolve_vazia);
     return UNITY_END();
 }

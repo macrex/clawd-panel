@@ -34,6 +34,7 @@ fechar naquele instante perderia a cauda do trabalho — justamente a parte mais
 cara. Quem chama marca o trabalho como pendente e fecha no proximo heartbeat.
 """
 
+import datetime
 import json
 import os
 import threading
@@ -412,6 +413,54 @@ def desde(registros, inicio):
     return fora
 
 
+def horas(registros, now):
+    """Minutos trabalhados em cada hora LOCAL do dia de `now`: 24 inteiros.
+
+    O intervalo e o [started, ended] do turno, repartido pelas fronteiras de
+    hora. Os intervalos sao UNIDOS antes: dois agentes trabalhando juntos sao
+    dois turnos no mesmo trecho do relogio, e soma-los contaria a mesma meia
+    hora duas vezes. O numero responde "quanto desta hora teve alguem
+    trabalhando", que nao passa de 60.
+
+    A fronteira sai do `localtime` de cada ponto, e nao de somar 3600 a
+    meia-noite com `mktime`: assim um fuso de meia hora ou a virada do horario
+    de verao caem na hora que o relogio mostrava — e o `mktime` do Windows
+    levanta para datas antes de 1970, que os testes usam como "agora". O teto
+    de 60 segura a hora que o horario de verao repete.
+    """
+    hoje = time.localtime(now)[:3]
+    trechos = []
+    for r in registros or []:
+        if not isinstance(r, dict):
+            continue
+        a, b = _num(r.get("started")), _num(r.get("ended"))
+        # `a` entre 0 e agora: fora disso o registro esta corrompido, e o
+        # `localtime` do Windows levantaria com ele. O dia e o do INICIO, a
+        # mesma regra de `desde`.
+        if a is None or b is None or not 0 <= a <= now or b <= a:
+            continue
+        if time.localtime(a)[:3] == hoje:
+            trechos.append((a, b))
+
+    unidos = []
+    for a, b in sorted(trechos):
+        if unidos and a <= unidos[-1][1]:
+            unidos[-1][1] = max(unidos[-1][1], b)
+        else:
+            unidos.append([a, b])
+
+    seg = [0.0] * 24
+    for a, b in unidos:
+        while a < b:
+            t = time.localtime(a)
+            if t[:3] != hoje:
+                break                       # passou da meia-noite
+            fim = min(b, a - (t.tm_min * 60 + t.tm_sec + a % 1) + 3600)
+            seg[t.tm_hour] += fim - a
+            a = fim
+    return [min(60, int(round(s / 60.0))) for s in seg]
+
+
 def resumo(registros, now):
     """Agregados prontos para exibir.
 
@@ -458,6 +507,9 @@ def resumo(registros, now):
         "marcados": sum(1 for r in regs
                         if any(r.get(m) for m in
                                ("partial", "aborted", "interrupted", "stalled"))),
+        # O dia hora a hora, para o grafico da placa. Sai dos mesmos registros
+        # do resto do bloco: os turnos que COMECARAM hoje.
+        "horas": horas(regs, now),
     }
 
 
@@ -638,4 +690,61 @@ def vitalicio(registros):
         "cost_usd": round(custo, 2),
         "desde": (time.strftime("%Y-%m-%d", time.localtime(inicio))
                   if inicio is not None else None),
+    }
+
+
+# Cinco semanas: o que a tela do historico da placa desenha.
+DIAS = 35
+
+
+def por_dia(registros, now):
+    """O custo de cada dia LOCAL: `dias`, `dias_recorde` e `dias_seguidos`.
+
+    O dia e o do INICIO do turno, a regra de `desde`, e o custo e o campo
+    `cost_usd` somado como em `resumo` — e nao os tokens, como no `vitalicio`.
+    A ultima barra do grafico e o dia de hoje, e ela tem que bater com o card
+    HOJE, que soma aquele campo. A base mudou desde que o `vitalicio` foi
+    escrito: no livro real de 22/09/2026, 2750 de 2802 turnos tem o campo.
+
+    O recorde e a sequencia olham o livro INTEIRO, e nao so as cinco semanas:
+    um recorde de dois meses atras continua sendo o recorde.
+    """
+    custo = {}
+    for r in registros or []:
+        if not isinstance(r, dict):
+            continue
+        t = _num(r.get("started"))
+        if t is None:
+            continue
+        try:
+            d = datetime.date.fromtimestamp(t)      # local, como `inicio_do_dia`
+        except (OverflowError, OSError, ValueError):
+            continue                                # registro corrompido
+        custo[d] = custo.get(d, 0.0) + (_num(r.get("cost_usd")) or 0.0)
+
+    hoje = datetime.date.fromtimestamp(now)
+    um = datetime.timedelta(days=1)
+
+    # Hoje ainda zerado nao quebra a sequencia: de manha, antes do primeiro
+    # turno fechar, ela e a de ontem. Sem isto a tela mostraria zero todo dia
+    # ate o primeiro trabalho terminar.
+    d = hoje if custo.get(hoje, 0.0) > 0 else hoje - um
+    seguidos = 0
+    while custo.get(d, 0.0) > 0:
+        seguidos += 1
+        d -= um
+
+    # Um dia de custo zero nao e recorde de nada: livro so com turnos sem
+    # `cost_usd` sai como livro vazio.
+    recorde = max(custo, key=custo.get, default=None)
+    if recorde is not None and custo[recorde] <= 0:
+        recorde = None
+
+    return {
+        "dias": [int(round(custo.get(hoje - um * i, 0.0)))
+                 for i in range(DIAS - 1, -1, -1)],
+        "dias_recorde": (None if recorde is None else
+                         {"data": recorde.strftime("%d/%m"),
+                          "cost_usd": int(round(custo[recorde]))}),
+        "dias_seguidos": seguidos,
     }

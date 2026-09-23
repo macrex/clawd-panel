@@ -77,4 +77,26 @@ AppConfig ler() {
     return c;
 }
 
+ajustes::Escolhas lerEscolhas() {
+    ajustes::Escolhas e;
+    Preferences p;
+    if (!p.begin(NVS_AREA, true)) return e;
+    e.degrau = p.getChar("aj_degrau", e.degrau);
+    e.som    = p.getBool("aj_som", e.som);
+    e.noite  = p.getBool("aj_noite", e.noite);
+    p.end();
+    return e;
+}
+
+// Um toque, uma gravacao — e so do que mudou (os `put*` da NVS comparam antes
+// de escrever). Toque no painel e raro; nao ha o que agrupar.
+void guardarEscolhas(const ajustes::Escolhas &e) {
+    Preferences p;
+    if (!p.begin(NVS_AREA, false)) return;
+    p.putChar("aj_degrau", (int8_t)e.degrau);
+    p.putBool("aj_som", e.som);
+    p.putBool("aj_noite", e.noite);
+    p.end();
+}
+
 }  // namespace configstore

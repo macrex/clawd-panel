@@ -164,6 +164,39 @@ Status parseStatus(const char *json) {
         s.works.mediana   = (int)(wk["mediana_seconds"] | 0.0f);
         s.works.hasCost   = wk["cost_usd"].is<float>();
         s.works.costUsd   = s.works.hasCost ? wk["cost_usd"].as<float>() : 0;
+        s.works.hasLines  = wk["lines_added"].is<int>() &&
+                            wk["lines_removed"].is<int>();
+        s.works.linesAdded   = s.works.hasLines ? wk["lines_added"].as<int>() : 0;
+        s.works.linesRemoved = s.works.hasLines ? wk["lines_removed"].as<int>() : 0;
+        // As 24 horas ou nada: com outro tamanho a hora atual cairia na barra
+        // errada, e isso nao tem cara de erro na tela.
+        JsonArrayConst hr = wk["horas"].as<JsonArrayConst>();
+        if (!hr.isNull() && hr.size() == 24) {
+            s.works.hasHoras = true;
+            int i = 0;
+            for (JsonVariantConst v : hr)
+                s.works.horas[i++] = (int)((v | 0.0f) + 0.5f);
+        }
+    }
+
+    // As cinco semanas. Mesma regra: sem `dias` (API anterior) ou com outro
+    // tamanho, `known` fica falso e a pagina diz que nao ha historico, em vez
+    // de pintar um calendario de zeros.
+    JsonArrayConst ds = doc["dias"].as<JsonArrayConst>();
+    if (!ds.isNull() && ds.size() == HISTORICO_DIAS) {
+        s.historico.known = true;
+        int i = 0;
+        // Arredondado e nao truncado: o contrato e inteiro, mas uma API que
+        // mande 12.7 nao pode virar 12.
+        for (JsonVariantConst v : ds)
+            s.historico.dias[i++] = (int)((v | 0.0f) + 0.5f);
+        JsonVariantConst rc = doc["dias_recorde"];
+        if (rc["data"].is<const char *>()) {
+            s.historico.recordeData = rc["data"].as<const char *>();
+            s.historico.recordeUsd  = (int)((rc["cost_usd"] | 0.0f) + 0.5f);
+        }
+        if (doc["dias_seguidos"].is<int>())
+            s.historico.seguidos = doc["dias_seguidos"].as<int>();
     }
 
     // A quebra por modelo do dia. Mesma regra do bloco acima: ausente deixa

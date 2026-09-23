@@ -8,8 +8,14 @@
 #include "clawd.h"
 #include "layout.h"
 #include "grupos.h"
+#include "previsao.h"
+#include "relogio.h"
 #include "provedores.h"
+#include "ajustes.h"
 #include "DejaVuSans7pt7b.h"
+#include "hora.h"
+#include "semanas.h"
+#include "acao.h"      // paginaDeBicho: a mesma regra do laco
 #include <cstdio>
 #include <cstring>
 
@@ -79,6 +85,14 @@ bool g_stale = false;
 
 // Ha duas fontes configuradas? Sem isso, nenhum chip de maquina e desenhado.
 bool g_duasFontes = false;
+
+// Os modos que o laco liga (ver ui::fila, ui::ajustes, ui::noite).
+bool g_fila    = false;
+bool g_ajustes = false;
+bool g_noite   = false;
+// O que a tela da noite mostrou por ultimo (ver drawNoite). Vazio = a proxima
+// chamada desenha de qualquer jeito.
+std::string g_noiteVisto;
 // POR QUE o dado esta velho, em ate 11 caracteres — quem escolhe o texto e
 // lib/metrics/falha.h, a partir do codigo e da duracao da ultima tentativa.
 //
@@ -239,9 +253,14 @@ uint16_t corDaTag(int origem) { return origem ? ROXO_PC2 : C_GREEN; }
 //
 // O nome sai do proprio payload que esta na tela: e a maquina que respondeu
 // que diz como se chama.
+// A largura do selo, para quem precisa reservar o lugar dele antes de desenhar.
+int larguraSeloVia(const std::string &tag) {
+    return (tag.empty() ? 11 : (int)tag.size() + 4) * 6 + 10;
+}
+
 int drawSeloVia(Arduino_Canvas *g, int x, int y, const std::string &tag) {
     const std::string txt = tag.empty() ? "VIA RESERVA" : "VIA " + tag;
-    const int w = (int)txt.size() * 6 + 10;
+    const int w = larguraSeloVia(tag);
     g->fillRoundRect(x, y, w, 16, 4, ROXO_PC2);
     g->setTextColor(BG);
     g->setTextSize(1);
@@ -280,14 +299,18 @@ void drawFooter(Arduino_Canvas *g, const Status &s, int page, int staleSeconds) 
     // A TELA NOVA TEM a fileira, no mesmo canto inferior esquerdo das outras.
     // Ela saiu do MIOLO — que era onde ela morava em pe, e onde deitado ela
     // custaria caro e roubaria o espaco dos aneis —, nao do painel.
-    if (page != 3 && page != 4) {
+    if (!paginaDeBicho(page)) {
         const int fs = 3;
         if (!clawd::crewW() || !clawd::drawCrewInto(g, 14, chao))
             drawLogo(g, 14, chao - logoH(fs) - 6, fs, g_stale ? MUTED : LARANJA);
     }
 
-    for (int i = 0; i < ui::PAGES; i++) {
-        const int cx = SCREEN_W - 40 - (ui::PAGES - 1 - i) * 18;
+    // Passo de 16 e nao os 18 de quando eram cinco: as duas bolinhas novas
+    // comeriam 36 px da faixa da idade do dado, que ja divide o rodape com a
+    // turma. Com 16 o "ha 12s" ainda cabe na linha delas (ver abaixo).
+    const int PASSO = 16;
+    for (int i = 0; i < ui::paginas(); i++) {
+        const int cx = SCREEN_W - 40 - (ui::paginas() - 1 - i) * PASSO;
         if (i == page) g->fillCircle(cx, SCREEN_H - 26, 5, fgColor());
         else           g->drawCircle(cx, SCREEN_H - 26, 5, MUTED);
     }
@@ -303,7 +326,7 @@ void drawFooter(Arduino_Canvas *g, const Status &s, int page, int staleSeconds) 
     // cabecalho ja mostra o selo VIA.
     std::string txt = textoVetustez(s, staleSeconds, g_motivo, false);
 
-    const int dotEsq = SCREEN_W - 40 - (ui::PAGES - 1) * 18 - 5;
+    const int dotEsq = SCREEN_W - 40 - (ui::paginas() - 1) * PASSO - 5;
 
     // A fileira do rodape cresceu para 219 px quando o alert e o sweeping
     // entraram nela, e vai ate x=233. O texto e alinhado a direita, entao um
@@ -314,7 +337,7 @@ void drawFooter(Arduino_Canvas *g, const Status &s, int page, int staleSeconds) 
     // x=14 para caber na faixa do flush de prefixo (ver display::flushPrefix).
     // So o aviso de contato perdido chega a esse tamanho; a idade normal ("12s")
     // nao tem como encostar em nada.
-    const int trioFim = (page != 3 && page != 4 && clawd::crewW())
+    const int trioFim = (!paginaDeBicho(page) && clawd::crewW())
                             ? 14 + clawd::crewW() : 14;
     if (staleSeconds > 0 && dotEsq - 12 - (int)txt.size() * 6 < trioFim + 8)
         txt = textoVetustezCurto(s, staleSeconds);
@@ -338,7 +361,19 @@ void drawFooter(Arduino_Canvas *g, const Status &s, int page, int staleSeconds) 
     // seria a mesma mentira que o aviso de contato perdido existe para evitar.
     g->setTextColor((staleSeconds > 0 || s.hooksEngine) ? C_YELL : MUTED);
     g->setTextSize(1);
-    g->setCursor(dotEsq - 12 - (int)txt.size() * 6, SCREEN_H - 30);
+    // COM SETE BOLINHAS NEM O ENCURTADO CABE: entre a turma do South Park
+    // (~x=281) e a primeira bolinha sobram ~50 px — a idade normal ("ha 12s",
+    // 36) passa, o "S/CONTATO 12s" (78) nao. Na linha das bolinhas ele passaria
+    // por cima dos bichos, e o redesenho da turma apagaria a ponta dele a cada
+    // quadro. Ele sobe uma linha, alinhado a ponta DIREITA das bolinhas, onde a
+    // faixa livre e larga.
+    int tx = dotEsq - 12 - (int)txt.size() * 6;
+    int ty = SCREEN_H - 30;
+    if (tx < trioFim + 8) {
+        tx = SCREEN_W - 35 - (int)txt.size() * 6;
+        ty = SCREEN_H - 44;
+    }
+    g->setCursor(tx, ty);
     g->print(txt.c_str());
 
     // O CARIMBO DOS LIMITES (`textoSincronia`) NAO APARECE AQUI, so no rodape
@@ -2004,16 +2039,8 @@ void drawHeaderRetrato(Arduino_Canvas *g, const Status &s, int staleSeconds,
 // total arredonda ao multiplo de CINCO minutos mais proximo — o ruido morre e
 // um reset quebrado ainda apareceria certo.
 std::string horaDoReset(const Metric &m, const Clock *rel) {
-    int hh = -1, mm = 0;
-    if (!rel || !rel->known || m.resetsIn <= 0) return "";
-    if (sscanf(rel->hm.c_str(), "%d:%d", &hh, &mm) != 2) return "";
-
-    long tot = (long)hh * 60 + mm + (m.resetsIn + 30) / 60;
-    tot = ((tot + 2) / 5) * 5 % (24 * 60);
-    char buf[16];
-    if (tot % 60) snprintf(buf, sizeof(buf), "%02ld:%02ldh", tot / 60, tot % 60);
-    else          snprintf(buf, sizeof(buf), "%ldh", tot / 60);
-    return buf;
+    if (!rel || m.resetsIn <= 0) return "";
+    return horaDaquiA(*rel, m.resetsIn);
 }
 
 void drawColunaLimite(Arduino_Canvas *g, int x, int y, int w, int h,
@@ -2669,8 +2696,8 @@ void drawTelaOffline(Arduino_Canvas *g, const Status &s, int staleSeconds) {
 // As bolinhas de pagina, agora que em pe ha para onde ir. Centradas na linha
 // da idade do dado, que continua na direita.
 void drawBolinhasRetrato(Arduino_Canvas *g, int page) {
-    for (int i = 0; i < ui::PAGES; i++) {
-        const int cx = PANEL_W / 2 - (ui::PAGES - 1) * 10 + i * 20;
+    for (int i = 0; i < ui::paginas(); i++) {
+        const int cx = PANEL_W / 2 - (ui::paginas() - 1) * 10 + i * 20;
         if (i == page) g->fillCircle(cx, R_STATUS_Y + 4, 4, fgColor());
         else           g->drawCircle(cx, R_STATUS_Y + 4, 3, TRACK);
     }
@@ -3409,6 +3436,12 @@ void marcarMotivo(const char *v) { if (v) g_motivo = v; }
 
 void duasFontes(bool v) { g_duasFontes = v; }
 
+void fila(bool v)    { g_fila = v; }
+void ajustes(bool v) { g_ajustes = v; }
+void noite(bool v)   { g_noite = v; g_noiteVisto.clear(); }
+
+int paginas() { return display::retrato() ? PAGINAS_EM_PE : PAGINAS_DEITADO; }
+
 bool limiteEstourado(const Status &s) {
     return (s.session.known && s.session.pct >= 100) ||
            (s.week.known && s.week.pct >= 100);
@@ -3549,6 +3582,272 @@ void drawPageNivel(Arduino_Canvas *g, const Status &s, const nivel::Estado &e,
     const int barH = emPe ? 8 : 6;
     g->fillRect(14, barY, barW, barH, TRACK);
     g->fillRect(14, barY, (int)(barW * frac), barH, g_stale ? MUTED : LARANJA);
+}
+
+// ---- As paginas deitadas do fim: Semanas (5) e Hoje (6) ----
+// As duas moram entre o cabecalho (divisoria em y=42) e a turma do rodape, que
+// comeca em ~270. A geometria e a das maquetes aprovadas, que imitam as
+// primitivas do Arduino_GFX com as fontes reais: os numeros valem na placa.
+
+// API sem o bloco que a pagina desenha: dizer o que falta, como drawPageNivel,
+// e nao pintar zeros que afirmariam um dia parado.
+void drawSemHistorico(Arduino_Canvas *g, const char *falta) {
+    g->setTextColor(MUTED);
+    g->setTextSize(2);
+    g->setCursor(14, 140);
+    g->print("SEM HISTORICO");
+    g->setTextSize(1);
+    g->setCursor(14, 168);
+    g->print(falta);
+}
+
+// Rotulo em corpo 1, valor logo abaixo e, se houver, uma linha de apoio.
+// `rotuloValor` faz os dois primeiros, mas so na cor do texto — e aqui as
+// LINHAS saem em verde e a SEMANA PASSADA em cinza.
+void numeroComRotulo(Arduino_Canvas *g, int x, int y, const char *rotulo,
+                     const char *valor, uint16_t cor, int tam,
+                     const char *apoio = nullptr) {
+    g->setTextSize(1);
+    g->setTextColor(MUTED);
+    g->setCursor(x, y);
+    g->print(rotulo);
+    g->setTextSize(tam);
+    g->setTextColor(cor);
+    g->setCursor(x, y + 12);
+    g->print(valor);
+    g->setTextSize(1);
+    if (apoio && apoio[0]) {
+        g->setTextColor(MUTED);
+        g->setCursor(x, y + 12 + 8 * tam + 4);
+        g->print(apoio);
+    }
+}
+
+// O calendario: 5 linhas x 7 colunas, domingo primeiro. A conta de qual dia
+// cai em qual celula mora em lib/metrics/semanas.h.
+const int SEM_GX = 14, SEM_GY = 78, SEM_CW = 34, SEM_CH = 30, SEM_GAP = 4;
+const int SEM_RX = 290;          // a coluna dos numeros da semana
+
+// A quinta pagina deitada: as ultimas cinco semanas, dia a dia.
+//
+// O DIA DE HOJE vem do relogio da PLACA, o mesmo do cabecalho: e ele que diz
+// em que coluna hoje cai. A API manda so os custos, do mais antigo para o mais
+// novo, e o ultimo e hoje.
+void drawPageSemanas(Arduino_Canvas *g, const Status &s) {
+    const Historico &h = s.historico;
+    const long agora = hora::agoraLocal();
+    const int dow = diaDaSemana(agora);
+    if (!h.known) {
+        drawSemHistorico(g, "a API nao publica os dias");
+        return;
+    }
+    if (dow < 0) {
+        drawSemHistorico(g, "a placa ainda nao sabe que dia e");
+        return;
+    }
+
+    g->setTextSize(1);
+    g->setTextColor(MUTED);
+    g->setCursor(14, 52);
+    g->print("5 SEMANAS  (US$ por dia)");
+    const char *LETRAS = "DSTQQSS";
+    for (int i = 0; i < 7; i++) {
+        g->setCursor(SEM_GX + i * (SEM_CW + SEM_GAP) + (SEM_CW - 6) / 2, 66);
+        g->write(LETRAS[i]);
+    }
+
+    // A escala e o dia mais caro das 35, e nao so dos que aparecem: o dia
+    // mais caro nao sai da conta so porque caiu antes do primeiro domingo.
+    const int maximo = maiorDia(h);
+    const uint16_t quente = g_stale ? MUTED : LARANJA;
+    for (int c = 0; c < 35; c++) {
+        const int x = SEM_GX + (c % 7) * (SEM_CW + SEM_GAP);
+        const int y = SEM_GY + (c / 7) * (SEM_CH + SEM_GAP);
+        const int atras = atrasDaCelula(c, dow);
+        if (atras < 0) {
+            // O resto da semana: so o contorno, para a linha continuar sendo
+            // uma semana inteira.
+            g->drawRoundRect(x, y, SEM_CW, SEM_CH, 4, TRACK);
+            continue;
+        }
+        const int v = h.dias[HISTORICO_DIAS - 1 - atras];
+        g->fillRoundRect(x, y, SEM_CW, SEM_CH, 4,
+                         misturar(SUBCARD, quente, calorDoDia(v, maximo), 100));
+        // Numero escuro na celula quente e cinza na fria: o contraste que se
+        // le nas duas pontas da escala.
+        g->setTextColor(v * 100 > maximo * 55 ? BG : MUTED);
+        g->setCursor(x + 3, y + 3);
+        g->print(diaDoMes(agora, atras));
+        if (atras == 0)
+            g->drawRoundRect(x - 1, y - 1, SEM_CW + 2, SEM_CH + 2, 5, fgColor());
+    }
+
+    char buf[32];
+    snprintf(buf, sizeof(buf), "US$ %d", somaDaSemana(h, dow, 0));
+    numeroComRotulo(g, SEM_RX, 66, "ESTA SEMANA (DOM-HOJE)", buf, fgColor(), 2);
+    snprintf(buf, sizeof(buf), "US$ %d", somaDaSemana(h, dow, 1));
+    numeroComRotulo(g, SEM_RX, 104, "SEMANA PASSADA", buf, MUTED, 2);
+
+    if (h.recordeData.empty()) snprintf(buf, sizeof(buf), "-");
+    else snprintf(buf, sizeof(buf), "%s  US$ %d", h.recordeData.c_str(),
+                  h.recordeUsd);
+    numeroComRotulo(g, SEM_RX, 142, "RECORDE", buf, fgColor(), 1);
+
+    if (h.seguidos < 0) snprintf(buf, sizeof(buf), "-");
+    else snprintf(buf, sizeof(buf), "%d", h.seguidos);
+    numeroComRotulo(g, SEM_RX, 166, "DIAS SEGUIDOS", buf,
+                    colorOf(Level::Green), 2);
+
+    // O RESET e o do limite semanal, o mesmo do anel da tela inicial: o dia e
+    // a hora da virada e, entre parenteses, quanto falta.
+    std::string reset;
+    if (s.week.known) {
+        const std::string inst = instanteCurto(g, s.week, &s.clock, 176);
+        reset = inst.empty() ? s.week.resets
+              : s.week.resets.empty() ? inst
+              : inst + "  (" + s.week.resets + ")";
+    }
+    numeroComRotulo(g, SEM_RX, 204, "RESET DA SEMANA",
+                    reset.empty() ? "-" : reset.c_str(),
+                    g_stale ? MUTED : C_YELL, 1);
+}
+
+// O grafico de minutos por hora: uma barra por hora do dia sobre um trilho
+// fraco, que e o que faz as horas vazias continuarem sendo horas.
+const int HOJE_X0 = 26, HOJE_BASE = 196, HOJE_HMAX = 84, HOJE_PASSO = 18;
+
+// As cores da barra POR MODELO, na ordem da API (maior custo primeiro). O
+// laranja da marca vai para o modelo que mais custou; o segundo e o mesmo
+// laranja escurecido, para os dois Opus lerem como familia.
+uint16_t corDoModelo(int i) {
+    // Dado velho: quatro cinzas em degrau, para as fatias continuarem
+    // distinguiveis sem nenhuma cor viva.
+    if (g_stale) return misturar(MUTED, BG, i * 20, 100);
+    switch (i) {
+        case 0:  return LARANJA;
+        case 1:  return misturar(LARANJA, BG, 45, 100);
+        case 2:  return ROXO_PC2;
+        default: return H_DONE;
+    }
+}
+
+// A sexta pagina deitada: o dia de hoje. Quatro numeros, o dia hora a hora e
+// de quem foi o custo.
+void drawPageHoje(Arduino_Canvas *g, const Status &s) {
+    const Works &w = s.works;
+    if (!w.known) {
+        drawSemHistorico(g, "a API nao publica o bloco works");
+        return;
+    }
+
+    // ---- Os quatro numeros ----
+    char val[24], apoio[32];
+    snprintf(val, sizeof(val), "%d", w.trabalhos);
+    apoio[0] = '\0';
+    if (w.mediana > 0)
+        snprintf(apoio, sizeof(apoio), "mediana %s", formatTurno(w.mediana).c_str());
+    numeroComRotulo(g, 14, 52, "TURNOS", val, fgColor(), 2, apoio);
+
+    // A espera por voce so aparece quando houve: um "0s" nao diz nada.
+    snprintf(val, sizeof(val), "%s", formatTurno(w.seconds).c_str());
+    apoio[0] = '\0';
+    if (w.blocked > 0)
+        snprintf(apoio, sizeof(apoio), "esperou %s", formatTurno(w.blocked).c_str());
+    numeroComRotulo(g, 124, 52, "NO TECLADO", val, fgColor(), 2, apoio);
+
+    // Equivalente em preco de API, e nao o que a assinatura cobrou — dai o
+    // plano embaixo, que e o que de fato se paga.
+    if (w.hasCost) snprintf(val, sizeof(val), "US$%.0f", w.costUsd);
+    else           snprintf(val, sizeof(val), "-");
+    apoio[0] = '\0';
+    for (const PlanoConta &p : s.planos)
+        if (p.agente == "claude") snprintf(apoio, sizeof(apoio), "%s", p.rotulo.c_str());
+    numeroComRotulo(g, 244, 52, "CUSTO API", val, fgColor(), 2, apoio);
+
+    apoio[0] = '\0';
+    if (w.hasLines) {
+        contadorCurto(val, sizeof(val), '+', w.linesAdded);
+        contadorCurto(apoio, sizeof(apoio), '-', w.linesRemoved);
+    } else {
+        snprintf(val, sizeof(val), "-");
+    }
+    numeroComRotulo(g, 364, 52, "LINHAS", val, colorOf(Level::Green), 2, apoio);
+
+    // ---- Minutos por hora ----
+    g->setTextColor(MUTED);
+    g->setCursor(14, 102);
+    g->print("MINUTOS POR HORA");
+    if (!w.hasHoras) {
+        // `works` de uma API anterior ao grafico: 24 barras zeradas afirmariam
+        // um dia parado.
+        g->setCursor(14, 150);
+        g->print("a API nao publica as horas");
+    } else {
+        // A hora de agora sai em branco: e a unica barra que ainda cresce.
+        int agora = -1;
+        if (s.clock.known) sscanf(s.clock.hm.c_str(), "%d", &agora);
+        const int barW = HOJE_PASSO - 4;
+        const uint16_t trilho = misturar(BG, TRACK, 40, 100);
+        for (int hh = 0; hh < 24; hh++) {
+            const int bx = HOJE_X0 + hh * HOJE_PASSO;
+            g->fillRect(bx, HOJE_BASE - HOJE_HMAX, barW, HOJE_HMAX, trilho);
+            // Serrado em 60 por defesa: a API ja une os intervalos e tem o
+            // mesmo teto, mas um valor fora do contrato nao pode furar o trilho.
+            const int m = w.horas[hh] > 60 ? 60 : w.horas[hh];
+            if (m <= 0) continue;
+            int bh = HOJE_HMAX * m / 60;
+            if (bh < 2) bh = 2;
+            g->fillRoundRect(bx, HOJE_BASE - bh, barW, bh, 2,
+                             hh == agora ? fgColor() : (g_stale ? MUTED : LARANJA));
+        }
+        const int marcas[] = {0, 6, 12, 18, 23};
+        for (int hh : marcas) {
+            snprintf(val, sizeof(val), "%dh", hh);
+            g->setCursor(HOJE_X0 + hh * HOJE_PASSO +
+                             (barW - (int)strlen(val) * 6) / 2,
+                         HOJE_BASE + 4);
+            g->print(val);
+        }
+    }
+
+    // ---- Por modelo ----
+    // Quem escolhe os modelos e faz o percentual e fatiasDosModelos (lib).
+    if (!s.uso.known) return;
+    const int MAX_MOD = 4;
+    const std::vector<FatiaModelo> fat = fatiasDosModelos(s.uso, MAX_MOD);
+    const int n = (int)fat.size();
+    if (!n) return;
+    float custo[MAX_MOD];
+    for (int i = 0; i < n; i++) custo[i] = fat[i].custo;
+
+    const int Y = 216, BW = SCREEN_W - 28;
+    g->setTextColor(MUTED);
+    g->setCursor(14, Y);
+    g->print("POR MODELO");
+    int larg[MAX_MOD];
+    fatiasDaBarra(custo, n, BW, 3, larg);
+    int x = 14;
+    for (int i = 0; i < n; i++) {
+        // 1 px a menos em cada fatia: a fresta de fundo e o que separa duas
+        // cores vizinhas parecidas.
+        if (larg[i] > 1) g->fillRect(x, Y + 12, larg[i] - 1, 8, corDoModelo(i));
+        x += larg[i];
+    }
+
+    int lx = 14;
+    for (int i = 0; i < n; i++) {
+        const int pct = fat[i].pct;
+        char leg[40];
+        if (pct) snprintf(leg, sizeof(leg), "%s %d%%", fat[i].rotulo.c_str(), pct);
+        else     snprintf(leg, sizeof(leg), "%s <1%%", fat[i].rotulo.c_str());
+        const int lw = 9 + (int)strlen(leg) * 6;
+        if (lx + lw > SCREEN_W - 14) break;     // legenda que nao cabe sai inteira
+        g->fillRect(lx, Y + 28, 6, 6, corDoModelo(i));
+        g->setTextColor(pct ? fgColor() : MUTED);
+        g->setCursor(lx + 9, Y + 27);
+        g->print(leg);
+        lx += lw + 14;
+    }
 }
 
 // ====================================================================
@@ -3838,7 +4137,7 @@ void drawHeaderDeitado(Arduino_Canvas *g, const Status &s, int staleSeconds) {
     // cabecalho antigo ele disputava a faixa com o titulo e o clima e sumia em
     // silencio quando nao cabia. Aqui ele tem lugar proprio.
     if (s.viaSlave) {
-        const int sw = (s.tag.empty() ? 11 : (int)s.tag.size() + 4) * 6 + 10;
+        const int sw = larguraSeloVia(s.tag);
         drawSeloVia(g, SCREEN_W - L_MARG - sw, L_HDR_H + 4, s.tag);
     }
 
@@ -3960,6 +4259,31 @@ void drawTelaBichoDeitado(Arduino_Canvas *g, const Status &s, int staleSeconds,
     }
 }
 
+// A linha do Fable, com largura e altura escolhidas por quem chama: a tela nova
+// a centra em 300 px, a fila a estica de margem a margem.
+void drawFableDeitado(Arduino_Canvas *g, const Status &s, int x0, int lw, int y) {
+    if (!s.fableKnown) return;
+    const uint16_t cor = s.fableMemoria ? MUTED : colorOf(s.fableLevel);
+    g->setTextColor(MUTED);
+    g->setTextSize(1);
+    g->setCursor(x0, y - 1);
+    g->print("FABLE");
+
+    char pb[8];
+    snprintf(pb, sizeof(pb), "%d%%", s.fablePct);
+    const int numX = x0 + lw - 4 * 6;
+    g->setTextColor(cor);
+    g->setCursor(numX + 4 * 6 - (int)strlen(pb) * 6, y - 1);
+    g->print(pb);
+
+    const int bx = x0 + 5 * 6 + 8;
+    const int bw = numX - 8 - bx;
+    g->fillRoundRect(bx, y + 1, bw, 3, 1, CARD);
+    int fill = bw * (s.fablePct < 0 ? 0 : (s.fablePct > 100 ? 100 : s.fablePct)) / 100;
+    if (fill > 0 && fill < 3) fill = 3;
+    if (fill > 0) g->fillRoundRect(bx, y + 1, fill, 3, 1, cor);
+}
+
 void drawDeitadaNova(Arduino_Canvas *g, const Status &s, int staleSeconds,
                      int opcaoArmada) {
     g->fillScreen(BG);
@@ -3987,29 +4311,7 @@ void drawDeitadaNova(Arduino_Canvas *g, const Status &s, int staleSeconds,
                     "SEMANA", s.week, JANELA_7D, &s.clock);
 
     // ---- A linha do Fable, centrada ----
-    if (s.fableKnown) {
-        const uint16_t cor = s.fableMemoria ? MUTED : colorOf(s.fableLevel);
-        const int lw = 300;
-        const int x0 = (SCREEN_W - lw) / 2;
-        g->setTextColor(MUTED);
-        g->setTextSize(1);
-        g->setCursor(x0, L_FABLE_Y - 1);
-        g->print("FABLE");
-
-        char pb[8];
-        snprintf(pb, sizeof(pb), "%d%%", s.fablePct);
-        const int numX = x0 + lw - 4 * 6;
-        g->setTextColor(cor);
-        g->setCursor(numX + 4 * 6 - (int)strlen(pb) * 6, L_FABLE_Y - 1);
-        g->print(pb);
-
-        const int bx = x0 + 5 * 6 + 8;
-        const int bw = numX - 8 - bx;
-        g->fillRoundRect(bx, L_FABLE_Y + 1, bw, 3, 1, CARD);
-        int fill = bw * (s.fablePct < 0 ? 0 : (s.fablePct > 100 ? 100 : s.fablePct)) / 100;
-        if (fill > 0 && fill < 3) fill = 3;
-        if (fill > 0) g->fillRoundRect(bx, L_FABLE_Y + 1, fill, 3, 1, cor);
-    }
+    drawFableDeitado(g, s, (SCREEN_W - 300) / 2, 300, L_FABLE_Y);
 
     // ---- A fileira de sessoes ----
     // Bloqueado primeiro, como na lista em pe: a fileira corta no que cabe, e
@@ -4055,6 +4357,244 @@ void drawDeitadaNova(Arduino_Canvas *g, const Status &s, int staleSeconds,
     }
 }
 
+// ---- A FILA DE ATENCAO (a primeira tela deitada, arrastada para cima) ----
+//
+// A mesma tela nova com a pergunta trocada: em vez de "quanto sobrou", QUEM
+// PRECISA DE VOCE. Os aneis viram duas barras numa faixa so e o espaco que eles
+// soltam vira linhas de sessao de largura inteira, ordenadas por urgencia (ver
+// grupos::ordemDaFila). Cabecalho e rodape sao os da tela nova, na mesma
+// geometria: `redrawTopoNova` e `redrawBadge` repintam o nome e a turma por
+// prefixo sem saber qual das duas esta na tela.
+//
+// O VERTICAL:
+//
+//   0..42     cabecalho (nome, folhinha, hora)
+//   52..99    os dois limites, lado a lado
+//   107..114  a linha do Fable, de margem a margem
+//   118..262  ate quatro linhas de sessao (34 px, 3 de vao)
+//   267..312  a turma, no canto inferior esquerdo
+//
+// As linhas terminam em 262 pelo mesmo motivo da fileira de cartoes: a turma
+// comeca em 267, e `redrawBadge` limpa a caixa dela sem olhar o que ha em cima.
+const int FL_LIM_VAO  = 20;
+const int FL_LIM_W    = (SCREEN_W - L_MARG * 2 - FL_LIM_VAO) / 2;   // 216
+const int FL_ROT_Y    = 52;     // rotulo e previsao, corpo 1
+const int FL_PCT_Y    = 64;     // percentual, corpo 3
+// A barra comeca depois do pior percentual: "100%" em corpo 3 pinta 69 px.
+const int FL_BARRA_DX = 70;
+const int FL_BARRA_Y  = 66;
+const int FL_BARRA_H  = 8;
+const int FL_PRAZO_Y  = 92;     // baseline da DejaVu
+const int FL_FABLE_Y  = 108;
+const int FL_Y        = FILA_Y0;     // a geometria das linhas mora em lib/layout,
+const int FL_ALT      = FILA_ALT;    // junto do hit-test que a le
+const int FL_PASSO    = FILA_PASSO;
+const int FL_MAX      = FILA_MAX;
+const int FL_RAIO     = 7;
+// A coluna do nome: depois do estado por extenso ("RODANDO", 42 px) e do turno.
+const int FL_NOME_DX  = 70;
+const int FL_CTX_W    = 90;     // o trilho do contexto, na ponta direita
+
+// O rotulo e a cor de cada degrau da fila, na ordem de grupos::degrauNaFila.
+const char *const FL_ROTULO[] = {"ESPERA", "PRONTO", "RODANDO", "PARADO"};
+const uint16_t    FL_COR[]    = {H_BLOCKED, H_DONE, H_WORKING, MUTED};
+
+// Um limite na faixa de cima: rotulo e previsao na primeira linha, o percentual
+// grande a esquerda, e a barra com o prazo e o instante embaixo dela. A barra e
+// a `drawBar` de sempre — gasto, folga ate o ritmo e fresta —, a mesma
+// semantica do anel que ela substitui aqui. `xFim` e onde a previsao termina:
+// a margem da metade, ou antes do selo VIA quando ele esta na tela.
+void drawLimiteFila(Arduino_Canvas *g, int x, int xFim, const char *titulo,
+                    const Metric &m, int janelaSeg, const Clock &rel) {
+    g->setTextSize(1);
+    g->setTextColor(MUTED);
+    g->setCursor(x, FL_ROT_Y);
+    g->print(titulo);
+
+    bool perigo = false;
+    const std::string prev = textoDaPrevisao(m, janelaSeg, rel, perigo);
+    const int pvX = xFim - (int)prev.size() * 6;
+    // Sem espaco a previsao some, e nao passa por cima do rotulo.
+    if (!prev.empty() && pvX >= x + (int)strlen(titulo) * 6 + 8) {
+        g->setTextColor(perigo && !g_stale ? C_RED : MUTED);
+        g->setCursor(pvX, FL_ROT_Y);
+        g->print(prev.c_str());
+    }
+
+    const std::string pct = pctText(m);
+    g->setTextColor(!m.known || m.memoria ? MUTED : colorOf(m.level));
+    g->setTextSize(3);
+    g->setCursor(x, FL_PCT_Y);
+    g->print(pct.c_str());
+    g->setTextSize(1);
+
+    const int bx = x + FL_BARRA_DX;
+    const int bw = x + FL_LIM_W - bx;
+    drawBar(g, bx, FL_BARRA_Y, bw, FL_BARRA_H, m, janelaSeg);
+
+    // O prazo e o instante MEDIDOS antes de a fonte mudar: as duas contas
+    // devolvem o canvas a fonte embutida (ver drawAnelDeitado).
+    const std::string prazo = m.known && !m.resets.empty() ? m.resets : "-";
+    const int instX = bx + larguraDejaVu(g, prazo) + 8;
+    const std::string inst = instanteCurto(g, m, &rel, x + FL_LIM_W - instX);
+
+    g->setFont(&DejaVuSans7pt7b);
+    g->setTextSize(1);
+    g->setTextColor(m.known && !m.memoria ? fgColor() : MUTED);
+    g->setCursor(bx, FL_PRAZO_Y);
+    g->print(prazo.c_str());
+    if (!inst.empty()) {
+        g->setTextColor(MUTED);
+        g->setCursor(instX, FL_PRAZO_Y);
+        g->print(inst.c_str());
+    }
+    g->setFont();
+}
+
+// Uma linha da fila. A linguagem e a do cartao deitado — fundo SUBCARD com as
+// marcas de novo e de turno concluido, faixa de estado na borda, nome, icone da
+// CLI, chips de modelo e esforco, contexto com trilho —, esticada na largura
+// inteira. O que a largura compra: o ESTADO POR EXTENSO na frente, porque aqui
+// ele e a ordem da lista, e o contexto em corpo 2, que se le de longe.
+void drawLinhaFila(Arduino_Canvas *g, int y, const Agent &a) {
+    const int x = L_MARG;
+    const int w = SCREEN_W - L_MARG * 2;
+    g->fillRoundRect(x, y, w, FL_ALT, FL_RAIO, SUBCARD);
+    drawNovoLinha(g, a.novo, x, y, w, FL_ALT, SUBCARD, FL_RAIO);
+    drawAvisoLinha(g, a.done, x, y, w, FL_ALT, SUBCARD, FL_RAIO);
+    drawFaixaEstado(g, x, y, 3, FL_ALT, FL_RAIO, corDoEstado(a.state, a.done));
+
+    // O estado e o turno, empilhados. O turno de quem esta PARADO e so quanto
+    // durou o ultimo, e sai apagado como no cartao.
+    const int d = grupos::degrauNaFila(a);
+    g->setTextSize(1);
+    g->setTextColor(g_stale ? MUTED : FL_COR[d]);
+    g->setCursor(x + 10, y + 6);
+    g->print(FL_ROTULO[d]);
+    if (a.turnoS >= 0) {
+        g->setTextColor(d == 3 ? MUTED : fgColor());
+        g->setCursor(x + 10, y + 19);
+        g->print(formatTurno(a.turnoS).c_str());
+    }
+
+    // O contexto na ponta direita: rotulo, numero em corpo 2 e o trilho. O
+    // numero so ganha cor no vermelho (80%+, o nivel da API), que e quando o
+    // contexto pede acao; abaixo disso a cor fica com o trilho.
+    const int ctxX = x + w - 10 - FL_CTX_W;
+    g->setTextColor(MUTED);
+    g->setCursor(ctxX, y + 9);
+    g->print("CTX");
+    char pb[8];
+    if (a.hasContext) snprintf(pb, sizeof(pb), "%d%%", a.contextPct);
+    else              snprintf(pb, sizeof(pb), "-");
+    g->setTextSize(2);
+    g->setTextColor(!a.hasContext ? TRACK
+                    : a.level == Level::Red ? colorOf(a.level) : fgColor());
+    g->setCursor(ctxX + FL_CTX_W - (int)strlen(pb) * 12, y + 5);
+    g->print(pb);
+    g->setTextSize(1);
+    g->fillRoundRect(ctxX, y + FL_ALT - 9, FL_CTX_W, 3, 1, TRACK);
+    if (a.hasContext && a.contextPct > 0) {
+        int fill = FL_CTX_W * a.contextPct / 100;
+        if (fill < 3) fill = 3;
+        g->fillRoundRect(ctxX, y + FL_ALT - 9, fill, 3, 1, colorOf(a.level));
+    }
+
+    // O nome e os chips param antes do contexto.
+    const int nx  = x + FL_NOME_DX;
+    const int lim = ctxX - 8;
+
+    // O nome, cortado por medida, na cor da maquina como no cartao deitado.
+    g->setFont(&DejaVuSans7pt7b);
+    g->setTextSize(1);
+    g->setTextColor(g_stale || tagDe(a.tag).empty() ? fgColor()
+                                                    : corDaTag(a.origem));
+    std::string nome = a.repo;
+    int16_t x1, y1; uint16_t nw, nh;
+    while (!nome.empty()) {
+        g->getTextBounds(nome.c_str(), 0, 0, &x1, &y1, &nw, &nh);
+        if ((int)nw <= lim - nx) break;
+        nome.pop_back();
+    }
+    g->setCursor(nx, y + 15);
+    g->print(nome.c_str());
+    g->setFont();
+
+    int cx = nx;
+    const provedores::Icone ic = provedores::iconeDe(a.agent);
+    if (ic.w) {
+        drawIconeProvedor(g, cx, y + 18 + (14 - ic.h) / 2, ic,
+                          g_stale ? MUTED : provedores::corDe(a.agent), SUBCARD);
+        cx += ic.w + 5;
+    }
+    const int cw = drawChip(g, cx, y + 18, modeloNoChip(a.model, (lim - cx - 8) / 6),
+                            fgColor(), lim);
+    if (cw) cx += cw + 4;
+    if (!drawChip(g, cx, y + 18, a.effort, C_YELL, lim))
+        drawChip(g, cx, y + 18, effortCurto(a.effort), C_YELL, lim);
+}
+
+void drawFilaDeitada(Arduino_Canvas *g, const Status &s, int staleSeconds,
+                     int opcaoArmada) {
+    // A pergunta em tela cheia vale aqui como na tela nova — e e a tela nova
+    // que a desenha, com o mesmo cabecalho e o mesmo rodape.
+    if (s.bloqueio.known) {
+        drawDeitadaNova(g, s, staleSeconds, opcaoArmada);
+        return;
+    }
+
+    g->fillScreen(BG);
+    drawHeaderDeitado(g, s, staleSeconds);
+
+    // O selo VIA mora abaixo da divisoria, na ponta direita — em cima da
+    // previsao da semana. Ela recua para a esquerda dele.
+    const int dirSemana = SCREEN_W - L_MARG -
+        (s.viaSlave ? larguraSeloVia(s.tag) + 8 : 0);
+    const int xSemana = L_MARG + FL_LIM_W + FL_LIM_VAO;
+    drawLimiteFila(g, L_MARG, L_MARG + FL_LIM_W, "SESSAO", s.session, JANELA_5H,
+                   s.clock);
+    drawLimiteFila(g, xSemana, dirSemana, "SEMANA", s.week, JANELA_7D, s.clock);
+
+    drawFableDeitado(g, s, L_MARG, SCREEN_W - L_MARG * 2, FL_FABLE_Y);
+
+    const std::vector<int> ordem = grupos::ordemDaFila(s.agents);
+    const int n = (int)ordem.size() < FL_MAX ? (int)ordem.size() : FL_MAX;
+    for (int i = 0; i < n; i++)
+        drawLinhaFila(g, FL_Y + i * FL_PASSO, s.agents[ordem[i]]);
+
+    if (n == 0) {
+        g->setTextColor(MUTED);
+        g->setTextSize(1);
+        g->setCursor(L_MARG, FL_Y + 12);
+        g->print("nenhuma sessao ativa");
+    }
+
+    drawFooter(g, s, 0, staleSeconds);
+
+    // As que nao couberam, abaixo da ultima linha na ponta direita — o canto
+    // esquerdo e da turma.
+    if ((int)ordem.size() > n) {
+        char buf[12];
+        snprintf(buf, sizeof(buf), "+%d", (int)ordem.size() - n);
+        g->setTextColor(MUTED);
+        g->setTextSize(1);
+        g->setCursor(SCREEN_W - L_MARG - (int)strlen(buf) * 6,
+                     FL_Y + n * FL_PASSO + 1);
+        g->print(buf);
+    }
+}
+
+// O painel de ajustes e a tela da noite moram no fim do arquivo.
+void drawAjustes(Arduino_Canvas *g);
+bool drawNoite(Arduino_Canvas *g, const Status &s, int staleSeconds);
+
+// Toda saida de drawStatus passa por aqui: o painel de ajustes e desenhado POR
+// CIMA do que a pagina acabou de pintar, qualquer que seja ela.
+void enviarQuadro(Arduino_Canvas *g) {
+    if (g_ajustes) drawAjustes(g);
+    display::flush();
+}
+
 void drawStatus(const Status &s, int page, const std::string &selectedId,
                 int staleSeconds, bool botaoArmado,
                 const nivel::Estado &nivelNoCartao, float xpDoDia,
@@ -4063,13 +4603,21 @@ void drawStatus(const Status &s, int page, const std::string &selectedId,
     g_stale = staleSeconds > 0;
     Arduino_Canvas *g = display::canvas();
 
+    // A NOITE toma o painel inteiro, nas duas orientacoes e em qualquer
+    // pagina: a tela apagada nao tem pagina. So envia quando algo que ela
+    // mostra mudou — o poll chega a cada 2 s, e a hora so anda de minuto.
+    if (g_noite) {
+        if (drawNoite(g, s, staleSeconds)) display::flush();
+        return;
+    }
+
     // EM PE e outra tela, e nao a mesma tela estreita: cabecalho, ordem
     // vertical e formato dos cards sao proprios. Sai daqui antes de tudo para
     // que nenhuma geometria da paisagem (que e escrita em constantes de
     // SCREEN_W) escape para la.
     if (display::retrato()) {
         // Em pe as paginas sao CINCO: 0 = tela nova, 1 = principal,
-        // 2 = contexto, 3 = Clawd, 4 = nivel (ver ui::PAGES).
+        // 2 = contexto, 3 = Clawd, 4 = nivel (ver ui::paginas()).
         if (telaToken || telaReset || telaOffline) {
             // As telas de bicho tomam o painel em qualquer pagina — o caminho
             // da principal ja sabe desenha-las e sai antes de tudo.
@@ -4113,7 +4661,7 @@ void drawStatus(const Status &s, int page, const std::string &selectedId,
             drawBolinhasRetrato(g, page);
             drawStatusRetrato(g, s, staleSeconds);
         }
-        display::flush();
+        enviarQuadro(g);
         return;
     }
 
@@ -4131,20 +4679,21 @@ void drawStatus(const Status &s, int page, const std::string &selectedId,
     // (ver telaResetAtiva), e o parametro chega sempre nulo deitado.
     if (telaOffline && clawd::offlineW()) {
         drawTelaOffline(g, s, staleSeconds);
-        display::flush();
+        enviarQuadro(g);
         return;
     }
     if (telaToken && clawd::tokenW()) {
         drawTelaToken(g, s, staleSeconds);
-        display::flush();
+        enviarQuadro(g);
         return;
     }
 
     // A TELA NOVA DEITADA tem cabecalho proprio (o nome digitando no lugar do
     // mago e do titulo), entao ela sai antes do `drawHeader` comum.
     if (page == 0) {
-        drawDeitadaNova(g, s, staleSeconds, opcaoArmada);
-        display::flush();
+        if (g_fila) drawFilaDeitada(g, s, staleSeconds, opcaoArmada);
+        else        drawDeitadaNova(g, s, staleSeconds, opcaoArmada);
+        enviarQuadro(g);
         return;
     }
 
@@ -4180,12 +4729,16 @@ void drawStatus(const Status &s, int page, const std::string &selectedId,
         drawPageContext(g, s, indexOfId(s, selectedId), botaoArmado, opcaoArmada);
     } else if (page == 3) {
         drawPageClawd(g, s);
+    } else if (page == PAG_SEMANAS) {
+        drawPageSemanas(g, s);
+    } else if (page == PAG_HOJE) {
+        drawPageHoje(g, s);
     } else {
         drawPageNivel(g, s, nivelNoCartao, xpDoDia);
     }
 
     drawFooter(g, s, page, staleSeconds);
-    display::flush();
+    enviarQuadro(g);
 }
 
 bool tickNome(uint32_t nowMs) {
@@ -4384,6 +4937,17 @@ int cartaoSessaoRetratoAt(const Status &s, int x, int y) {
     return cartaoSessaoAt(y, n);
 }
 
+// A linha da fila sob o dedo: a mesma geometria (FL_*) e a mesma ordem de
+// drawFilaDeitada, e o indice devolvido e o de `s.agents`, e nao o da tela. O
+// vao entre duas linhas nao pertence a nenhuma, como na lista em pe.
+int linhaFilaAt(const Status &s, int x, int y) {
+    if (display::retrato() || s.bloqueio.known) return -1;
+    if (x < L_MARG || x >= SCREEN_W - L_MARG) return -1;
+    const std::vector<int> ordem = grupos::ordemDaFila(s.agents);
+    const int i = ::linhaFilaAt(y, (int)ordem.size());
+    return i < 0 ? -1 : ordem[i];
+}
+
 bool cleanButtonAt(const Status &s, const std::string &selectedId, int x, int y) {
     // A area sensivel vale o que o desenho vale. Sem esta pergunta, o retangulo
     // continuaria armando o botao depois de uma compactacao que o fez sumir da
@@ -4451,6 +5015,13 @@ bool iconeCabecalhoAt(int x, int y) {
     return dentro(alvoIconeCabecalho(), x, y);
 }
 
+// Acima da divisoria do cabecalho, que fica em alturas diferentes em pe e
+// deitado.
+bool cabecalhoAt(int x, int y) {
+    (void)x;
+    return y >= 0 && y < (display::retrato() ? R_HDR_LINHA : L_HDR_H);
+}
+
 // A fileira de bichos — o botao de trocar o ELENCO.
 //
 // O retangulo sai da largura que a propria turma reportou, e nao de um numero
@@ -4466,11 +5037,9 @@ bool turmaAt(int x, int y, int page) {
     if (w <= 0 || h <= 0) return false;
 
     // Nas paginas de bicho grande a fileira nao e desenhada, e um toque ali
-    // pertence ao que estiver no lugar dela. Em pe elas sao a 3 e a 4 — a
-    // tela nova empurrou tudo uma casa.
+    // pertence ao que estiver no lugar dela.
+    if (paginaDeBicho(page)) return false;
     const bool emPe = display::retrato();
-    if (emPe ? (page == 3 || page == 4) : (page == 2 || page == 3))
-        return false;
 
     // Em pe a fileira mora no topo em TODA pagina que a mostra — a inicial e a
     // de contexto usam as mesmas duas constantes, entao o alvo tambem e um so.
@@ -4804,6 +5373,153 @@ void drawMessage(const char *title, const char *detail) {
         g->print(detail);
     }
     display::flush();
+}
+
+// ---- O PAINEL DE AJUSTES ----
+// A geometria (e o toque) moram em lib/ajustes; aqui so a tinta.
+
+namespace {
+
+ValoresAjustes g_valores;
+
+// A pagina por baixo recua ~3/4 do caminho ate o fundo, direto no framebuffer:
+// um quarto de cada canal mais tres quartos do BG, com deslocamento e mascara em
+// vez de divisao. Sao 150 mil pixels, e `misturar` pixel a pixel custaria umas
+// dez vezes mais para o mesmo cinza.
+//
+// A tela INTEIRA, e nao so o que fica fora do painel: o painel e pintado por
+// cima logo em seguida, e recortar a regiao em coordenadas de painel (que giram
+// com a tela) seria conta a mais para nao economizar nada que se veja.
+void esmaecerQuadro(Arduino_Canvas *g) {
+    uint16_t *fb = g->getFramebuffer();
+    if (!fb) return;
+    const uint16_t tresQuartosDoFundo = BG - ((BG >> 2) & 0x39E7);
+    const int n = display::quadroW() * display::quadroH();
+    for (int i = 0; i < n; i++)
+        fb[i] = ((fb[i] >> 2) & 0x39E7) + tresQuartosDoFundo;
+}
+
+// Um botao do painel: aceso, ganha a cor por baixo e a moldura; apagado, e um
+// SUBCARD com texto MUTED — o mesmo par de estados da maquete F1.
+void drawBotaoAjuste(Arduino_Canvas *g, int id, const char *rotulo,
+                     const std::string &apoio, bool aceso, uint16_t cor) {
+    const Alvo b = ::ajustes::botao(id, display::retrato());
+    g->fillRoundRect(b.x, b.y, b.w, b.h, 10,
+                     aceso ? misturar(CARD, cor, 14, 48) : SUBCARD);
+    if (aceso) g->drawRoundRect(b.x, b.y, b.w, b.h, 10, cor);
+    g->setTextColor(aceso ? FG : MUTED);
+    g->setTextSize(2);
+    g->setCursor(b.x + 12, b.y + 12);
+    g->print(rotulo);
+    g->setTextColor(aceso ? cor : MUTED);
+    g->setTextSize(1);
+    g->setCursor(b.x + 12, b.y + 38);
+    g->print(apoio.c_str());
+}
+
+}  // namespace
+
+void valoresAjustes(const ValoresAjustes &v) { g_valores = v; }
+
+void drawAjustes(Arduino_Canvas *g) {
+    const bool emPe = display::retrato();
+    const ValoresAjustes &v = g_valores;
+    esmaecerQuadro(g);
+
+    // O painel DESCE do cabecalho: a borda de cima fica fora da tela, e so os
+    // cantos de baixo aparecem arredondados. A alca embaixo diz por onde ele
+    // volta (arrastar para cima).
+    const Alvo p = ::ajustes::painel(emPe);
+    g->fillRoundRect(p.x, p.y - 10, p.w, p.h + 10, 12, CARD);
+    g->fillRoundRect(p.x + p.w / 2 - 20, p.y + p.h - 8, 40, 4, 2, TRACK);
+
+    g->setTextColor(MUTED);
+    g->setTextSize(1);
+    g->setCursor(p.x + 14, p.y + 12);
+    g->print("AJUSTES");
+
+    g->setTextColor(FG);
+    g->setTextSize(2);
+    g->setCursor(p.x + 14, p.y + 36);
+    g->print("BRILHO");
+    for (int d = 0; d < ::ajustes::DEGRAUS; d++) {
+        const Alvo q = ::ajustes::quadradoDoDegrau(d, emPe);
+        g->fillRoundRect(q.x, q.y, q.w, q.h, 4, d <= v.degrau ? LARANJA : TRACK);
+    }
+
+    char falta[16];
+    snprintf(falta, sizeof(falta), "falta %dm", v.silencioMin);
+    drawBotaoAjuste(g, ::ajustes::SOM, "SOM", "pronto e espera", v.som, C_GREEN);
+    drawBotaoAjuste(g, ::ajustes::NOITE, "NOITE", "auto 23h-07h", v.noite, H_DONE);
+    drawBotaoAjuste(g, ::ajustes::GIRAR, "GIRAR", emPe ? "em pe" : "deitada",
+                    false, MUTED);
+    drawBotaoAjuste(g, ::ajustes::SILENCIO, "SILENCIO",
+                    v.silencioMin > 0 ? falta : "por 1 hora",
+                    v.silencioMin > 0, C_YELL);
+    drawBotaoAjuste(g, ::ajustes::FOTO, "FOTO", "manda ao PC", false, MUTED);
+    drawBotaoAjuste(g, ::ajustes::WIFI, "Wi-Fi",
+                    ::ajustes::textoDoSinal(v.wifi, v.rssi),
+                    ::ajustes::sinalFraco(v.wifi, v.rssi), C_YELL);
+}
+
+int ajusteAt(int x, int y) { return ::ajustes::noPonto(x, y, display::retrato()); }
+
+// ---- O MODO NOITE ----
+// A maquete F2: fundo preto, a hora grande em laranja apagado, os dois limites e
+// uma linha de estado. Deitada, a turma dorme embaixo: um quadro parado dela,
+// apagado — a noite nao anima nada.
+//
+// Devolve se DESENHOU. A tela so muda quando um dos tres textos muda: o poll
+// chega a cada 2 s e redesenhar o mesmo quadro seriam ~50 ms de flush por nada.
+// Enquanto ela esta no ar ninguem mais pinta o canvas (as animacoes param, ver o
+// laco), entao o quadro de antes continua la, inteiro.
+//
+// DADO VELHO TAMBEM AQUI: com o PC dormindo — o caso comum de madrugada — os
+// numeros param, e a linha de estado passa a dizer ha quanto tempo, em minutos
+// (em segundos a tela mudaria a cada poll so para contar).
+bool drawNoite(Arduino_Canvas *g, const Status &s, int staleSeconds) {
+    const bool velho = staleSeconds > 0;
+    const std::string hm   = s.clock.known ? s.clock.hm : "";
+    const std::string lim  = "SESSAO " + pctText(s.session) +
+                             "    SEMANA " + pctText(s.week);
+    const std::string linha = velho
+        ? "sem dado novo ha " + prazoTexto(staleSeconds)
+        : ::ajustes::linhaDaNoite(s);
+    const std::string visto = hm + "|" + lim + "|" + linha;
+    if (visto == g_noiteVisto) return false;
+    g_noiteVisto = visto;
+
+    const uint16_t PRETO = RGB565_BLACK;
+    const int W = display::telaW();
+    // Em pe o mesmo bloco, centrado na altura maior.
+    const int oy = (display::telaH() - SCREEN_H) / 2;
+    g->fillScreen(PRETO);
+
+    // A turma a um quarto do brilho. O quadro inteiro e escurecido de uma vez,
+    // ANTES dos textos: o preto continua preto, e so o que foi desenhado ate
+    // aqui (a fileira) apaga. Em pe a maquete nao tem turma.
+    if (!display::retrato() && clawd::crewW()) {
+        clawd::drawCrewInto(g, (W - clawd::crewW()) / 2, SCREEN_H - 8);
+        uint16_t *fb = g->getFramebuffer();
+        const int n = display::quadroW() * display::quadroH();
+        for (int i = 0; fb && i < n; i++) fb[i] = (fb[i] >> 2) & 0x39E7;
+    }
+
+    g->setTextSize(8);
+    g->setTextColor(misturar(PRETO, LARANJA, 55, 100));
+    g->setCursor((W - (int)hm.size() * 48) / 2, oy + 70);
+    g->print(hm.c_str());
+
+    g->setTextSize(2);
+    g->setTextColor(misturar(PRETO, velho ? MUTED : FG, 30, 100));
+    g->setCursor((W - (int)lim.size() * 12) / 2, oy + 160);
+    g->print(lim.c_str());
+
+    g->setTextSize(1);
+    g->setTextColor(misturar(PRETO, velho ? C_YELL : MUTED, 50, 100));
+    g->setCursor((W - (int)linha.size() * 6) / 2, oy + 196);
+    g->print(linha.c_str());
+    return true;
 }
 
 }

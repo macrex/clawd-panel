@@ -1,4 +1,5 @@
 #pragma once
+#include <ctime>
 #include <string>
 #include "status.h"
 
@@ -44,6 +45,21 @@ bool epochAceitavel(long candidato, long piso);
 // vazios: o cabecalho ja sabe esconder a linha nesse caso, porque ele fazia isso
 // quando a API antiga nao mandava o bloco.
 Clock relogioDe(long epochLocal);
+
+// Epoch LOCAL -> calendario (gmtime: o fuso ja foi aplicado por quem chamou).
+// Falso quando a placa nao sabe que dia e.
+bool calendarioDe(long epochLocal, struct tm &tm);
+
+// A hora daqui a `segundos`, a partir do relogio do cabecalho, em 24h e
+// arredondada a cinco minutos: "21:35h", ou "21h" na hora cheia. Vazio quando
+// o relogio nao e conhecido. E a hora do instante do reset e da previsao.
+std::string horaDaquiA(const Clock &c, long segundos);
+
+// O dia da semana daqui a `segundos`, em tres letras e so a primeira maiuscula
+// ("Sex") — a grafia do instante da semana. Vazio quando o relogio nao e
+// conhecido. Sai da MESMA conta de `horaDaquiA`: sem isso uma previsao para
+// 23:58 sairia como "0h" com o dia de ontem.
+std::string diaDaquiA(const Clock &c, long segundos);
 
 // Segundos -> "3d06h", "4h54m", "39m", "<1m" ou "agora".
 //

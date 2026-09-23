@@ -734,6 +734,77 @@ void test_quais_caracteres_movem_o_cursor(void) {
     TEST_ASSERT_FALSE(eControleDeCursor('\0'));
 }
 
+// ---- As paginas HOJE e SEMANAS ----
+
+void test_works_traz_linhas_e_horas(void) {
+    Status s = parseStatus(R"json({"works": {"trabalhos": 61, "seconds": 13080,
+      "lines_added": 3512, "lines_removed": 860,
+      "horas": [3,0,0,0,0,0,0,0,0,0,0,9,18,43,41,7,0,35,50,13,0,0,0,0]}})json");
+    TEST_ASSERT_TRUE(s.works.known);
+    TEST_ASSERT_TRUE(s.works.hasLines);
+    TEST_ASSERT_EQUAL_INT(3512, s.works.linesAdded);
+    TEST_ASSERT_EQUAL_INT(860, s.works.linesRemoved);
+    TEST_ASSERT_TRUE(s.works.hasHoras);
+    TEST_ASSERT_EQUAL_INT(3, s.works.horas[0]);
+    TEST_ASSERT_EQUAL_INT(50, s.works.horas[18]);
+    TEST_ASSERT_EQUAL_INT(0, s.works.horas[23]);
+}
+
+void test_works_de_api_antiga_nao_inventa_linhas_nem_horas(void) {
+    // `works` sem os campos novos: o bloco continua valendo, e o que falta e
+    // "nao sei", nao zero.
+    Status s = parseStatus(R"json({"works": {"trabalhos": 3, "seconds": 90,
+      "lines_added": 10}})json");
+    TEST_ASSERT_TRUE(s.works.known);
+    TEST_ASSERT_FALSE(s.works.hasLines);
+    TEST_ASSERT_FALSE(s.works.hasHoras);
+}
+
+void test_horas_de_outro_tamanho_sao_recusadas(void) {
+    // 23 horas deslocariam a hora atual uma barra — com cara de certo.
+    Status s = parseStatus(R"json({"works": {"trabalhos": 1,
+      "horas": [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23]}})json");
+    TEST_ASSERT_TRUE(s.works.known);
+    TEST_ASSERT_FALSE(s.works.hasHoras);
+}
+
+void test_historico_e_lido(void) {
+    Status s = parseStatus(R"json({"dias": [
+      1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,
+      21,22,23,24,25,26,27,28,29,30,31,32,33,34,97],
+      "dias_recorde": {"data": "19/08", "cost_usd": 308},
+      "dias_seguidos": 16})json");
+    TEST_ASSERT_TRUE(s.historico.known);
+    TEST_ASSERT_EQUAL_INT(1, s.historico.dias[0]);
+    TEST_ASSERT_EQUAL_INT(97, s.historico.dias[34]);   // o ultimo e HOJE
+    TEST_ASSERT_EQUAL_STRING("19/08", s.historico.recordeData.c_str());
+    TEST_ASSERT_EQUAL_INT(308, s.historico.recordeUsd);
+    TEST_ASSERT_EQUAL_INT(16, s.historico.seguidos);
+}
+
+void test_historico_ausente_deixa_known_falso(void) {
+    // API anterior: a pagina diz SEM HISTORICO em vez de um mes de zeros.
+    Status s = parseStatus(REAL);
+    TEST_ASSERT_FALSE(s.historico.known);
+    TEST_ASSERT_EQUAL_INT(-1, s.historico.seguidos);
+}
+
+void test_historico_de_outro_tamanho_e_recusado(void) {
+    Status s = parseStatus(R"json({"dias": [1,2,3], "dias_seguidos": 2})json");
+    TEST_ASSERT_FALSE(s.historico.known);
+}
+
+void test_recorde_nulo_nao_vira_zero(void) {
+    // Livro-caixa vazio: sem recorde, e a linha mostra "-".
+    Status s = parseStatus(R"json({"dias": [
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.6], "dias_recorde": null})json");
+    TEST_ASSERT_TRUE(s.historico.known);
+    TEST_ASSERT_TRUE(s.historico.recordeData.empty());
+    TEST_ASSERT_EQUAL_INT(-1, s.historico.seguidos);
+    TEST_ASSERT_EQUAL_INT(1, s.historico.dias[34]);    // arredondado, nao truncado
+}
+
 int main(int, char **) {
     UNITY_BEGIN();
     RUN_TEST(test_cumulativos_da_sessao_sao_lidos);
@@ -805,5 +876,12 @@ int main(int, char **) {
     RUN_TEST(test_sem_bloco_limites_nada_vem_da_memoria);
     RUN_TEST(test_bloco_limites_desligado_nao_esmaece_nada);
     RUN_TEST(test_quais_caracteres_movem_o_cursor);
+    RUN_TEST(test_works_traz_linhas_e_horas);
+    RUN_TEST(test_works_de_api_antiga_nao_inventa_linhas_nem_horas);
+    RUN_TEST(test_horas_de_outro_tamanho_sao_recusadas);
+    RUN_TEST(test_historico_e_lido);
+    RUN_TEST(test_historico_ausente_deixa_known_falso);
+    RUN_TEST(test_historico_de_outro_tamanho_e_recusado);
+    RUN_TEST(test_recorde_nulo_nao_vira_zero);
     return UNITY_END();
 }

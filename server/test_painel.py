@@ -293,6 +293,29 @@ class TestFrio(unittest.TestCase):
         saida = painel.aplicar_frio(magro, f"/status?campos=painel&frio={resumo}")
         self.assertNotIn("works", saida)
 
+    def test_o_historico_e_frio_e_sobrevive_ao_enxugar(self):
+        # As duas telas novas: `works.horas` viaja dentro de `works`, e `dias*`
+        # sao blocos frios proprios. Nenhum deles cai no corte do painel.
+        cheio = status_cheio()
+        cheio["works"]["horas"] = [0] * 13 + [20, 10] + [0] * 9
+        cheio.update({"dias": [0] * 34 + [12],
+                      "dias_recorde": {"data": "13/08", "cost_usd": 364},
+                      "dias_seguidos": 7})
+        magro = painel.enxugar(cheio)
+        self.assertEqual(magro["works"]["horas"], cheio["works"]["horas"])
+        for chave in ("dias", "dias_recorde", "dias_seguidos"):
+            self.assertEqual(magro[chave], cheio[chave], chave)
+
+        # Um dia a mais na sequencia muda o resumo: o bloco volta a viajar.
+        depois = copy.deepcopy(magro)
+        depois["dias_seguidos"] += 1
+        self.assertNotEqual(painel.resumo_frio(magro), painel.resumo_frio(depois))
+
+        resumo = painel.resumo_frio(magro)
+        saida = painel.aplicar_frio(magro, f"/status?campos=painel&frio={resumo}")
+        for chave in ("works", "dias", "dias_recorde", "dias_seguidos"):
+            self.assertNotIn(chave, saida, chave)
+
 
 if __name__ == "__main__":
     unittest.main()

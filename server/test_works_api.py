@@ -267,5 +267,39 @@ class TestVitalicioNoStatus(unittest.TestCase):
         self.assertIs(a, b)
 
 
+class TestHistoricoNoStatus(Base):
+    """As duas telas novas: o dia hora a hora e as cinco semanas."""
+
+    def test_livro_inexistente_da_os_campos_zerados(self):
+        self.assertFalse(os.path.exists(self.livro))
+        st = api.build_status()
+        self.assertEqual(st["works"]["horas"], [0] * 24)
+        self.assertEqual(st["dias"], [0] * 35)
+        self.assertIsNone(st["dias_recorde"])
+        self.assertEqual(st["dias_seguidos"], 0)
+
+    def test_status_traz_o_turno_de_hoje(self):
+        works.gravar({"session_id": "s1", "started": self.agora - 1,
+                      "ended": self.agora, "seconds": 1.0, "cost_usd": 3.0})
+        st = api.build_status()
+        self.assertEqual(len(st["works"]["horas"]), 24)
+        self.assertEqual(st["dias"][-1], 3)
+        self.assertEqual(st["dias_recorde"]["cost_usd"], 3)
+        self.assertEqual(st["dias_seguidos"], 1)
+
+    def test_memoizado_pelo_livro_e_pelo_dia(self):
+        works.gravar({"session_id": "s1", "started": self.agora,
+                      "ended": self.agora + 1, "cost_usd": 5.0})
+        a = api.dias_do_livro(self.agora)
+        self.assertIs(a, api.dias_do_livro(self.agora))
+        # Amanha as cinco semanas andam uma casa sem turno novo no arquivo.
+        b = api.dias_do_livro(self.agora + 86400)
+        self.assertEqual(b["dias"][-2:], [5, 0])
+        # E um turno novo refaz a conta no mesmo dia.
+        works.gravar({"session_id": "s1", "started": self.agora + 2,
+                      "ended": self.agora + 3, "cost_usd": 2.0})
+        self.assertEqual(api.dias_do_livro(self.agora)["dias"][-1], 7)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

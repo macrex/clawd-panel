@@ -193,6 +193,16 @@ struct Works {
     int  mediana = 0;         // o turno tipico
     float costUsd = 0;
     bool  hasCost = false;
+    // As linhas do dia, somadas. Andam juntas pela mesma regra do Agent: meia
+    // resposta nao informa nada.
+    int  linesAdded   = 0;
+    int  linesRemoved = 0;
+    bool hasLines     = false;
+    // Minutos trabalhados em cada hora LOCAL de hoje, [0] = 00h. Falso numa API
+    // anterior ao grafico, e ai a pagina HOJE nao desenha barra nenhuma — 24
+    // barras zeradas afirmariam um dia parado.
+    int  horas[24] = {0};
+    bool hasHoras  = false;
 };
 
 // A quebra do DIA por modelo. `works` diz quanto o dia custou; isto diz de QUEM
@@ -229,6 +239,25 @@ struct Vitalicio {
     long        turnos  = 0;
     float       costUsd = 0;
     std::string desde;             // "AAAA-MM-DD" do registro mais antigo
+};
+
+// As ultimas cinco semanas, dia a dia, vindas do livro-caixa da API. `works`
+// fala de HOJE; isto e o que alimenta o calendario da pagina SEMANAS.
+//
+// Vetor fixo e nao std::vector: o tamanho e o contrato, e um payload com outro
+// tamanho e rejeitado inteiro no parse — encaixar 34 dias num calendario de 35
+// deslocaria todos eles uma casa, com cara de certo.
+const int HISTORICO_DIAS = 35;
+
+struct Historico {
+    bool known = false;              // a API nao manda `dias`: versao anterior
+    // US$ por dia local, do mais antigo ao mais novo. [34] e HOJE.
+    int  dias[HISTORICO_DIAS] = {0};
+    // O dia mais caro que o livro-caixa ja viu. Data vazia quando a API manda
+    // `null` (livro-caixa vazio), e ai a linha mostra "-".
+    std::string recordeData;         // "19/08"
+    int  recordeUsd = 0;
+    int  seguidos = -1;              // -1 = a API nao mandou
 };
 
 // Uma opcao que o agente bloqueado esta oferecendo NA TELA DELE. Vira um botao
@@ -377,6 +406,10 @@ struct Status {
     // lib/metrics/frio.h). Vazio contra uma API que nao manda o campo, e ai o
     // mecanismo inteiro fica desligado.
     std::string frio;
+    // Na fusao de duas maquinas isto vem do MASTER, como `works`: e o mesmo
+    // livro-caixa que diz o custo de hoje, e o quadrado de hoje no calendario
+    // tem que bater com o CUSTO API da pagina HOJE.
+    Historico   historico;
     Bloqueio    bloqueio;
     Captura     captura;
     Atualizacao atualizacao;

@@ -59,6 +59,25 @@ int centerIn(int slotX, int slotW, int w) {
     return slotX + (slotW - w) / 2;
 }
 
+void fatiasDaBarra(const float *custos, int n, int largura, int minW, int *out) {
+    float total = 0;
+    int vivas = 0, ultima = -1;
+    for (int i = 0; i < n; i++) {
+        out[i] = 0;
+        if (custos[i] > 0) { total += custos[i]; vivas++; ultima = i; }
+    }
+    const int resto = largura - vivas * minW;
+    if (!vivas || resto < 0) return;
+
+    int usado = 0;
+    for (int i = 0; i < ultima; i++) {
+        if (custos[i] <= 0) continue;
+        out[i] = minW + (int)(resto * custos[i] / total);
+        usado += out[i];
+    }
+    out[ultima] = largura - usado;
+}
+
 // A geometria da lista da primeira tela em pe, espelhada de drawSessoesRetrato.
 // Duplicar tres numeros aqui e o preco de manter o hit-test testavel no PC — a
 // funcao que desenha precisa de canvas e fonte, e arrastar isso para a lib
@@ -73,6 +92,15 @@ int cartaoSessaoAt(int y, int quantos) {
     if (i >= quantos) return -1;
     // Dentro do CARTAO, e nao do passo: o vao entre dois cartoes nao responde.
     if ((y - LST_Y0) - i * LST_PASSO >= LST_ALT) return -1;
+    return i;
+}
+
+int linhaFilaAt(int y, int quantos) {
+    if (quantos > FILA_MAX) quantos = FILA_MAX;
+    if (quantos <= 0 || y < FILA_Y0) return -1;
+    const int i = (y - FILA_Y0) / FILA_PASSO;
+    if (i >= quantos) return -1;
+    if ((y - FILA_Y0) - i * FILA_PASSO >= FILA_ALT) return -1;
     return i;
 }
 

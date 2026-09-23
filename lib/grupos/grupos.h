@@ -89,6 +89,23 @@ Lista montarLista(const std::vector<Agent> &agents,
 // lista se reembaralharia a cada poll mesmo sem mudanca de estado.
 std::vector<int> ordemComBloqueadosNoTopo(const std::vector<Agent> &agents);
 
+// ---- A ordem da FILA DE ATENCAO (a tela deitada que sobe da primeira) ----
+// O degrau de uma sessao, do que mais pede voce ao que menos pede:
+//   0 ESPERA  — bloqueada, esperando resposta;
+//   1 PRONTO  — o turno acabou e ninguem viu (`done`);
+//   2 RODANDO — trabalhando: nao ha o que fazer por ela ainda;
+//   3 PARADO  — ociosa ja vista, ou estado desconhecido.
+//
+// A precedencia e a de `corDoEstado` na UI (Working vence `done`): a faixa de
+// estado e o rotulo da linha dizem a mesma coisa e nao podem discordar.
+int degrauNaFila(const Agent &a);
+
+// Os INDICES de `agents` na ordem da fila: por degrau, e na ordem da API dentro
+// de cada um. Estavel pelo mesmo motivo de `ordemComBloqueadosNoTopo` — a fila
+// corta em quatro, e uma sessao que nao mudou de estado nao pode trocar de
+// lugar entre polls.
+std::vector<int> ordemDaFila(const std::vector<Agent> &agents);
+
 int cabemLinhas(const std::vector<Linha> &l, int altura,
                 int hCabecalho, int hAgente, int &foraN);
 

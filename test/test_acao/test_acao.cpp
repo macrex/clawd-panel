@@ -17,14 +17,21 @@ static Acao act(GestureKind k, const Contexto &c) {
 
 // ---- Navegacao ----
 
+// A volta e CIRCULAR: da primeira, a direita leva a ultima, e da ultima a
+// esquerda volta a primeira. Quem faz a conta do modulo e o laco.
 void test_swipe_anda_entre_as_paginas(void) {
     Contexto c = base();
     TEST_ASSERT_EQUAL(Acao::PaginaProxima, act(GestureKind::SwipeLeft, c));
-    TEST_ASSERT_EQUAL(Acao::Nada, act(GestureKind::SwipeRight, c));
+    TEST_ASSERT_EQUAL(Acao::PaginaAnterior, act(GestureKind::SwipeRight, c));
 
     c.page = 3;
-    TEST_ASSERT_EQUAL(Acao::Nada, act(GestureKind::SwipeLeft, c));
+    TEST_ASSERT_EQUAL(Acao::PaginaProxima, act(GestureKind::SwipeLeft, c));
     TEST_ASSERT_EQUAL(Acao::PaginaAnterior, act(GestureKind::SwipeRight, c));
+
+    // Com uma pagina so nao ha para onde ir.
+    c.paginas = 1;
+    c.page = 0;
+    TEST_ASSERT_EQUAL(Acao::Nada, act(GestureKind::SwipeLeft, c));
 }
 
 // As quatro paginas existem nas duas orientacoes.
@@ -323,18 +330,140 @@ void test_em_pe_o_swipe_alcanca_a_quinta_pagina(void) {
     c.retrato = true;
     c.paginas = 5;
     c.page    = 4;
-    TEST_ASSERT_EQUAL(Acao::Nada, decidirGesto(GestureKind::SwipeLeft, c).acao);
+    // Da quinta, a esquerda da a volta para a primeira.
+    TEST_ASSERT_EQUAL(Acao::PaginaProxima,
+                      decidirGesto(GestureKind::SwipeLeft, c).acao);
     c.page = 3;
     TEST_ASSERT_EQUAL(Acao::PaginaProxima,
                       decidirGesto(GestureKind::SwipeLeft, c).acao);
 }
 
-// Gesto que o painel nao usa nunca vira acao.
+// Gesto que o painel nao usa nunca vira acao: fora da primeira tela deitada e
+// longe do cabecalho, o arrasto vertical nao significa nada.
 void test_gesto_nenhum_nao_faz_nada(void) {
     Contexto c = base();
     TEST_ASSERT_EQUAL(Acao::Nada, act(GestureKind::None, c));
+    c.page = 2;
     TEST_ASSERT_EQUAL(Acao::Nada, act(GestureKind::SwipeUp, c));
     TEST_ASSERT_EQUAL(Acao::Nada, act(GestureKind::SwipeDown, c));
+}
+
+// ---- A fila de atencao ----
+
+void test_arrastar_para_cima_abre_a_fila_so_na_primeira_deitada(void) {
+    Contexto c = base();
+    TEST_ASSERT_EQUAL(Acao::AbrirFila, act(GestureKind::SwipeUp, c));
+
+    c.retrato = true;                 // em pe a fila nao existe
+    TEST_ASSERT_EQUAL(Acao::Nada, act(GestureKind::SwipeUp, c));
+    c.retrato = false;
+    c.page = 1;                       // nem na principal
+    TEST_ASSERT_EQUAL(Acao::Nada, act(GestureKind::SwipeUp, c));
+    c.page = 0;
+    c.temBloqueio = true;             // a pergunta esta por cima
+    TEST_ASSERT_EQUAL(Acao::Nada, act(GestureKind::SwipeUp, c));
+    c.temBloqueio = false;
+    c.fila = true;                    // ja esta nela
+    TEST_ASSERT_EQUAL(Acao::Nada, act(GestureKind::SwipeUp, c));
+}
+
+void test_arrastar_para_baixo_volta_da_fila(void) {
+    Contexto c = base();
+    TEST_ASSERT_EQUAL(Acao::Nada, act(GestureKind::SwipeDown, c));
+    c.fila = true;
+    TEST_ASSERT_EQUAL(Acao::FecharFila, act(GestureKind::SwipeDown, c));
+    // Com a pergunta por cima a fila nao e vista, e nao muda as cegas.
+    c.temBloqueio = true;
+    TEST_ASSERT_EQUAL(Acao::Nada, act(GestureKind::SwipeDown, c));
+    c.temBloqueio = false;
+    // Nas outras paginas a fila nao esta na tela, e o arrasto nao a fecha.
+    c.page = 3;
+    TEST_ASSERT_EQUAL(Acao::Nada, act(GestureKind::SwipeDown, c));
+}
+
+// As paginas de bicho grande sao as mesmas nas duas orientacoes: a do Clawd e
+// a do nivel. As novas do fim (Semanas e Hoje) tem turma no rodape.
+void test_paginas_de_bicho_grande(void) {
+    TEST_ASSERT_FALSE(paginaDeBicho(0));
+    TEST_ASSERT_FALSE(paginaDeBicho(2));    // contexto: a do defeito de 02/09
+    TEST_ASSERT_TRUE(paginaDeBicho(3));
+    TEST_ASSERT_TRUE(paginaDeBicho(4));
+    TEST_ASSERT_FALSE(paginaDeBicho(5));
+    TEST_ASSERT_FALSE(paginaDeBicho(6));
+}
+
+// A conta da volta circular, que o laco aplica.
+void test_pagina_vizinha_da_a_volta(void) {
+    TEST_ASSERT_EQUAL(1, paginaVizinha(0, 7, +1));
+    TEST_ASSERT_EQUAL(6, paginaVizinha(0, 7, -1));   // da inicial para Hoje
+    TEST_ASSERT_EQUAL(0, paginaVizinha(6, 7, +1));
+    TEST_ASSERT_EQUAL(4, paginaVizinha(0, 5, -1));   // em pe
+    TEST_ASSERT_EQUAL(0, paginaVizinha(3, 0, +1));
+}
+
+void test_na_fila_o_duplo_toque_na_linha_abre_o_terminal(void) {
+    Contexto c = base();
+    c.fila = true;
+    c.linhaFila = 2;
+    // Os aneis nao estao na tela: o alvo da sessao nao abre o Clawd dormindo.
+    c.noPctSessao = true;
+    Decisao d = decidirGesto(GestureKind::DoubleTap, c);
+    TEST_ASSERT_EQUAL(Acao::AbrirTerminalDoAgente, d.acao);
+    TEST_ASSERT_EQUAL(2, d.n);
+
+    // Fora da fila o mesmo dedo continua sendo o anel da sessao.
+    c.fila = false;
+    TEST_ASSERT_EQUAL(Acao::AbrirOffline, act(GestureKind::DoubleTap, c));
+}
+
+// ---- O painel de ajustes ----
+
+void test_arrasto_do_cabecalho_abre_os_ajustes_em_qualquer_pagina(void) {
+    Contexto c = base();
+    c.inicioNoCabecalho = true;
+    TEST_ASSERT_EQUAL(Acao::AbrirAjustes, act(GestureKind::SwipeDown, c));
+    c.fila = true;                    // ganha do "sair da fila"
+    TEST_ASSERT_EQUAL(Acao::AbrirAjustes, act(GestureKind::SwipeDown, c));
+    c.page = 4;
+    TEST_ASSERT_EQUAL(Acao::AbrirAjustes, act(GestureKind::SwipeDown, c));
+    c.retrato = true;
+    TEST_ASSERT_EQUAL(Acao::AbrirAjustes, act(GestureKind::SwipeDown, c));
+}
+
+void test_o_painel_de_ajustes_consome_o_gesto(void) {
+    Contexto c = base();
+    c.ajustesAbertos = true;
+    c.noIconeCabecalho = true;        // nem o giro passa por cima do painel
+
+    c.ajusteTocado = 3;
+    Decisao d = decidirGesto(GestureKind::Tap, c);
+    TEST_ASSERT_EQUAL(Acao::TocarAjuste, d.acao);
+    TEST_ASSERT_EQUAL(3, d.n);
+    // O segundo toque de uma dupla nao repete o ajuste que o primeiro ja fez.
+    TEST_ASSERT_EQUAL(Acao::Nada, act(GestureKind::DoubleTap, c));
+
+    c.ajusteTocado = -1;              // dentro do painel, fora dos ajustes
+    TEST_ASSERT_EQUAL(Acao::Nada, act(GestureKind::Tap, c));
+    c.ajusteTocado = -2;              // fora do painel
+    TEST_ASSERT_EQUAL(Acao::FecharAjustes, act(GestureKind::Tap, c));
+
+    TEST_ASSERT_EQUAL(Acao::FecharAjustes, act(GestureKind::SwipeUp, c));
+    TEST_ASSERT_EQUAL(Acao::Nada, act(GestureKind::SwipeLeft, c));
+    TEST_ASSERT_EQUAL(Acao::Nada, act(GestureKind::SwipeDown, c));
+}
+
+// ---- O modo noite ----
+
+void test_a_noite_so_acorda(void) {
+    Contexto c = base();
+    c.noite = true;
+    c.modoTerminal = true;            // nem o terminal age no escuro
+    c.opcaoP0 = 1;
+    c.temBloqueio = true;
+    TEST_ASSERT_EQUAL(Acao::Acordar, act(GestureKind::Tap, c));
+    TEST_ASSERT_EQUAL(Acao::Acordar, act(GestureKind::DoubleTap, c));
+    TEST_ASSERT_EQUAL(Acao::Acordar, act(GestureKind::SwipeLeft, c));
+    TEST_ASSERT_EQUAL(Acao::Nada, act(GestureKind::None, c));
 }
 
 int main(int, char **) {
@@ -363,5 +492,13 @@ int main(int, char **) {
     RUN_TEST(test_o_terminal_consome_o_gesto_antes_de_tudo);
     RUN_TEST(test_o_terminal_so_fecha_pelo_botao_no_toque);
     RUN_TEST(test_gesto_nenhum_nao_faz_nada);
+    RUN_TEST(test_arrastar_para_cima_abre_a_fila_so_na_primeira_deitada);
+    RUN_TEST(test_arrastar_para_baixo_volta_da_fila);
+    RUN_TEST(test_pagina_vizinha_da_a_volta);
+    RUN_TEST(test_paginas_de_bicho_grande);
+    RUN_TEST(test_na_fila_o_duplo_toque_na_linha_abre_o_terminal);
+    RUN_TEST(test_arrasto_do_cabecalho_abre_os_ajustes_em_qualquer_pagina);
+    RUN_TEST(test_o_painel_de_ajustes_consome_o_gesto);
+    RUN_TEST(test_a_noite_so_acorda);
     return UNITY_END();
 }

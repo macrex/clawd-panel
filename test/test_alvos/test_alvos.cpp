@@ -249,6 +249,19 @@ void test_escala_nos_extremos(void) {
     }
 }
 
+// As linhas da fila deitada: 34 px de linha, 3 de vao, quatro no maximo.
+void test_linhas_da_fila(void) {
+    TEST_ASSERT_EQUAL_INT(0, linhaFilaAt(118, 3));      // topo da primeira
+    TEST_ASSERT_EQUAL_INT(0, linhaFilaAt(151, 3));      // ultima linha dela
+    TEST_ASSERT_EQUAL_INT(-1, linhaFilaAt(152, 3));     // o vao
+    TEST_ASSERT_EQUAL_INT(1, linhaFilaAt(155, 3));      // topo da segunda
+    TEST_ASSERT_EQUAL_INT(-1, linhaFilaAt(229, 2));     // abaixo da ultima que existe
+    TEST_ASSERT_EQUAL_INT(3, linhaFilaAt(229, 9));      // a quarta
+    TEST_ASSERT_EQUAL_INT(-1, linhaFilaAt(266, 9));     // a quinta nao e desenhada
+    TEST_ASSERT_EQUAL_INT(-1, linhaFilaAt(117, 3));     // acima, nos limites
+    TEST_ASSERT_EQUAL_INT(-1, linhaFilaAt(130, 0));
+}
+
 int main(int, char **) {
     UNITY_BEGIN();
     RUN_TEST(test_os_aneis_deitados_cobrem_o_rotulo_do_miolo);
@@ -270,5 +283,6 @@ int main(int, char **) {
     RUN_TEST(test_o_vao_entre_cartoes_nao_responde);
     RUN_TEST(test_fora_da_lista_nao_responde);
     RUN_TEST(test_o_que_nao_coube_nao_tem_alvo);
+    RUN_TEST(test_linhas_da_fila);
     return UNITY_END();
 }

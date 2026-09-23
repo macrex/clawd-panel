@@ -1589,6 +1589,23 @@ def vitalicio_do_livro():
     return _vit_cache["valor"]
 
 
+# O custo por dia varre o livro INTEIRO, como o vitalício, e é memoizado pela
+# mesma chave — mais o DIA: a virada da meia-noite empurra as cinco semanas uma
+# casa para o lado sem nenhum turno novo no arquivo.
+_dias_cache = {"regs": None, "dia": None, "valor": None}
+
+
+def dias_do_livro(now):
+    """`dias`, `dias_recorde` e `dias_seguidos`, refeitos só quando mudam."""
+    regs = works.ler_cache()
+    dia = works.inicio_do_dia(now)
+    if _dias_cache["regs"] is not regs or _dias_cache["dia"] != dia:
+        _dias_cache["regs"] = regs
+        _dias_cache["dia"] = dia
+        _dias_cache["valor"] = works.por_dia(regs, now)
+    return _dias_cache["valor"]
+
+
 # A fatia do Fable das últimas 24h, memoizada pela mesma razão do vitalício: ela
 # varre o livro inteiro e o painel pede /status a cada dois segundos. A chave
 # junta a identidade da lista com o MINUTO — a janela desliza, então o número
@@ -1931,6 +1948,9 @@ def build_status():
             # `works` fala do dia e `uso` de quem gastou o dia; este fala de
             # tudo. Memoizado: ver `vitalicio_do_livro`.
             "vitalicio": vitalicio_do_livro(),
+            # O custo das últimas cinco semanas, o recorde e a sequência, para a
+            # tela do histórico. Memoizado: ver `dias_do_livro`.
+            **dias_do_livro(now),
             # Qual motor decidiu o estado agora. Ver `corrigir_estado_se_couber`.
             "motor": motor.atual(),
             # Quem esta falando. Ver `tag_da_maquina`.
@@ -2134,6 +2154,7 @@ def build_status():
         "uso": uso_do_recorte(works.ler_cache(), "hoje", now),
         # Ver o comentario do mesmo campo no outro retorno.
         "vitalicio": vitalicio_do_livro(),
+        **dias_do_livro(now),
         # Qual motor decidiu o estado agora. Ver `corrigir_estado_se_couber`.
         "motor": motor.atual(),
         # Quem esta falando: a tag desta maquina, que o painel mostra no chip de

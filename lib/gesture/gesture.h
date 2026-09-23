@@ -12,6 +12,50 @@ struct Gesture {
     GestureKind kind = GestureKind::None;
     int         x    = 0;   // ultima posicao valida do dedo, para hit-test
     int         y    = 0;
+    // Onde o dedo POUSOU. Um arrasto termina longe de onde comecou, e a origem
+    // e o que diz se ele nasceu no cabecalho (o painel de ajustes) ou no miolo.
+    int         x0   = 0;
+    int         y0   = 0;
+};
+
+// O TOQUE DESTE PAINEL PISCA. Com o dedo parado, o AXS15231B responde "um
+// ponto" e "nenhum ponto" em leituras alternadas — medido na placa, 22/09: o
+// dedo apoiado em (456,225) virou Tap, DoubleTap, Tap, DoubleTap..., um a cada
+// ~9 ms, e 414 "toques" num minuto renderam 7 swipes. Na pagina de contexto
+// cada DoubleTap trocava o agente; na do Clawd, o bicho. E os arrastos saiam
+// picotados, curtos demais para virar swipe.
+//
+// O filtro fica ENTRE o sensor e todo o resto: "nenhum ponto" so vira dedo
+// levantado quando dura. Antes disso o dedo continua apoiado onde estava.
+// Levantar de verdade custa `soltaMs` a mais para ser percebido, o que nao
+// muda nada num toque (400 ms de teto) nem num swipe (1 s).
+struct Leitura {
+    bool pressed = false;
+    int  x = 0;
+    int  y = 0;
+};
+
+class FiltroDeSoltura {
+public:
+    // ponytail: o limiar e o botao de calibrar. Abaixo dele um duplo toque
+    // muito rapido vira um toque so; acima, uma falha longa do sensor no meio
+    // do arrasto corta o swipe. O `pulso` publica a maior falha coberta.
+    explicit FiltroDeSoltura(uint32_t soltaMs = 70) : soltaMs_(soltaMs) {}
+
+    Leitura update(bool pressed, int x, int y, uint32_t nowMs);
+
+    // A maior falha coberta desde a ultima leitura, em ms, e quantas foram.
+    // Zera ao ler: e o numero que diz se o limiar esta certo.
+    uint32_t colherMaiorFalha(uint32_t &quantas);
+
+private:
+    uint32_t soltaMs_;
+    bool     apoiado_    = false;
+    int      x_ = 0, y_ = 0;
+    int      vazias_     = 0;     // leituras "nenhum ponto" seguidas
+    uint32_t vazioDesde_ = 0;
+    uint32_t maiorFalha_ = 0;
+    uint32_t falhas_     = 0;
 };
 
 // Classifica gestos a partir de amostras do touch.
@@ -33,6 +77,11 @@ public:
     // Chamar a cada leitura do touch. Devolve o gesto uma unica vez, no
     // instante em que o dedo levanta.
     Gesture update(bool pressed, int x, int y, uint32_t nowMs);
+
+    // O ultimo toque ja foi consumido por algo que mudou a tela (fechou o
+    // painel de ajustes): o proximo toque rapido nao pode virar o SEGUNDO de
+    // uma dupla, porque cairia na pagina que acabou de aparecer.
+    void esquecerToque() { hasLastTap_ = false; }
 
 private:
     int      minSwipe_;

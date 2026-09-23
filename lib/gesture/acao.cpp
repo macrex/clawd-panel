@@ -42,6 +42,11 @@ int paginaLogica(const Contexto &c) {
     return c.page == 0 ? 0 : c.page - 1;
 }
 
+// A FILA esta na tela: so na primeira pagina deitada, e so com ela ligada.
+bool naFila(const Contexto &c) {
+    return c.fila && !c.retrato && c.page == 0;
+}
+
 // O duplo toque, na ordem em que os alvos disputam. Cada `if` desta cadeia e
 // uma regra, e trocar dois de lugar muda o painel.
 Decisao duploToque(const Contexto &c) {
@@ -68,7 +73,10 @@ Decisao duploToque(const Contexto &c) {
     // no miolo da tela, e sem a pagina na conta um duplo toque no meio da
     // pagina do Clawd (que troca o trabalhador) abriria uma tela de bicho. Em
     // pe a regra fica como sempre foi, valendo em qualquer pagina.
-    const bool alvosDaP0 = c.retrato || p == 0;
+    //
+    // Com a FILA na primeira tela deitada os aneis nao estao la: as linhas
+    // ocupam aquele lugar, e o duplo toque nelas abre o terminal (abaixo).
+    const bool alvosDaP0 = c.retrato || (p == 0 && !naFila(c));
     if (alvosDaP0 && c.haveLast && !c.temBloqueio && c.noPctSessao)
         // Em pe aquele alvo ensaia a tela de RESET; deitado ela nao existe, e o
         // que o anel da sessao abre e o Clawd dormindo.
@@ -95,6 +103,10 @@ Decisao duploToque(const Contexto &c) {
     if (c.retrato && p == 0 && c.haveLast && !c.temBloqueio &&
         c.cartaoSessao >= 0)
         return com(Acao::AbrirTerminalDoAgente, c.cartaoSessao);
+
+    // A LINHA DA FILA abre o terminal daquela sessao, como o cartao em pe.
+    if (naFila(c) && c.haveLast && !c.temBloqueio && c.linhaFila >= 0)
+        return com(Acao::AbrirTerminalDoAgente, c.linhaFila);
 
     // Pergunta em tela cheia da P0: o segundo toque confirma, do mesmo jeito que
     // na aba de contexto.
@@ -144,20 +156,70 @@ Decisao toqueSimples(const Contexto &c) {
     return nada();
 }
 
+// O painel de ajustes aberto consome TODO gesto: por baixo dele a pagina nao
+// esta visivel, e um swipe que trocasse de pagina atras do painel seria um
+// efeito sem tela. Um toque num ajuste age; fora do painel, fecha.
+//
+// O DUPLO TOQUE nao faz nada aqui. Para o detector ele e o SEGUNDO toque de
+// uma dupla cujo primeiro ja chegou como Tap e ja agiu: repassa-lo desligaria
+// o SOM que o primeiro acabou de ligar. E o habito deste painel, onde muita
+// coisa pede dois toques, e a mao vai repetir.
+Decisao noPainel(GestureKind k, const Contexto &c) {
+    switch (k) {
+        case GestureKind::Tap:
+            if (c.ajusteTocado >= 0) return com(Acao::TocarAjuste, c.ajusteTocado);
+            if (c.ajusteTocado == -2) return so(Acao::FecharAjustes);
+            return nada();
+        case GestureKind::SwipeUp: return so(Acao::FecharAjustes);
+        default:                   return nada();
+    }
+}
+
 }   // namespace
 
 Decisao decidirGesto(GestureKind k, const Contexto &c) {
+    if (k == GestureKind::None) return nada();
+
+    // A tela da noite vem antes de tudo: ela esta apagada, e um toque que
+    // agisse no escuro (abrir terminal, aprovar uma opcao) seria um toque dado
+    // sem ver. O primeiro gesto so acende.
+    if (c.noite) return so(Acao::Acordar);
     if (c.modoTerminal) return noTerminal(k, c);
+    if (c.ajustesAbertos) return noPainel(k, c);
 
     switch (k) {
-        // As quatro paginas existem nas DUAS orientacoes: cada uma tem a
-        // geometria da sua, entao o swipe vale em pe tambem.
+        // As paginas existem nas DUAS orientacoes e a volta e CIRCULAR: da
+        // primeira, arrastar para a direita leva a ultima. E o que deixa as
+        // paginas do fim (Hoje e Semanas) a um gesto da tela inicial.
         case GestureKind::SwipeLeft:
-            return c.page < c.paginas - 1 ? so(Acao::PaginaProxima) : nada();
+            return c.paginas > 1 ? so(Acao::PaginaProxima) : nada();
         case GestureKind::SwipeRight:
-            return c.page > 0 ? so(Acao::PaginaAnterior) : nada();
+            return c.paginas > 1 ? so(Acao::PaginaAnterior) : nada();
+
+        // O arrasto vertical nasceu no terminal. Fora dele: do cabecalho para
+        // baixo abre os ajustes em qualquer pagina; na primeira tela deitada,
+        // para cima entra na fila e para baixo sai dela.
+        //
+        // Com a PERGUNTA na tela a fila nao liga nem desliga: ela esta por
+        // baixo, e trocar um modo que nao se ve seria mudar o painel as cegas.
+        case GestureKind::SwipeDown:
+            if (c.inicioNoCabecalho) return so(Acao::AbrirAjustes);
+            if (naFila(c) && !c.temBloqueio) return so(Acao::FecharFila);
+            return nada();
+        case GestureKind::SwipeUp:
+            if (!c.fila && !c.retrato && c.page == 0 && !c.temBloqueio)
+                return so(Acao::AbrirFila);
+            return nada();
+
         case GestureKind::DoubleTap: return duploToque(c);
         case GestureKind::Tap:       return toqueSimples(c);
         default:                     return nada();
     }
 }
+
+int paginaVizinha(int page, int paginas, int passo) {
+    if (paginas <= 0) return 0;
+    return ((page + passo) % paginas + paginas) % paginas;
+}
+
+bool paginaDeBicho(int page) { return page == 3 || page == 4; }

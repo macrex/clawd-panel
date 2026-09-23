@@ -122,6 +122,7 @@ int      g_capCode    = 0;
 // em lib/protocolo.
 IdsPorFonte g_capIds;
 uint32_t g_capTentativas = 0;    // quantas fotos ja foram pedidas a esta placa
+bool     g_fotoPend = false;     // o painel pediu uma foto (ver pedirFoto)
 
 // Codigos que nao vem do HTTP, para o pulso poder nomear a falha em vez de
 // dizer so "nao foi".
@@ -394,6 +395,24 @@ void enviarQuadro(long id, int origem, bool retrato, const uint8_t *buf,
     http.setTimeout(10000);
     client.fimMs = millis() + CAPTURA_PRAZO_MS;
     g_capCode = http.POST(const_cast<uint8_t *>(buf), n);
+    http.end();
+    client.stop();
+}
+
+// Pede a foto no master, como o `tools\tela.py` faz (ver net::pedirFoto). Roda
+// DENTRO da tarefa de rede. Corpo vazio: o pedido e o pedido. O codigo vai para
+// o mesmo `g_capCode` do pulso — um pedido recusado e uma foto que nao sai.
+void pedirFotoNaApi() {
+    if (WiFi.status() != WL_CONNECTED) { g_capCode = -1; return; }
+
+    WiFiClient client;
+    HTTPClient http;
+    const std::string url = urlIrma(urlBase(0), "tela/pedir");
+    if (!http.begin(client, url.c_str())) { g_capCode = -1000; return; }
+    http.setConnectTimeout(3000);
+    http.setTimeout(3000);
+    const int code = http.POST((uint8_t *)nullptr, 0);
+    if (code != 200) g_capCode = code;
     http.end();
     client.stop();
 }
@@ -753,7 +772,10 @@ void tarefaRede(void *) {
         long capId = 0;
         int  capOrigem = 0;
         bool capMandar = false;
+        bool fotoPedir = false;
         if (xSemaphoreTake(g_mtx, portMAX_DELAY) == pdTRUE) {
+            fotoPedir = g_fotoPend;
+            g_fotoPend = false;
             if (g_capPend) {
                 capId = g_capId;
                 capOrigem = g_capOrigem;
@@ -772,6 +794,10 @@ void tarefaRede(void *) {
                 xSemaphoreGive(g_mtx);
             }
         }
+
+        // O pedido da foto do painel vai ANTES do poll: e o /status desta mesma
+        // volta que traz a `captura` de volta, e a foto sai um ciclo mais cedo.
+        if (fotoPedir) pedirFotoNaApi();
 
         if (!cmdNome.empty()) enviarComando(cmdSid, cmdNome, cmdOrigem);
         // A resposta vem antes do poll pela mesma razao do comando: o /status
@@ -1085,6 +1111,13 @@ void enviarCaptura(long id, int origem, bool retrato) {
 int lastCapturaCode() { return g_capCode; }
 
 uint32_t capturasPedidas() { return g_capTentativas; }
+
+void pedirFoto() {
+    if (!g_mtx) return;
+    if (xSemaphoreTake(g_mtx, 0) != pdTRUE) return;   // ocupada: o toque se perde
+    g_fotoPend = true;
+    xSemaphoreGive(g_mtx);
+}
 
 void falhaCaptura() {
     g_capCode = SEM_QUADRO;

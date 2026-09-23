@@ -137,6 +137,29 @@ void test_arrastar_para_baixo_gera_swipe_down(void) {
     TEST_ASSERT_TRUE(GestureKind::SwipeDown == d.update(false, 0, 0, 120).kind);
 }
 
+// A ORIGEM do arrasto viaja junto: e ela que diz se o gesto nasceu no
+// cabecalho (abre os ajustes) ou no miolo da tela.
+void test_o_swipe_carrega_onde_o_dedo_pousou(void) {
+    GestureDetector d;
+    d.update(true, 200, 10, 0);
+    d.update(true, 205, 150, 100);
+    const Gesture g = d.update(false, 0, 0, 120);
+    TEST_ASSERT_TRUE(GestureKind::SwipeDown == g.kind);
+    TEST_ASSERT_EQUAL(200, g.x0);
+    TEST_ASSERT_EQUAL(10, g.y0);
+    TEST_ASSERT_EQUAL(150, g.y);
+}
+
+// Esquecido o toque, o seguinte rapido e um Tap novo, e nao um duplo.
+void test_esquecer_o_toque_quebra_a_dupla(void) {
+    GestureDetector d;
+    d.update(true, 200, 150, 0);
+    TEST_ASSERT_TRUE(GestureKind::Tap == d.update(false, 0, 0, 50).kind);
+    d.esquecerToque();
+    d.update(true, 205, 152, 200);
+    TEST_ASSERT_TRUE(GestureKind::Tap == d.update(false, 0, 0, 250).kind);
+}
+
 void test_o_eixo_maior_decide_o_gesto(void) {
     // Arrasto diagonal com mais deslocamento HORIZONTAL: e swipe horizontal,
     // mesmo o vertical tendo passado do limiar. Sem esta regra o gesto sairia
@@ -160,11 +183,55 @@ void test_arrasto_vertical_curto_nao_e_swipe(void) {
     TEST_ASSERT_TRUE(GestureKind::None == d.update(false, 0, 0, 120).kind);
 }
 
+// ---- O filtro de soltura ----
+
+void test_filtro_segura_a_falha_curta(void) {
+    FiltroDeSoltura f(70);
+    TEST_ASSERT_TRUE(f.update(true, 100, 50, 0).pressed);
+    // Uma leitura vazia no meio: o dedo continua, no mesmo lugar.
+    Leitura l = f.update(false, 0, 0, 9);
+    TEST_ASSERT_TRUE(l.pressed);
+    TEST_ASSERT_EQUAL(100, l.x);
+    TEST_ASSERT_EQUAL(50, l.y);
+    TEST_ASSERT_TRUE(f.update(true, 104, 50, 18).pressed);
+    uint32_t n = 0;
+    TEST_ASSERT_EQUAL_UINT32(9, f.colherMaiorFalha(n));
+    TEST_ASSERT_EQUAL_UINT32(1, n);
+    TEST_ASSERT_EQUAL_UINT32(0, f.colherMaiorFalha(n));   // zera ao ler
+}
+
+void test_filtro_solta_quando_a_falta_dura(void) {
+    FiltroDeSoltura f(70);
+    f.update(true, 100, 50, 0);
+    uint32_t t = 10;
+    for (; t < 80; t += 10) TEST_ASSERT_TRUE(f.update(false, 0, 0, t).pressed);
+    TEST_ASSERT_FALSE(f.update(false, 0, 0, t).pressed);   // 70 ms depois da 1a
+    TEST_ASSERT_FALSE(f.update(false, 0, 0, t + 10).pressed);
+}
+
+// Laco lento: UMA leitura vazia depois de 64 ms nao solta o dedo sozinha.
+void test_filtro_pede_duas_leituras_vazias(void) {
+    FiltroDeSoltura f(70);
+    f.update(true, 100, 50, 0);
+    TEST_ASSERT_TRUE(f.update(false, 0, 0, 64).pressed);
+    TEST_ASSERT_TRUE(f.update(true, 100, 50, 128).pressed);
+    TEST_ASSERT_TRUE(f.update(false, 0, 0, 192).pressed);
+    TEST_ASSERT_FALSE(f.update(false, 0, 0, 262).pressed);
+}
+
+void test_filtro_sem_dedo_fica_quieto(void) {
+    FiltroDeSoltura f;
+    TEST_ASSERT_FALSE(f.update(false, 0, 0, 0).pressed);
+    TEST_ASSERT_FALSE(f.update(false, 0, 0, 500).pressed);
+}
+
 int main(int, char **) {
     UNITY_BEGIN();
     RUN_TEST(test_arrastar_para_esquerda_gera_swipe_left);
     RUN_TEST(test_arrastar_para_cima_gera_swipe_up);
     RUN_TEST(test_arrastar_para_baixo_gera_swipe_down);
+    RUN_TEST(test_o_swipe_carrega_onde_o_dedo_pousou);
+    RUN_TEST(test_esquecer_o_toque_quebra_a_dupla);
     RUN_TEST(test_o_eixo_maior_decide_o_gesto);
     RUN_TEST(test_arrasto_vertical_curto_nao_e_swipe);
     RUN_TEST(test_arrastar_para_direita_gera_swipe_right);
@@ -178,5 +245,9 @@ int main(int, char **) {
     RUN_TEST(test_tres_toques_rapidos_nao_encadeiam);
     RUN_TEST(test_swipe_no_meio_nao_vira_double_tap);
     RUN_TEST(test_gesto_e_reportado_uma_unica_vez);
+    RUN_TEST(test_filtro_segura_a_falha_curta);
+    RUN_TEST(test_filtro_solta_quando_a_falta_dura);
+    RUN_TEST(test_filtro_pede_duas_leituras_vazias);
+    RUN_TEST(test_filtro_sem_dedo_fica_quieto);
     return UNITY_END();
 }

@@ -62,6 +62,20 @@ enum class Acao {
     // proprio; em pe nao havia como chegar nele, e o cartao era o unico alvo
     // grande da tela que nao respondia a nada.
     AbrirTerminalDoAgente,   // n = o indice na lista
+
+    // A FILA DE ATENCAO: a mesma primeira tela deitada, com as sessoes em
+    // linhas de largura inteira. Arrastar para cima entra, para baixo volta.
+    AbrirFila,
+    FecharFila,
+
+    // O PAINEL DE AJUSTES, que desce do cabecalho. Aberto, ele consome todo
+    // gesto: o toque num ajuste age, o toque fora ou o arrasto para cima fecha.
+    AbrirAjustes,
+    FecharAjustes,
+    TocarAjuste,             // n = o ajuste tocado (ver ui::ajusteAt)
+
+    // O MODO NOITE: a tela apagada consome o primeiro gesto so para acordar.
+    Acordar,
 };
 
 struct Decisao {
@@ -77,7 +91,7 @@ struct Decisao {
 struct Contexto {
     bool modoTerminal = false;
     int  page         = 0;
-    int  paginas      = 4;      // ui::PAGES, para o swipe saber onde acaba
+    int  paginas      = 4;      // ui::paginas(), para o swipe saber onde acaba
     bool retrato      = false;
     bool haveLast     = false;
     bool temBloqueio  = false;
@@ -107,6 +121,34 @@ struct Contexto {
     int  agenteIndex      = -1;  // -1 = fora da lista (menu da pagina 1 em pe)
     // O cartao da lista da PRIMEIRA tela em pe. -1 = o dedo caiu fora dela.
     int  cartaoSessao     = -1;
+
+    // Os modos que mudam o que a tela e.
+    bool noite            = false;   // modo noite com a tela apagada
+    bool ajustesAbertos   = false;
+    bool fila             = false;   // a primeira tela deitada mostra a fila
+    // O arrasto NASCEU no cabecalho (hit-test na origem do gesto, e nao no
+    // ponto em que o dedo levantou).
+    bool inicioNoCabecalho = false;
+    // O ajuste sob o dedo com o painel aberto. -1 = fora de todos; o toque
+    // fora do painel e -2 (fecha).
+    int  ajusteTocado     = -1;
+    // A linha da fila sob o dedo. -1 = fora da lista.
+    int  linhaFila        = -1;
 };
 
 Decisao decidirGesto(GestureKind k, const Contexto &c);
+
+// A pagina `passo` casas adiante (ou atras, negativo), dando a volta: a
+// navegacao e circular, e da ultima a esquerda volta a primeira.
+int paginaVizinha(int page, int paginas, int passo);
+
+// A pagina e de BICHO GRANDE — a do Clawd (3) ou a do nivel (4)? Nelas o bicho
+// ocupa a tela, a turma do rodape nao e desenhada e um quadro de animacao custa
+// o redesenho inteiro. A MESMA numeracao nas duas orientacoes.
+//
+// Uma funcao so, e nao a conta em cada lugar: quando a tela nova entrou na
+// frente das paginas deitadas (02/09), a regra foi atualizada em pe e ficou
+// velha deitada em tres dos cinco lugares que a escreviam. A pagina de contexto
+// passou a redesenhar a tela inteira a cada passo da turma, o Clawd grande
+// parou de andar, e a turma passou a ser desenhada por cima da pagina do nivel.
+bool paginaDeBicho(int page);

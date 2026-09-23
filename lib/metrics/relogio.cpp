@@ -1,4 +1,5 @@
 #include "relogio.h"
+#include <cctype>
 #include <cstdio>
 #include <ctime>
 
@@ -12,6 +13,21 @@ const char *DIAS[] = {"DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SAB"};
 // lixo no lugar dele.
 const char *DIAS_EXTENSO[] = {"Domingo", "Segunda", "Terca", "Quarta",
                               "Quinta",  "Sexta",   "Sabado"};
+
+// O minuto do dia daqui a `segundos`, contado do relogio do cabecalho e
+// arredondado ao multiplo de cinco (passa de 1440 quando a conta vira o dia).
+// E a conta UNICA da hora e do dia de um instante futuro: dia e hora escritos
+// lado a lado tem que concordar na meia-noite.
+bool minutoDaquiA(const Clock &c, long segundos, long &tot) {
+    int hh = 0, mm = 0;
+    if (!c.known || segundos < 0 ||
+        sscanf(c.hm.c_str(), "%d:%d", &hh, &mm) != 2) return false;
+    tot = (long)hh * 60 + mm + (segundos + 30) / 60;
+    tot = ((tot + 2) / 5) * 5;
+    return true;
+}
+
+}  // namespace
 
 // Epoch LOCAL -> calendario. Falso quando a placa nao sabe que dia e.
 //
@@ -29,8 +45,6 @@ bool calendarioDe(long epochLocal, struct tm &tm) {
 #endif
     return true;
 }
-
-}  // namespace
 
 bool epochAceitavel(long candidato, long piso) {
     if (candidato < EPOCH_MINIMO) return false;
@@ -51,6 +65,31 @@ Clock relogioDe(long epochLocal) {
     c.weekday = DIAS[tm.tm_wday % 7];
     c.known = true;
     return c;
+}
+
+std::string horaDaquiA(const Clock &c, long segundos) {
+    long tot = 0;
+    if (!minutoDaquiA(c, segundos, tot)) return "";
+    tot %= 24 * 60;
+    char buf[16];
+    if (tot % 60) snprintf(buf, sizeof(buf), "%02ld:%02ldh", tot / 60, tot % 60);
+    else          snprintf(buf, sizeof(buf), "%ldh", tot / 60);
+    return buf;
+}
+
+std::string diaDaquiA(const Clock &c, long segundos) {
+    long tot = 0;
+    if (!minutoDaquiA(c, segundos, tot)) return "";
+    // Pelo NOME, e nao pela posicao: a API numera a semana a partir da segunda
+    // e a placa a partir do domingo, mas os dois escrevem as mesmas tres letras.
+    int hoje = -1;
+    for (int i = 0; i < 7; i++)
+        if (c.weekday == DIAS[i]) hoje = i;
+    if (hoje < 0) return "";
+
+    std::string d = DIAS[(hoje + tot / (24 * 60)) % 7];
+    for (size_t i = 1; i < d.size(); i++) d[i] = (char)tolower(d[i]);
+    return d;
 }
 
 std::string prazoTexto(long segundos) {

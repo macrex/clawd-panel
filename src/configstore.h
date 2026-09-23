@@ -1,5 +1,6 @@
 #pragma once
 #include "app_config.h"
+#include "ajustes.h"
 
 // A config do cartao, guardada TAMBEM na memoria interna do chip.
 //
@@ -27,5 +28,16 @@ void guardar(const AppConfig &c);
 
 // A config guardada, ou uma invalida quando nunca houve gravacao.
 AppConfig ler();
+
+// ---- O que o PAINEL DE AJUSTES escolheu ----
+// Chaves PROPRIAS, e nao o "brilho" de cima: aquele e o espelho do cartao, e
+// `guardar` o reescreve em todo boot com o que o config.json diz. Gravado ali,
+// o degrau escolhido no painel morreria no boot seguinte — e a regra e a
+// inversa: o toque no painel vale sobre o arquivo.
+//
+// Sem gravacao, os padroes de ajustes::Escolhas (brilho do config.json, som e
+// noite ligados).
+ajustes::Escolhas lerEscolhas();
+void guardarEscolhas(const ajustes::Escolhas &e);
 
 }  // namespace configstore

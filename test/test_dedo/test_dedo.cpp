@@ -56,6 +56,118 @@ Contexto base() {
 
 }   // namespace
 
+// ---- O sensor que pisca (medido na placa em 22/09) ----
+// O dedo apoiado chega ao laco como "um ponto" e "nenhum ponto" alternados. O
+// filtro fica entre o sensor e o detector, como no laco.
+
+// Um dedo parado em (x,y) por `ms`, lido a cada 9 ms, com o sensor devolvendo
+// "nenhum ponto" em leitura sim, leitura nao. Devolve a ULTIMA acao que saiu.
+Acao dedoPiscando(GestureDetector &det, FiltroDeSoltura &f, const Contexto &c,
+                  int x, int y, uint32_t ms, int &acoes) {
+    Acao ultima = Acao::Nada;
+    acoes = 0;
+    for (uint32_t t = 0; t < ms; t += 9) {
+        const bool leu = ((t / 9) % 2) == 0;
+        const Leitura l = f.update(leu, leu ? x : 0, leu ? y : 0, g_agora);
+        const Gesture g = det.update(l.pressed, l.x, l.y, g_agora);
+        const Acao a = decidirGesto(g.kind, c).acao;
+        if (a != Acao::Nada) { ultima = a; acoes++; }
+        g_agora += 9;
+    }
+    // O dedo sai de verdade: o sensor para de ver.
+    for (int i = 0; i < 20; i++) {
+        const Leitura l = f.update(false, 0, 0, g_agora);
+        const Gesture g = det.update(l.pressed, l.x, l.y, g_agora);
+        const Acao a = decidirGesto(g.kind, c).acao;
+        if (a != Acao::Nada) { ultima = a; acoes++; }
+        g_agora += 9;
+    }
+    return ultima;
+}
+
+// O defeito da placa: na pagina de contexto (2) o dedo parado trocava de agente
+// sem parar, e na do Clawd (3) trocava o bicho. Filtrado, dedo parado e so um
+// toque longo — nao e toque, nao e duplo toque, nao faz nada.
+void test_dedo_parado_com_sensor_piscando_nao_troca_nada(void) {
+    Contexto c = base();
+    for (int pg = 2; pg <= 3; pg++) {
+        c.page = pg;
+        GestureDetector det;
+        FiltroDeSoltura f;
+        int acoes = 0;
+        dedoPiscando(det, f, c, 456, 225, 1500, acoes);
+        TEST_ASSERT_EQUAL_INT(0, acoes);
+    }
+}
+
+// E sem o filtro o mesmo dedo gera a enxurrada que a serial mostrou: o sensor
+// direto no detector, como o laco fazia.
+void test_sem_filtro_o_dedo_parado_vira_duplos_toques(void) {
+    Contexto c = base();
+    c.page = 2;
+    GestureDetector det;
+    int acoes = 0;
+    Acao ultima = Acao::Nada;
+    for (uint32_t t = 0; t < 600; t += 9) {
+        const bool leu = ((t / 9) % 2) == 0;
+        const Gesture g = det.update(leu, 456, 225, g_agora);
+        const Acao a = decidirGesto(g.kind, c).acao;
+        if (a != Acao::Nada) { ultima = a; acoes++; }
+        g_agora += 9;
+    }
+    TEST_ASSERT_TRUE(acoes > 5);
+    TEST_ASSERT_EQUAL(Acao::ProximoAgente, ultima);
+}
+
+// Um arrasto com o sensor falhando no meio continua sendo UM swipe.
+void test_arrasto_com_falhas_ainda_e_swipe(void) {
+    GestureDetector det;
+    FiltroDeSoltura f;
+    Contexto c = base();
+    c.page = 3;
+    Acao saiu = Acao::Nada;
+    int n = 0;
+    // 300 ms indo de x=420 a x=180, lido a cada 9 ms, com uma leitura em cada
+    // tres vazia e um buraco de 50 ms no meio.
+    for (uint32_t t = 0; t <= 300; t += 9, n++) {
+        const bool buraco = t >= 120 && t < 170;
+        const bool leu = !buraco && (n % 3) != 2;
+        const int x = 420 - (int)(240 * t / 300);
+        const Leitura l = f.update(leu, leu ? x : 0, leu ? 160 : 0, g_agora);
+        const Gesture g = det.update(l.pressed, l.x, l.y, g_agora);
+        if (g.kind != GestureKind::None) saiu = decidirGesto(g.kind, c).acao;
+        g_agora += 9;
+    }
+    for (int i = 0; i < 20; i++) {
+        const Leitura l = f.update(false, 0, 0, g_agora);
+        const Gesture g = det.update(l.pressed, l.x, l.y, g_agora);
+        if (g.kind != GestureKind::None) saiu = decidirGesto(g.kind, c).acao;
+        g_agora += 9;
+    }
+    TEST_ASSERT_EQUAL(Acao::PaginaProxima, saiu);
+}
+
+// O duplo toque de verdade continua existindo: dois toques de 60 ms com
+// 150 ms entre eles.
+void test_duplo_toque_de_verdade_passa_pelo_filtro(void) {
+    GestureDetector det;
+    FiltroDeSoltura f;
+    Contexto c = base();
+    c.page = 3;
+    Acao saiu = Acao::Nada;
+    auto amostra = [&](bool dedo) {
+        const Leitura l = f.update(dedo, dedo ? 240 : 0, dedo ? 160 : 0, g_agora);
+        const Gesture g = det.update(l.pressed, l.x, l.y, g_agora);
+        if (g.kind != GestureKind::None) saiu = decidirGesto(g.kind, c).acao;
+        g_agora += 9;
+    };
+    for (int k = 0; k < 2; k++) {
+        for (int i = 0; i < 7; i++) amostra(true);     // ~60 ms apoiado
+        for (int i = 0; i < 17; i++) amostra(false);   // ~150 ms solto
+    }
+    TEST_ASSERT_EQUAL(Acao::TrocarTrabalho, saiu);
+}
+
 // ---- O que o dedo faz, virando acao ----
 
 void test_arrastar_para_a_esquerda_avanca_a_pagina(void) {
@@ -67,13 +179,31 @@ void test_arrastar_para_a_esquerda_avanca_a_pagina(void) {
     TEST_ASSERT_EQUAL(Acao::PaginaProxima, decidirGesto(g.kind, c).acao);
 }
 
-void test_arrastar_para_a_direita_na_primeira_pagina_nao_faz_nada(void) {
+// A volta e circular: da primeira pagina, a direita leva a ultima.
+void test_arrastar_para_a_direita_na_primeira_pagina_vai_para_a_ultima(void) {
     GestureDetector det;
     Contexto c = base();
 
     const Gesture g = toque(det, 150, 160, 300, 160, 300);
     TEST_ASSERT_EQUAL(GestureKind::SwipeRight, g.kind);
-    TEST_ASSERT_EQUAL(Acao::Nada, decidirGesto(g.kind, c).acao);
+    TEST_ASSERT_EQUAL(Acao::PaginaAnterior, decidirGesto(g.kind, c).acao);
+}
+
+// O arrasto vertical: do cabecalho para baixo abre os ajustes; do miolo para
+// cima entra na fila. Quem diz de onde o dedo saiu e a ORIGEM do gesto.
+void test_arrasto_vertical_ajustes_e_fila(void) {
+    GestureDetector det;
+    Contexto c = base();
+
+    Gesture g = toque(det, 240, 12, 240, 200, 300);
+    TEST_ASSERT_EQUAL(GestureKind::SwipeDown, g.kind);
+    c.inicioNoCabecalho = g.y0 < 42;
+    TEST_ASSERT_EQUAL(Acao::AbrirAjustes, decidirGesto(g.kind, c).acao);
+
+    g = toque(det, 240, 250, 240, 100, 300);
+    TEST_ASSERT_EQUAL(GestureKind::SwipeUp, g.kind);
+    c.inicioNoCabecalho = g.y0 < 42;
+    TEST_ASSERT_EQUAL(Acao::AbrirFila, decidirGesto(g.kind, c).acao);
 }
 
 // O release sem posicao: o gesto tem que sair com a ULTIMA posicao apoiada, e
@@ -248,8 +378,9 @@ void test_atravessar_as_quatro_paginas_e_voltar(void) {
         const Gesture g = toque(det, 300, 160, 150, 160, 300);
         TEST_ASSERT_EQUAL(Acao::PaginaProxima, decidirGesto(g.kind, c).acao);
     }
+    // Da ultima, a esquerda da a volta.
     c.page = 3;
-    TEST_ASSERT_EQUAL(Acao::Nada,
+    TEST_ASSERT_EQUAL(Acao::PaginaProxima,
                       decidirGesto(toque(det, 300, 160, 150, 160, 300).kind, c).acao);
 
     for (int p = 3; p > 0; p--) {
@@ -258,14 +389,15 @@ void test_atravessar_as_quatro_paginas_e_voltar(void) {
         TEST_ASSERT_EQUAL(Acao::PaginaAnterior, decidirGesto(g.kind, c).acao);
     }
     c.page = 0;
-    TEST_ASSERT_EQUAL(Acao::Nada,
+    TEST_ASSERT_EQUAL(Acao::PaginaAnterior,
                       decidirGesto(toque(det, 150, 160, 300, 160, 300).kind, c).acao);
 }
 
 int main(int, char **) {
     UNITY_BEGIN();
     RUN_TEST(test_arrastar_para_a_esquerda_avanca_a_pagina);
-    RUN_TEST(test_arrastar_para_a_direita_na_primeira_pagina_nao_faz_nada);
+    RUN_TEST(test_arrastar_para_a_direita_na_primeira_pagina_vai_para_a_ultima);
+    RUN_TEST(test_arrasto_vertical_ajustes_e_fila);
     RUN_TEST(test_o_release_sem_posicao_nao_inverte_o_sentido);
     RUN_TEST(test_dois_toques_rapidos_viram_duplo);
     RUN_TEST(test_dois_toques_lentos_sao_dois_toques);
@@ -280,5 +412,9 @@ int main(int, char **) {
     RUN_TEST(test_toque_simples_seleciona_e_o_duplo_faz_outra_coisa);
     RUN_TEST(test_responder_a_pergunta_com_um_toque);
     RUN_TEST(test_atravessar_as_quatro_paginas_e_voltar);
+    RUN_TEST(test_dedo_parado_com_sensor_piscando_nao_troca_nada);
+    RUN_TEST(test_sem_filtro_o_dedo_parado_vira_duplos_toques);
+    RUN_TEST(test_arrasto_com_falhas_ainda_e_swipe);
+    RUN_TEST(test_duplo_toque_de_verdade_passa_pelo_filtro);
     return UNITY_END();
 }

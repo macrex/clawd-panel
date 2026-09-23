@@ -410,6 +410,28 @@ void test_modelo_no_chip_palavra_unica_e_limite(void) {
     TEST_ASSERT_EQUAL_STRING("", modeloNoChip("", 20).c_str());
 }
 
+// A barra por modelo: quatro no maximo, sem os sem preco, e o percentual
+// sobre todos os que tem preco. O Sonnet de US$ 0,43 num dia de US$ 97 e "<1%".
+void test_fatias_dos_modelos(void) {
+    Uso u;
+    u.known = true;
+    auto mod = [](const char *r, float c, bool preco) {
+        UsoModelo m; m.rotulo = r; m.costUsd = c; m.hasCost = preco; return m;
+    };
+    u.modelos = {mod("Opus 5.5", 54.72f, true), mod("Opus 5", 36.82f, true),
+                 mod("Sem preco", 9.0f, false), mod("Fable 5.1", 5.33f, true),
+                 mod("Sonnet 5", 0.43f, true), mod("Haiku", 0.10f, true)};
+    const std::vector<FatiaModelo> f = fatiasDosModelos(u, 4);
+    TEST_ASSERT_EQUAL(4, (int)f.size());
+    TEST_ASSERT_EQUAL_STRING("Opus 5.5", f[0].rotulo.c_str());
+    TEST_ASSERT_EQUAL(56, f[0].pct);          // 54,72 / 97,40
+    TEST_ASSERT_EQUAL_STRING("Fable 5.1", f[2].rotulo.c_str());
+    TEST_ASSERT_EQUAL(0, f[3].pct);           // o Sonnet: "<1%"
+
+    Uso vazio;
+    TEST_ASSERT_EQUAL(0, (int)fatiasDosModelos(vazio, 4).size());
+}
+
 int main(int, char **) {
     UNITY_BEGIN();
     RUN_TEST(test_modelo_no_chip_perde_o_parentese);
@@ -457,5 +479,6 @@ int main(int, char **) {
     RUN_TEST(test_a_forma_curta_cabe_onde_a_longa_nao_cabe);
     RUN_TEST(test_limites_lembrados_viram_a_linha_de_sync);
     RUN_TEST(test_leitura_viva_nao_carimba_nada);
+    RUN_TEST(test_fatias_dos_modelos);
     return UNITY_END();
 }

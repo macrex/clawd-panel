@@ -78,7 +78,8 @@ LABEL = frozenset({
 })
 
 # O livro-caixa do dia. Sobrevivem os quatro que o card HOJE desenha
-# (`trabalhos`, `seconds`, `blocked_seconds`, `mediana_seconds`) e o `cost_usd`.
+# (`trabalhos`, `seconds`, `blocked_seconds`, `mediana_seconds`), o `cost_usd`
+# e as `horas` do grafico do dia.
 WORKS = frozenset({
     "api_seconds",
     "blocks",
@@ -178,8 +179,14 @@ def _param(caminho: str, chave: str) -> str:
 # O resumo cobre o CONTEUDO, entao a invalidacao e automatica: um turno novo
 # muda `works`, muda o resumo, e o bloco volta a viajar sem ninguem ter que
 # lembrar de expirar nada. E a virada do dia entra por essa mesma porta.
+#
+# `dias`, `dias_recorde` e `dias_seguidos` sao as cinco semanas da tela do
+# historico: tambem so mudam quando um turno fecha (ou o dia vira), e sao ~240
+# bytes que viajariam a cada poll. A placa os guarda no `BlocosFrios` junto com
+# os outros (lib/metrics/frio.h) — um campo frio que ela nao guardasse sumiria
+# da tela no segundo poll.
 
-FRIOS = ("works", "uso", "vitalicio")
+FRIOS = ("works", "uso", "vitalicio", "dias", "dias_recorde", "dias_seguidos")
 
 
 def resumo_frio(status: dict) -> str:

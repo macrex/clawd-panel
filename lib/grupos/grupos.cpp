@@ -131,4 +131,21 @@ std::vector<int> ordemComBloqueadosNoTopo(const std::vector<Agent> &agents) {
     return ordem;
 }
 
+int degrauNaFila(const Agent &a) {
+    if (a.state == AgentState::Blocked) return 0;
+    if (a.state == AgentState::Working) return 2;
+    if (a.state == AgentState::Idle && a.done) return 1;
+    return 3;
+}
+
+std::vector<int> ordemDaFila(const std::vector<Agent> &agents) {
+    std::vector<int> ordem;
+    ordem.reserve(agents.size());
+    // Uma passada por degrau, como la em cima: a estabilidade sai de graca.
+    for (int d = 0; d <= 3; d++)
+        for (size_t i = 0; i < agents.size(); i++)
+            if (degrauNaFila(agents[i]) == d) ordem.push_back((int)i);
+    return ordem;
+}
+
 }   // namespace grupos

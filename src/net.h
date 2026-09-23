@@ -131,6 +131,17 @@ uint32_t capturasPedidas();
 // falha deixaria a placa surda para todos os pedidos seguintes.
 void falhaCaptura();
 
+// A foto pedida DAQUI, pelo botao FOTO do painel de ajustes.
+//
+// A placa nao manda o quadro por conta propria: o `POST /tela` da API so aceita
+// o id de um pedido pendente (409 sem ele), e e esse pedido que da nome ao PNG
+// e responde a quem espera. Entao ela faz o que o `tools\tela.py` faz — um
+// `POST /tela/pedir` no master — e o resto e o caminho de sempre: o /status da
+// mesma volta ja traz a `captura`, e `capturaPedida` a entrega ao laco.
+//
+// Nao bloqueia: so marca, e o POST sai da tarefa de rede antes do poll.
+void pedirFoto();
+
 // ---- Atualizacao de arquivo do cartao ----
 // O download acontece DENTRO da tarefa de rede: ela ve o pedido no /status
 // (campo `arquivo`), baixa o binario para um buffer temporario de PSRAM e o

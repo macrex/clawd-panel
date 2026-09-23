@@ -177,6 +177,17 @@ void test_master_calado_de_verdade_passa_a_vez_ao_pc2(void) {
     TEST_ASSERT_TRUE(RESERVA_APOS_MS < 45000);
 }
 
+// O livro-caixa e da MAQUINA, e a pagina HOJE mostra o do master (`works`).
+// As semanas seguem o mesmo dono, ate quando o master nao as publica: o
+// quadrado de hoje no calendario tem que bater com o custo da pagina HOJE.
+void test_historico_do_pc2_nao_entra(void) {
+    Status base, pc2;
+    pc2.historico.known = true;
+    pc2.historico.dias[34] = 50;
+    fundirAgentes(base, pc2);
+    TEST_ASSERT_FALSE(base.historico.known);
+}
+
 int main(int, char **) {
     UNITY_BEGIN();
     RUN_TEST(test_soluco_do_master_nao_entrega_a_tela_ao_pc2);
@@ -194,5 +205,6 @@ int main(int, char **) {
     RUN_TEST(test_limite_vivo_do_master_continua_mandando);
     RUN_TEST(test_lembranca_nao_troca_de_lembranca);
     RUN_TEST(test_janela_desconhecida_no_master_aceita_a_do_pc2);
+    RUN_TEST(test_historico_do_pc2_nao_entra);
     return UNITY_END();
 }

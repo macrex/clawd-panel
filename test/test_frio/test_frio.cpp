@@ -142,6 +142,39 @@ void test_um_bloco_presente_ja_atualiza_o_guardado(void) {
     TEST_ASSERT_FALSE(f.works.known);
 }
 
+// ---- As cinco semanas ----
+// O servidor pode por `dias` no resumo ou manda-los sempre; a placa tem que
+// acertar nos dois casos.
+
+void test_historico_no_resumo_volta_com_os_outros(void) {
+    BlocosFrios f;
+    Status primeiro = comBlocos("eeeeeeeeeee1");
+    primeiro.historico.known   = true;
+    primeiro.historico.dias[34] = 97;
+    aplicarFrios(f, primeiro);
+
+    Status s = semBlocos("eeeeeeeeeee1");
+    aplicarFrios(f, s);
+    TEST_ASSERT_TRUE(s.historico.known);
+    TEST_ASSERT_EQUAL_INT(97, s.historico.dias[34]);
+}
+
+void test_historico_fora_do_resumo_vale_o_que_chegou(void) {
+    BlocosFrios f;
+    Status primeiro = comBlocos("eeeeeeeeeee2");
+    primeiro.historico.known   = true;
+    primeiro.historico.dias[34] = 97;
+    aplicarFrios(f, primeiro);
+
+    // Os blocos frios sumiram, mas as semanas vieram — e mais novas.
+    Status s = semBlocos("eeeeeeeeeee2");
+    s.historico.known   = true;
+    s.historico.dias[34] = 98;
+    aplicarFrios(f, s);
+    TEST_ASSERT_EQUAL_INT(98, s.historico.dias[34]);
+    TEST_ASSERT_EQUAL_INT(7, s.works.trabalhos);   // e os frios voltaram
+}
+
 // ---- A URL que carrega o resumo ----
 
 void test_a_url_leva_o_resumo(void) {
@@ -176,6 +209,8 @@ int main(int, char **) {
     RUN_TEST(test_sem_nada_guardado_nao_preenche);
     RUN_TEST(test_api_sem_o_campo_desliga_o_mecanismo);
     RUN_TEST(test_um_bloco_presente_ja_atualiza_o_guardado);
+    RUN_TEST(test_historico_no_resumo_volta_com_os_outros);
+    RUN_TEST(test_historico_fora_do_resumo_vale_o_que_chegou);
     RUN_TEST(test_a_url_leva_o_resumo);
     RUN_TEST(test_sem_resumo_a_url_e_a_de_sempre);
     RUN_TEST(test_base_com_query_propria);

@@ -20,8 +20,10 @@ Gesture GestureDetector::update(bool pressed, int x, int y, uint32_t nowMs) {
     if (!active_) return g;          // ja consumido; nao repete
     active_ = false;                 // borda de subida: fim do gesto
 
-    g.x = lastX_;
-    g.y = lastY_;
+    g.x  = lastX_;
+    g.y  = lastY_;
+    g.x0 = startX_;
+    g.y0 = startY_;
 
     const uint32_t dur = nowMs - startMs_;
     const int dx = lastX_ - startX_;
@@ -61,4 +63,48 @@ Gesture GestureDetector::update(bool pressed, int x, int y, uint32_t nowMs) {
     // 3) Nem uma coisa nem outra (arrasto curto demais, ou dedo apoiado).
     hasLastTap_ = false;
     return g;
+}
+
+Leitura FiltroDeSoltura::update(bool pressed, int x, int y, uint32_t nowMs) {
+    Leitura l;
+    if (pressed) {
+        // O dedo voltou antes do limiar: aquilo foi falha do sensor.
+        if (vazias_ > 0) {
+            const uint32_t falha = nowMs - vazioDesde_;
+            if (falha > maiorFalha_) maiorFalha_ = falha;
+            falhas_++;
+        }
+        apoiado_ = true;
+        vazias_  = 0;
+        x_ = x;
+        y_ = y;
+        l.pressed = true;
+        l.x = x;
+        l.y = y;
+        return l;
+    }
+
+    l.x = x_;
+    l.y = y_;
+    if (!apoiado_) return l;
+
+    if (vazias_ == 0) vazioDesde_ = nowMs;
+    vazias_++;
+    // DUAS leituras vazias E o limiar: com o laco lento (um redesenho de 64 ms
+    // entre leituras) uma falha so ja passaria do limiar sozinha.
+    if (vazias_ >= 2 && nowMs - vazioDesde_ >= soltaMs_) {
+        apoiado_ = false;
+        vazias_  = 0;
+        return l;
+    }
+    l.pressed = true;              // ainda e o mesmo dedo, no mesmo lugar
+    return l;
+}
+
+uint32_t FiltroDeSoltura::colherMaiorFalha(uint32_t &quantas) {
+    const uint32_t r = maiorFalha_;
+    quantas     = falhas_;
+    maiorFalha_ = 0;
+    falhas_     = 0;
+    return r;
 }

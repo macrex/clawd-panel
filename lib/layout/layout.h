@@ -68,6 +68,17 @@ int evenSlotW(int faixaW, int count, int index);
 // escapar para dentro do vizinho anterior.
 int centerIn(int slotX, int slotW, int w);
 
+// ---- Barra EMPILHADA ----
+// A barra POR MODELO da pagina HOJE: uma fatia por custo, somando exatamente
+// `largura`. Cada fatia viva ganha `minW` px antes da reparticao — o Sonnet de
+// US$ 0,43 num dia de US$ 97 mediria 2 px e sumiria entre as frestas — e o
+// resto vai pelo custo, arredondado para baixo; a ultima fatia viva fecha a
+// conta, entao nunca fica abaixo do minimo.
+//
+// Custo <= 0 (ou sem preco) sai com largura 0: nao ha o que desenhar. Sem
+// largura para os minimos, todas saem 0.
+void fatiasDaBarra(const float *custos, int n, int largura, int minW, int *out);
+
 // ---- Os cartoes da lista de sessoes, em pe ----
 // Qual cartao esta em `y`, ou -1 quando o dedo caiu fora da lista.
 //
@@ -81,6 +92,18 @@ int centerIn(int slotX, int slotW, int w);
 // dentro das margens cai nele. O vao de 4 px entre cartoes NAO pertence a
 // ninguem — um dedo ali nao pode abrir a sessao de baixo por meio pixel.
 int cartaoSessaoAt(int y, int quantos);
+
+// ---- As linhas da FILA, na primeira tela deitada ----
+// A geometria mora AQUI, e a UI desenha com ela: quem desenha e quem responde
+// ao dedo leem os mesmos numeros, e a conta do dedo tem teste.
+const int FILA_Y0    = 118;   // topo da primeira linha
+const int FILA_ALT   = 34;
+const int FILA_PASSO = FILA_ALT + 3;
+const int FILA_MAX   = 4;     // linhas visiveis; as outras viram "+N"
+
+// Qual linha VISUAL esta em `y`, ou -1. O vao de 3 px entre linhas nao e de
+// ninguem, como na lista em pe.
+int linhaFilaAt(int y, int quantos);
 
 // ---- Quebra de linha ----
 // Quantos caracteres cabem na PRIMEIRA linha de `txt` numa caixa de `cols`

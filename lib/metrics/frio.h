@@ -28,6 +28,10 @@ struct BlocosFrios {
     Works       works;
     Uso         uso;
     Vitalicio   vitalicio;
+    // As cinco semanas (`dias`, `dias_recorde`, `dias_seguidos`) estao no
+    // resumo do servidor e viajam junto com os tres acima. aplicarFrios aceita
+    // tambem uma API que as mande sempre.
+    Historico   historico;
 };
 
 // Guarda o que veio, ou devolve o que estava guardado.

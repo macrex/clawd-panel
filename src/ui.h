@@ -12,7 +12,15 @@ namespace ui {
 // com o bicho no centro, os aneis e a lista de sessoes; deitada perde os
 // bichos (o espaco deles vira tamanho de anel) e a lista vira uma fileira de
 // cartoes. A tela principal continua inteira na pagina 1: as duas convivem.
-const int PAGES = 5;
+//
+// DEITADO ha mais duas no fim: 5 = Semanas e 6 = Hoje. A volta entre paginas e
+// circular, entao Hoje fica a um arrasto para a direita da tela inicial. Em pe
+// elas nao existem (o desenho delas e da largura deitada).
+const int PAGINAS_EM_PE   = 5;
+const int PAGINAS_DEITADO = 7;
+const int PAG_SEMANAS = 5;
+const int PAG_HOJE    = 6;
+int paginas();
 
 // staleSeconds > 0 desenha o mesmo conteudo esmaecido, com aviso de "sem
 // contato ha Ns" — o dado antigo continua util, so precisa parecer velho.
@@ -66,6 +74,29 @@ void marcarMotivo(const char *v);
 // (Agent::tag). A placa so precisa saber se ha o que distinguir. Chamar uma
 // vez no setup.
 void duasFontes(bool v);
+
+// Os modos que mudam o que a tela e. Quem guarda o estado e o laco; a UI so
+// precisa saber o que desenhar.
+//   fila    — a primeira tela deitada mostra a FILA DE ATENCAO no lugar dos
+//             aneis e da fileira de cartoes.
+//   ajustes — o PAINEL DE AJUSTES por cima da pagina.
+//   noite   — o MODO NOITE: a tela escura, so com a hora e os limites.
+void fila(bool v);
+void ajustes(bool v);
+void noite(bool v);
+
+// O que o painel de ajustes MOSTRA. Quem sabe e o laco (a NVS, o relogio do
+// silencio, o radio); a UI so desenha. Preenchido antes de cada desenho com o
+// painel aberto.
+struct ValoresAjustes {
+    int  degrau      = 0;       // 0..5, o brilho em uso
+    bool som         = true;
+    bool noite       = true;
+    int  silencioMin = 0;       // minutos de silencio que faltam; 0 = som livre
+    bool wifi        = false;   // associado?
+    int  rssi        = 0;       // dBm
+};
+void valoresAjustes(const ValoresAjustes &v);
 
 // Um dos limites (sessao ou semana) bateu 100%? A janela precisa ser
 // conhecida: `known` falso nao estoura nada.
@@ -154,6 +185,17 @@ int perguntaP0At(const Status &s, int x, int y);
 // nao pode exigir pontaria. Como o cabecalho e o mesmo em todas as paginas, o
 // gesto vale em todas elas.
 bool iconeCabecalhoAt(int x, int y);
+
+// O ponto esta no CABECALHO (acima da divisoria)? E a origem do arrasto que
+// abre os ajustes, nas duas orientacoes.
+bool cabecalhoAt(int x, int y);
+
+// A linha da FILA sob o dedo: o indice em `s.agents`, ou -1.
+int linhaFilaAt(const Status &s, int x, int y);
+
+// O ajuste sob o dedo com o painel aberto: >= 0 e o ajuste, -1 e dentro do
+// painel mas fora de todos, -2 e fora do painel (o toque fecha).
+int ajusteAt(int x, int y);
 
 // O toque caiu na FILEIRA de bichos? E o botao de trocar o elenco.
 //

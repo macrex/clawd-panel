@@ -197,3 +197,15 @@ std::string textoVetustezCurto(const Status &s, int staleSeconds) {
            (staleSeconds < 3600 ? std::to_string(staleSeconds) + "s"
                                 : std::to_string(staleSeconds / 3600) + "h");
 }
+
+std::vector<FatiaModelo> fatiasDosModelos(const Uso &u, int max) {
+    std::vector<FatiaModelo> r;
+    float total = 0;
+    for (const UsoModelo &m : u.modelos) {
+        if (!m.hasCost || m.costUsd <= 0) continue;
+        total += m.costUsd;
+        if ((int)r.size() < max) r.push_back({m.rotulo, m.costUsd, 0});
+    }
+    for (FatiaModelo &f : r) f.pct = (int)(100 * f.custo / total + 0.5f);
+    return r;
+}
