@@ -35,11 +35,12 @@ void test_sem_hora_nao_e_noite(void) {
     TEST_ASSERT_FALSE(horaDaNoite(3600L));   // 01:00 de 1970
 }
 
-void test_tela_de_noite_pede_ajuste_hora_e_sono(void) {
-    TEST_ASSERT_TRUE(telaDeNoite(true, as(1, 0), false));
-    TEST_ASSERT_FALSE(telaDeNoite(false, as(1, 0), false));   // ajuste desligado
-    TEST_ASSERT_FALSE(telaDeNoite(true, as(1, 0), true));     // acordada
-    TEST_ASSERT_FALSE(telaDeNoite(true, as(15, 0), false));   // de dia
+void test_tela_de_noite_pede_ajuste_hora_sono_e_sem_sessao(void) {
+    TEST_ASSERT_TRUE(telaDeNoite(true, as(1, 0), false, true));
+    TEST_ASSERT_FALSE(telaDeNoite(false, as(1, 0), false, true));   // ajuste desligado
+    TEST_ASSERT_FALSE(telaDeNoite(true, as(1, 0), true, true));     // acordada
+    TEST_ASSERT_FALSE(telaDeNoite(true, as(15, 0), false, true));   // de dia
+    TEST_ASSERT_FALSE(telaDeNoite(true, as(1, 0), false, false));   // sessao aberta
 }
 
 // ---- Prazos ----
@@ -225,7 +226,7 @@ int main(int, char **) {
     RUN_TEST(test_noite_atravessa_a_meia_noite);
     RUN_TEST(test_bordas_da_noite);
     RUN_TEST(test_sem_hora_nao_e_noite);
-    RUN_TEST(test_tela_de_noite_pede_ajuste_hora_e_sono);
+    RUN_TEST(test_tela_de_noite_pede_ajuste_hora_sono_e_sem_sessao);
     RUN_TEST(test_prazo_zero_e_sem_prazo);
     RUN_TEST(test_prazo_vence_no_instante);
     RUN_TEST(test_prazo_atravessa_a_virada_do_millis);

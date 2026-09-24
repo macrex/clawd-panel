@@ -46,9 +46,11 @@ const int NOITE_FIM_H    = 7;
 // a tela escura as tres da tarde.
 bool horaDaNoite(long epochLocal);
 
-// A tela deve estar APAGADA agora? O ajuste ligado, a hora na janela, e ninguem
-// a acordou ha pouco (um toque ou um evento).
-bool telaDeNoite(bool ligado, long epochLocal, bool acordada);
+// A tela deve estar APAGADA agora? O ajuste ligado, a hora na janela, ninguem
+// a acordou ha pouco (um toque ou um evento) e NENHUMA SESSAO aberta: com algo
+// rodando o painel fica no ar a noite inteira. `semSessao` e a mesma regra que
+// poe o Clawd para dormir (view_model::semSessao, ou o servidor calado).
+bool telaDeNoite(bool ligado, long epochLocal, bool acordada, bool semSessao);
 
 // ---- Prazos em millis ----
 // O prazo `ateMs` ainda nao venceu? 0 = sem prazo. A comparacao e com sinal

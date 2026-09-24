@@ -1415,8 +1415,11 @@ void vigiarModos(uint32_t now, bool &redraw) {
     // A noite e decidida a cada volta, e nao so na virada do minuto: acordar
     // e voltar a dormir dependem de um prazo em millis. A conta e barata — o
     // relogio da placa e uma soma, e a janela e pura (ver lib/ajustes).
+    // Sessao aberta segura o painel aceso: a mesma regra que poe o Clawd para
+    // dormir (carregarOuSoltarOffline), sem o offline manual.
     const bool escura = ajustes::telaDeNoite(escolhas.noite, hora::agoraLocal(),
-                                             ajustes::noPrazo(acordadaAte, now));
+                                             ajustes::noPrazo(acordadaAte, now),
+                                             servidorFora(now) || semSessao(last));
     if (escura != noite) {
         aplicarNoite(escura);
         redraw = true;

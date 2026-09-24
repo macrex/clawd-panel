@@ -33,8 +33,8 @@ bool horaDaNoite(long epochLocal) {
     return h >= NOITE_INICIO_H || h < NOITE_FIM_H;
 }
 
-bool telaDeNoite(bool ligado, long epochLocal, bool acordada) {
-    return ligado && !acordada && horaDaNoite(epochLocal);
+bool telaDeNoite(bool ligado, long epochLocal, bool acordada, bool semSessao) {
+    return ligado && !acordada && semSessao && horaDaNoite(epochLocal);
 }
 
 bool noPrazo(uint32_t ateMs, uint32_t agoraMs) {
