@@ -2,7 +2,6 @@
 #include <cstdint>
 #include <string>
 #include "layout.h"     // Alvo e dentro(): o mesmo retangulo de toque da casa
-#include "status.h"
 
 // O PAINEL DE AJUSTES e o MODO NOITE, sem o Arduino.
 //
@@ -77,10 +76,6 @@ Aviso avisoDoPoll(int prontos, int esperas, bool somLigado, bool emSilencio);
 const int SINAL_FRACO_DBM = -80;
 bool        sinalFraco(bool conectado, int rssi);
 std::string textoDoSinal(bool conectado, int rssi);
-
-// A linha de estado da tela da noite: "2 sessoes rodando  -  nenhuma
-// esperando". Rodando = Working; esperando = Blocked.
-std::string linhaDaNoite(const Status &s);
 
 // ---- A geometria do painel ----
 // Os ids que ui::ajusteAt devolve. Os degraus sao 0..5; os botoes, 10..15, na

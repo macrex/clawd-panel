@@ -5437,27 +5437,24 @@ void drawAjustes(Arduino_Canvas *g) {
 int ajusteAt(int x, int y) { return ::ajustes::noPonto(x, y, display::retrato()); }
 
 // ---- O MODO NOITE ----
-// A maquete F2: fundo preto, a hora grande em laranja, os dois limites e uma
-// linha de estado. Deitada, a turma dorme embaixo: um quadro parado dela, a
-// meia luz — a noite nao anima nada.
+// A maquete F2: fundo preto, a hora grande em laranja e os dois limites.
+// Deitada, a turma dorme embaixo: um quadro parado dela, a meia luz — a noite
+// nao anima nada. Sem linha de estado: a noite so vem sem sessao (ver
+// ajustes::telaDeNoite), entao nao ha estado a dizer.
 //
-// Devolve se DESENHOU. A tela so muda quando um dos tres textos muda: o poll
-// chega a cada 2 s e redesenhar o mesmo quadro seriam ~50 ms de flush por nada.
-// Enquanto ela esta no ar ninguem mais pinta o canvas (as animacoes param, ver o
-// laco), entao o quadro de antes continua la, inteiro.
+// Devolve se DESENHOU. A tela so muda quando um dos textos (ou o dado ficar
+// velho) muda: o poll chega a cada 2 s e redesenhar o mesmo quadro seriam
+// ~50 ms de flush por nada. Enquanto ela esta no ar ninguem mais pinta o canvas
+// (as animacoes param, ver o laco), entao o quadro de antes continua la, inteiro.
 //
 // DADO VELHO TAMBEM AQUI: com o PC dormindo — o caso comum de madrugada — os
-// numeros param, e a linha de estado passa a dizer ha quanto tempo, em minutos
-// (em segundos a tela mudaria a cada poll so para contar).
+// numeros param, e os limites apagam um tom para dizer isso.
 bool drawNoite(Arduino_Canvas *g, const Status &s, int staleSeconds) {
     const bool velho = staleSeconds > 0;
     const std::string hm   = s.clock.known ? s.clock.hm : "";
     const std::string lim  = "SESSAO " + pctText(s.session) +
                              "    SEMANA " + pctText(s.week);
-    const std::string linha = velho
-        ? "sem dado novo ha " + prazoTexto(staleSeconds)
-        : ::ajustes::linhaDaNoite(s);
-    const std::string visto = hm + "|" + lim + "|" + linha;
+    const std::string visto = hm + "|" + lim + (velho ? "|velho" : "");
     if (visto == g_noiteVisto) return false;
     g_noiteVisto = visto;
 
@@ -5492,11 +5489,6 @@ bool drawNoite(Arduino_Canvas *g, const Status &s, int staleSeconds) {
     g->setTextColor(misturar(PRETO, velho ? MUTED : FG, 60, 100));
     g->setCursor((W - (int)lim.size() * 12) / 2, oy + 160);
     g->print(lim.c_str());
-
-    g->setTextSize(1);
-    g->setTextColor(misturar(PRETO, velho ? C_YELL : MUTED, 80, 100));
-    g->setCursor((W - (int)linha.size() * 6) / 2, oy + 196);
-    g->print(linha.c_str());
     return true;
 }
 

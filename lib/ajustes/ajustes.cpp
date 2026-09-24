@@ -65,20 +65,6 @@ std::string textoDoSinal(bool conectado, int rssi) {
     return std::to_string(rssi) + " dBm" + (sinalFraco(true, rssi) ? " fraco" : "");
 }
 
-std::string linhaDaNoite(const Status &s) {
-    int rodando = 0, esperando = 0;
-    for (const Agent &a : s.agents) {
-        if (a.state == AgentState::Working) rodando++;
-        if (a.state == AgentState::Blocked) esperando++;
-    }
-    std::string r = rodando == 0 ? "nenhuma sessao rodando"
-                  : rodando == 1 ? "1 sessao rodando"
-                                 : std::to_string(rodando) + " sessoes rodando";
-    std::string e = esperando == 0 ? "nenhuma esperando"
-                                   : std::to_string(esperando) + " esperando";
-    return r + "  -  " + e;
-}
-
 // ---- Geometria ----
 // Deitado sao os numeros da maquete aprovada do painel. Em pe, a mesma margem
 // de 14 px dentro de um painel de 300.

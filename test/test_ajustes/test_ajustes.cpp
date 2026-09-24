@@ -114,25 +114,6 @@ void test_sinal_fraco_abaixo_de_80(void) {
     TEST_ASSERT_TRUE(sinalFraco(false, 0));
 }
 
-static Agent ag(AgentState st) {
-    Agent a;
-    a.state = st;
-    return a;
-}
-
-void test_linha_da_noite(void) {
-    Status s;
-    TEST_ASSERT_EQUAL_STRING("nenhuma sessao rodando  -  nenhuma esperando",
-                             linhaDaNoite(s).c_str());
-    s.agents = {ag(AgentState::Working), ag(AgentState::Working),
-                ag(AgentState::Idle)};
-    TEST_ASSERT_EQUAL_STRING("2 sessoes rodando  -  nenhuma esperando",
-                             linhaDaNoite(s).c_str());
-    s.agents = {ag(AgentState::Working), ag(AgentState::Blocked)};
-    TEST_ASSERT_EQUAL_STRING("1 sessao rodando  -  1 esperando",
-                             linhaDaNoite(s).c_str());
-}
-
 // ---- Geometria ----
 
 // O centro de cada peca devolve ela mesma, nas duas orientacoes: o toque vale
@@ -236,7 +217,6 @@ int main(int, char **) {
     RUN_TEST(test_degrau_do_proprio_brilho);
     RUN_TEST(test_brilho_do_config_acha_o_degrau_mais_perto);
     RUN_TEST(test_sinal_fraco_abaixo_de_80);
-    RUN_TEST(test_linha_da_noite);
     RUN_TEST(test_centro_de_cada_peca_e_ela_mesma);
     RUN_TEST(test_pecas_cabem_e_nao_se_sobrepoem);
     RUN_TEST(test_degrau_aceita_dedo_um_pouco_fora);
