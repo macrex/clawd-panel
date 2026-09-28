@@ -607,7 +607,7 @@ class TesteHealth(unittest.TestCase):
 
     def _get(self, path):
         handler = api.Handler.__new__(api.Handler)   # sem __init__: sem socket
-        handler.path = path
+        handler.path, handler.headers = path, {}
         captured = {}
         handler._send = lambda code, payload: captured.update(
             code=code, payload=payload)

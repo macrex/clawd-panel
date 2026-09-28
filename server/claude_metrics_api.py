@@ -14,6 +14,7 @@ import faulthandler
 import json
 import os
 import platform
+import re
 import sys
 import threading
 import time
@@ -163,6 +164,92 @@ GRACE_SECONDS = 45
 COMANDOS = {
     "compact": "/compact",
 }
+
+# TEXTO LIVRE, SO DESTA MAQUINA
+#
+# O /enviar e o teclado que a lista branca acima recusa a rede: o monitor no
+# navegador (D:\workspace\monitor) escreve qualquer linha para o agente, ou
+# aperta Escape para interromper. Tres travas, e nenhuma e opcional:
+#   - so 127.0.0.1: a LAN, onde mora a placa, fica de fora;
+#   - so com o cabecalho X-Monitor: um site aberto no navegador nao manda
+#     cabecalho proprio para outra origem sem o preflight, que esta API nao
+#     atende — sem isso, qualquer pagina escreveria nos seus agentes;
+#   - so para o pane que o herdr lista como AGENTE: num pane de shell o texto
+#     seria executado como comando.
+TECLAS_LOCAIS = ("Escape",)
+ENVIAR_MAX = 4000   # caracteres de uma linha; o prompt do agente aceita mais, o monitor nao precisa
+
+
+# Os POST cujo corpo e JSON em todo chamador: a placa (net.cpp: /responder,
+# /command, /arquivo/ok), a statusline (/ingest), o hook (/event) e o
+# tools/atualizar_sprite.py (/arquivo/pedir). Os outros levam corpo cru (a foto
+# da placa em /tela, o binario do /arquivo/subir) ou nenhum (/tela/pedir, que o
+# tools/tela.py manda como formulario vazio), e ficam so com a trava do Origin.
+POST_JSON = frozenset(("/responder", "/command", "/ingest", "/event",
+                       "/arquivo/pedir", "/arquivo/ok"))
+
+# Os GET que mostram o que os agentes fazem: a tela (/ler), as perguntas
+# (/panes), as sessoes (/status, e a raiz, que e o mesmo documento, e
+# /sessions). Nenhuma resposta traz Access-Control-Allow-Origin, entao um site
+# ja nao LE a API; estes ainda recusam o pedido com `Origin`, que todo fetch de
+# outra origem manda e a placa, os scripts e o monitor (que chama do servidor
+# Python dele) nao. Abrir a URL na barra do navegador nao manda `Origin`.
+GET_PRIVADOS = frozenset(("/status", "/", "/panes", "/ler", "/sessions"))
+
+
+# DNS rebinding: um dominio do atacante que passa a resolver para 127.0.0.1 vira
+# "mesma origem" para o navegador, e o GET da mesma origem nao manda `Origin` —
+# a pagina leria /ler e /panes. O rebinding precisa de um NOME no Host; todo
+# chamador de verdade fala por IP ou localhost (a placa pelo IP do config.json;
+# a statusline, o hook e o monitor por 127.0.0.1). Nome no Host: recusado.
+_HOST_OK = re.compile(r"(?:localhost|\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-f:.]+\])(?::\d{1,5})?")
+
+
+def host_ok(host):
+    """True quando o Host e localhost ou um IP, em qualquer porta; sem Host
+    (cliente HTTP/1.0), tambem: um navegador sempre o manda."""
+    return not host or bool(_HOST_OK.fullmatch(host.strip().lower()))
+
+
+def avaliar_origem(path, content_type, origem):
+    """(status, corpo) de recusa para um POST vindo de um site, ou None.
+
+    Todo POST desta API age em algo — um agente, o estado das sessoes, o cartao
+    da placa — e atende a LAN sem senha, porque a placa os chama. O que nao pode
+    chegar neles e uma PAGINA aberta no navegador: sem esta trava, qualquer site
+    mandava um POST simples (texto ou formulario) para o 127.0.0.1 e aprovava a
+    pergunta que estivesse na tela ou punha um config.json no cartao. Duas
+    marcas separam os dois mundos, e a placa, os hooks, o monitor e as
+    ferramentas de PC passam nas duas:
+      - nenhum `Origin`: todo POST de navegador traz o cabecalho, e quem chama
+        de fora de um navegador, nao. Vale para toda rota;
+      - JSON nas rotas de POST_JSON: um site so manda `application/json` depois
+        do preflight de CORS, que esta API nao atende.
+    """
+    if origem:
+        return 403, {"error": "pedido de pagina da web recusado", "origin": origem}
+    if path in POST_JSON and (content_type or "").split(";")[0].strip().lower() != "application/json":
+        return 415, {"error": "mande JSON"}
+    return None
+
+
+def avaliar_envio(ip, x_monitor, data, panes_de_agente):
+    """(status, corpo) de recusa do /enviar, ou None quando o pedido pode seguir.
+
+    Pura, para ter teste: e ela que separa o monitor desta maquina do resto.
+    """
+    if ip != "127.0.0.1" or not x_monitor:
+        return 403, {"error": "so o monitor desta maquina, com o cabecalho X-Monitor"}
+    pane = data.get("pane_id") if isinstance(data, dict) else None
+    if not pane or pane not in panes_de_agente:
+        return 404, {"error": "pane sem agente do herdr", "pane_id": pane}
+    texto, tecla = data.get("texto"), data.get("tecla")
+    if tecla is not None:
+        return None if tecla in TECLAS_LOCAIS else (400, {"error": "tecla fora da lista", "permitidas": TECLAS_LOCAIS})
+    # isprintable recusa \n, \r, \t e ESC: uma linha so, sem sequencia de terminal.
+    if isinstance(texto, str) and texto.strip() and len(texto) <= ENVIAR_MAX and texto.isprintable():
+        return None
+    return 400, {"error": "texto de uma linha, ate %d caracteres" % ENVIAR_MAX}
 
 # Teto da limpeza de contexto. Enquanto ela esta acesa, a turma do rodape varre.
 #
@@ -2219,13 +2306,30 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "*")
+        # Sem Access-Control-Allow-Origin: nenhum chamador e um navegador, e com
+        # o `*` qualquer site lia a tela dos agentes (ver GET_PRIVADOS).
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
 
+    def _host_recusado(self):
+        """Responde 403 e diz True quando o Host e um nome (ver host_ok). Fica no
+        log: uma placa configurada por nome apareceria aqui."""
+        host = self.headers.get("Host")
+        if host_ok(host):
+            return False
+        print(f"host recusado: {host!r} de {self.client_address[0]} em {self.path.split('?')[0]}")
+        self.close_connection = True   # num POST, o corpo nao lido ficaria no socket
+        self._send(403, {"error": "host recusado", "host": host})
+        return True
+
     def do_GET(self):
+        if self._host_recusado():
+            return
         path = self.path.split("?")[0].rstrip("/") or "/"
+        if path in GET_PRIVADOS and self.headers.get("Origin"):
+            self._send(403, {"error": "pedido de pagina da web recusado", "origin": self.headers["Origin"]})
+            return
         if path in ("/status", "/"):
             # `?campos=painel` corta o que o firmware nao le (ver painel.py).
             # Quem pede e a PLACA: sem o parametro o documento sai inteiro, que
@@ -2241,6 +2345,29 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, corpo)
         elif path == "/health":
             self._send(200, build_health())
+        elif path == "/panes":
+            # Os agentes que o herdr ve, com o pane, a sessao que a CLI informou
+            # e, se bloqueado, a pergunta e as opcoes da tela. E o que o monitor
+            # no navegador precisa para mostrar e responder CADA agente — o
+            # /status traz um bloqueio so, o da tela da placa. So leitura.
+            r = herdr.snapshot()
+            forms = bloqueio.formularios(r["agents"])
+            self._send(200, {"online": r["online"], "panes": [
+                {"pane_id": a["pane_id"], "agent": a.get("agent") or "", "state": a["state"],
+                 "sessao": a.get("agent_session") or "", "cwd": a.get("cwd") or "",
+                 "bloqueio": forms.get(a["pane_id"])} for a in r["agents"]]})
+        elif path == "/ler":
+            # ?pane_id=wF:p2 — a tela visivel de um agente, em texto, para o
+            # espelho do monitor no navegador. Diferente do /terminal, NAO mexe
+            # no tamanho do pane. So desta maquina, como o /enviar: a tela de
+            # um agente traz o que ele le e escreve, e a LAN nao precisa disso.
+            pane = unquote(self.path.split("pane_id=", 1)[1].split("&")[0]) if "pane_id=" in self.path else ""
+            if self.client_address[0] != "127.0.0.1":
+                self._send(403, {"error": "so desta maquina"})
+            elif pane not in {a["pane_id"] for a in herdr.snapshot()["agents"]}:
+                self._send(404, {"error": "pane sem agente do herdr", "pane_id": pane})
+            else:
+                self._send(200, {"pane": pane, "texto": herdr.ler_pane(pane, linhas=60, source="visible")})
         elif path == "/sessions":
             with _lock:
                 prune()
@@ -2407,13 +2534,22 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         ok = bloqueio.responder(pane, n, rotulo)
+        if ok:
+            bloqueio.esquecer_pane(pane)   # a proxima leitura do /panes ja ve a tela depois da resposta
         # Como em /command, `enviado` e nao `executado`: um timeout depois de o
         # herdr aceitar deixa o efeito feito e nos sem saber.
         self._send(200 if ok else 409,
                    {"enviado": ok, "pane": pane, "n": n, "rotulo": rotulo})
 
     def do_POST(self):
+        if self._host_recusado():
+            return
         path = self.path.split("?")[0].rstrip("/") or "/"
+        recusa = avaliar_origem(path, self.headers.get("Content-Type"), self.headers.get("Origin"))
+        if recusa:
+            self.close_connection = True   # o corpo nao lido ficaria no socket como o proximo pedido
+            self._send(*recusa)
+            return
         if path == "/responder":
             try:
                 self._handle_responder(self._read_json())
@@ -2425,6 +2561,23 @@ class Handler(BaseHTTPRequestHandler):
                 self._handle_command(self._read_json())
             except Exception:
                 self._send(400, {"error": "bad json"})
+            return
+        if path == "/enviar":
+            try:
+                data = self._read_json()
+            except Exception:
+                self._send(400, {"error": "bad json"})
+                return
+            recusa = avaliar_envio(self.client_address[0], self.headers.get("X-Monitor"), data,
+                                   {a["pane_id"] for a in herdr.snapshot()["agents"]})
+            if recusa:
+                self._send(*recusa)
+                return
+            pane = data["pane_id"]
+            ok = (herdr.enviar_teclas(pane, [data["tecla"]], TECLAS_LOCAIS) if data.get("tecla") is not None
+                  else herdr.enviar(pane, data["texto"]))
+            # `enviado` e nao `executado`, como no /command: ver herdr.enviar.
+            self._send(200 if ok else 502, {"enviado": ok, "pane": pane})
             return
         if path == "/tela/pedir":
             # Corpo VAZIO, e por isso não passa por `_read_json` — ele recusa

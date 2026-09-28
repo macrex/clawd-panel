@@ -109,11 +109,23 @@ def sem_colunas(texto):
 
 
 def para_o_painel(texto, limite):
-    """Todo texto que sai daqui passa por isto: sem coluna vizinha, sem acento,
-    dentro do limite de bytes. Nesta ordem — transliterar depois de cortar por
-    byte poderia deixar meio caractere, e cortar antes de transliterar mediria
-    bytes que vao deixar de existir."""
-    return cortar(so_ascii(sem_colunas(texto)), limite)
+    """Todo texto que vai para a PLACA passa por isto: sem acento, dentro do
+    limite de bytes. Nesta ordem — transliterar depois de cortar por byte
+    poderia deixar meio caractere, e cortar antes de transliterar mediria bytes
+    que vao deixar de existir. A coluna vizinha ja saiu no `parse_form`."""
+    return cortar(so_ascii(texto), limite)
+
+
+def para_a_placa(form):
+    """O formulario como a placa o desenha: ASCII e cortado em bytes.
+
+    O `parse_form` devolve a tela como ela e, com acento e inteira, porque o
+    monitor no navegador (o /panes) tem a fonte que a placa nao tem. So o
+    /status passa por aqui.
+    """
+    return {"pergunta": para_o_painel(form["pergunta"], PERGUNTA_MAX_B),
+            "opcoes": [dict(o, rotulo=para_o_painel(o["rotulo"], ROTULO_MAX_B))
+                       for o in form["opcoes"]]}
 
 
 def sem_moldura(linha):
@@ -185,7 +197,7 @@ def extrair_pergunta(linhas, primeira_opcao):
 
     # O rotulo do Codex sai: ele e legenda, e a tela do painel cobra por byte.
     m = RAZAO_RE.match(texto)
-    return para_o_painel(m.group(1) if m else texto, PERGUNTA_MAX_B)
+    return sem_colunas(m.group(1) if m else texto)
 
 
 def parse_form(bruto):
@@ -198,6 +210,9 @@ def parse_form(bruto):
     `cursor` e o INDICE na lista e nao o numero da opcao: e ele que diz quantas
     setas faltam para chegar no alvo. `None` ali significa "nao da para navegar"
     — as opcoes ainda servem para MOSTRAR, mas nao para responder.
+
+    O texto sai como esta na tela, com acento e sem corte; a placa o recebe
+    pelo `para_a_placa`.
     """
     if not bruto:
         return None
@@ -238,7 +253,7 @@ def parse_form(bruto):
 
     return {
         "pergunta": extrair_pergunta(linhas, bloco[0][0]),
-        "opcoes": [{"n": n, "rotulo": para_o_painel(rotulo, ROTULO_MAX_B),
+        "opcoes": [{"n": n, "rotulo": sem_colunas(rotulo),
                     "texto": bool(TEXTO_RE.search(rotulo))}
                    for _, n, rotulo, _ in bloco],
         "cursor": next((k for k, a in enumerate(bloco) if a[3]), None),
@@ -274,9 +289,9 @@ def cauda(bruto, linhas=20):
     uteis = [l.strip() for l in bruto.splitlines()
              if l.strip() and not CROMO_RE.search(l)]
     # Aqui NAO se corta coluna: sem formulario nao ha lista para separar de um
-    # vizinho, e o `│` que sobrar e do proprio texto que se quer mostrar. So a
-    # transliteracao, que vale para tudo que chega a placa.
-    return cortar(so_ascii("\n".join(uteis[-linhas:])), PERGUNTA_MAX_B)
+    # vizinho, e o `│` que sobrar e do proprio texto que se quer mostrar. A
+    # transliteracao e o corte ficam para o `para_a_placa`, como na pergunta.
+    return "\n".join(uteis[-linhas:])
 
 
 # ---- O bloqueio corrente, para o /status ----
@@ -298,6 +313,58 @@ def esquecer():
     """Zera o cache. Existe para os testes — nada em producao chama isto."""
     _cache.update({"pane": None, "chave": None, "form": None, "ts": 0.0,
                    "seq": 0})
+
+
+def ler_form(pane, ler):
+    """A pergunta e as opcoes que estao na tela do pane, com acento; o /status as passa pelo `para_a_placa`."""
+    bruto = ler(pane)
+    form = parse_form(bruto)
+    # A tela pode ter sido lida NO MEIO DO REDESENHO: a lista ja esta la e o
+    # rodape ainda nao, e sem ele nao ha prova de seletor navegavel. Medido
+    # em 14/08 na fase de revisao do AskUserQuestion — a tela chegou ao
+    # painel como texto, terminando na ultima opcao.
+    #
+    # Uma releitura resolve, e ela precisa acontecer AQUI: o cache serviria
+    # o quadro parcial por RELER_S segundos, e cinco segundos sem botao numa
+    # tela que tem opcoes e o defeito inteiro, so que mais demorado.
+    #
+    # So paga quando ha cursor na tela (ver `parece_seletor`): texto corrido
+    # nao vira formulario por reler.
+    if not form and parece_seletor(bruto):
+        time.sleep(ASSENTAR_S)
+        bruto2 = ler(pane)
+        form2 = parse_form(bruto2)
+        if form2:
+            bruto, form = bruto2, form2
+    # Sem formulario vai a cauda da tela e nenhuma opcao. Sem conseguir ler
+    # vai vazio — e o painel ainda anuncia o bloqueio, porque sumir
+    # esconderia o unico estado que exige acao de quem olha.
+    return ({"pergunta": form["pergunta"], "opcoes": form["opcoes"]}
+            if form else {"pergunta": cauda(bruto), "opcoes": []})
+
+
+# ---- Todos os bloqueados, para o /panes ----
+# A placa mostra UMA pergunta por vez (`atual`); o monitor no navegador mostra a
+# de cada agente bloqueado. Mesmo cache de RELER_S, so que um por pane.
+_forms = {}   # pane -> (ts da leitura, formulario)
+
+
+def formularios(agentes, ler=None, agora=None):
+    """{pane: formulario} de todo agente bloqueado. Quem deixou de estar bloqueado sai do cache."""
+    ler = ler or herdr.ler_pane
+    t = (agora or time.time)()
+    bloqueados = [a["pane_id"] for a in agentes if a.get("state") == "blocked" and a.get("pane_id")]
+    for pane in [p for p in _forms if p not in bloqueados]:
+        del _forms[pane]
+    for pane in bloqueados:
+        if pane not in _forms or t - _forms[pane][0] >= RELER_S:
+            _forms[pane] = (t, ler_form(pane, ler))
+    return {pane: _forms[pane][1] for pane in bloqueados}
+
+
+def esquecer_pane(pane):
+    """Tira o pane do cache de `formularios`: depois de uma resposta, a proxima leitura ve a tela nova na hora."""
+    _forms.pop(pane, None)
 
 
 def atual(agentes, ler=None, agora=None):
@@ -332,32 +399,9 @@ def atual(agentes, ler=None, agora=None):
     # Pane diferente rele NA HORA, sem esperar a janela: mostrar a pergunta de
     # um agente com o nome de outro e pior do que uma leitura a mais.
     if pane != _cache["pane"] or (t - _cache["ts"]) >= RELER_S:
-        bruto = ler(pane)
-        form = parse_form(bruto)
-        # A tela pode ter sido lida NO MEIO DO REDESENHO: a lista ja esta la e o
-        # rodape ainda nao, e sem ele nao ha prova de seletor navegavel. Medido
-        # em 14/08 na fase de revisao do AskUserQuestion — a tela chegou ao
-        # painel como texto, terminando na ultima opcao.
-        #
-        # Uma releitura resolve, e ela precisa acontecer AQUI: o cache serviria
-        # o quadro parcial por RELER_S segundos, e cinco segundos sem botao numa
-        # tela que tem opcoes e o defeito inteiro, so que mais demorado.
-        #
-        # So paga quando ha cursor na tela (ver `parece_seletor`): texto corrido
-        # nao vira formulario por reler.
-        if not form and parece_seletor(bruto):
-            time.sleep(ASSENTAR_S)
-            bruto2 = ler(pane)
-            form2 = parse_form(bruto2)
-            if form2:
-                bruto, form = bruto2, form2
         _cache["pane"] = pane
         _cache["ts"] = t
-        # Sem formulario vai a cauda da tela e nenhuma opcao. Sem conseguir ler
-        # vai vazio — e o painel ainda anuncia o bloqueio, porque sumir
-        # esconderia o unico estado que exige acao de quem olha.
-        _cache["form"] = ({"pergunta": form["pergunta"], "opcoes": form["opcoes"]}
-                          if form else {"pergunta": cauda(bruto), "opcoes": []})
+        _cache["form"] = para_a_placa(ler_form(pane, ler))
 
     dados = _cache["form"]
     chave = (pane, dados["pergunta"],
@@ -385,6 +429,12 @@ def responder(pane_id, n, rotulo, ler=None, teclas=None):
     hora do toque. Se a tela mudou no caminho, ele nao bate e nada e enviado. Sem
     isso, um toque de dois segundos atras aprovaria a pergunta seguinte.
 
+    Ele chega de dois jeitos, e cada um e conferido contra a tela relida agora
+    na forma em que aquele chamador a recebeu: o monitor manda o rotulo com
+    acento e inteiro (o do /panes), a placa manda o transliterado e cortado (o
+    do /status). Normalizar o pedido nao serviria: cortar de novo um rotulo ja
+    cortado nao devolve o mesmo texto quando o corte caiu num espaco.
+
     E rele DEPOIS de navegar. Se o cursor nao parou onde devia — agente ocupado,
     tela redesenhada no meio — aborta antes do Enter. Confirmar ali aprovaria a
     opcao errada, que e o pior desfecho possivel desta funcao.
@@ -396,7 +446,10 @@ def responder(pane_id, n, rotulo, ler=None, teclas=None):
     if not form or form["cursor"] is None:
         return False
     alvo = next((k for k, o in enumerate(form["opcoes"]) if o["n"] == n), None)
-    if alvo is None or form["opcoes"][alvo]["rotulo"] != rotulo:
+    if alvo is None:
+        return False
+    tela = form["opcoes"][alvo]["rotulo"]
+    if rotulo not in (tela, para_o_painel(tela, ROTULO_MAX_B)):
         return False
 
     delta = alvo - form["cursor"]

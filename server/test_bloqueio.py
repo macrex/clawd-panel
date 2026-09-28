@@ -258,7 +258,9 @@ class TesteFormulario(unittest.TestCase):
                  "│ ❯ 1. " + longo + "\n"
                  "│   2. No\n"
                  "  Enter to confirm\n")
-        r = bloqueio.parse_form(texto)["opcoes"][0]["rotulo"]
+        f = bloqueio.parse_form(texto)
+        self.assertEqual(f["opcoes"][0]["rotulo"], longo)   # o /panes leva inteiro
+        r = bloqueio.para_a_placa(f)["opcoes"][0]["rotulo"]
         self.assertLessEqual(len(r.encode()), bloqueio.ROTULO_MAX_B + 3)
         self.assertTrue(r.endswith("..."))
 
@@ -278,7 +280,7 @@ class TesteFormulario(unittest.TestCase):
                  "│ ❯ 1. Não commitar ainda\n"
                  "│   2. Sim — com o túnel\n"
                  "  Enter to confirm\n")
-        f = bloqueio.parse_form(texto)
+        f = bloqueio.para_a_placa(bloqueio.parse_form(texto))
         self.assertEqual(f["pergunta"],
                          "As mudancas estao no diretorio de trabalho?")
         self.assertEqual(f["opcoes"][0]["rotulo"], "Nao commitar ainda")
@@ -357,6 +359,40 @@ class TesteCauda(unittest.TestCase):
 
 def agente(sid, estado, pane="w0:p1"):
     return {"session_id": sid, "state": estado, "pane_id": pane}
+
+
+class TesteFormularios(unittest.TestCase):
+    """O /panes mostra a pergunta de CADA bloqueado, nao so a primeira."""
+
+    def setUp(self):
+        bloqueio._forms.clear()
+        self.lidos, self.tempo = [], 1000.0
+
+    def ler(self, pane_id, linhas=50):
+        self.lidos.append(pane_id)
+        return CLAUDE if pane_id == "w0:p1" else CODEX
+
+    def test_um_formulario_por_bloqueado(self):
+        f = bloqueio.formularios([agente("a", "blocked", "w0:p1"), agente("b", "working", "w0:p2"),
+                                  agente("c", "blocked", "w0:p3")], ler=self.ler, agora=lambda: self.tempo)
+        self.assertEqual(sorted(f), ["w0:p1", "w0:p3"])
+        self.assertEqual(f["w0:p1"]["opcoes"][0]["rotulo"], "Yes")
+        self.assertEqual(f["w0:p3"]["opcoes"][0]["rotulo"], "Yes, proceed (y)")
+
+    def test_cache_por_pane_e_quem_desbloqueia_sai(self):
+        ags = [agente("a", "blocked", "w0:p1")]
+        bloqueio.formularios(ags, ler=self.ler, agora=lambda: self.tempo)
+        bloqueio.formularios(ags, ler=self.ler, agora=lambda: self.tempo + 1)
+        self.assertEqual(self.lidos, ["w0:p1"])        # dentro de RELER_S nao rele
+        bloqueio.formularios([agente("a", "working", "w0:p1")], ler=self.ler, agora=lambda: self.tempo + 2)
+        self.assertNotIn("w0:p1", bloqueio._forms)    # desbloqueou: a proxima pergunta e lida do zero
+
+    def test_esquecer_pane_forca_releitura(self):
+        ags = [agente("a", "blocked", "w0:p1")]
+        bloqueio.formularios(ags, ler=self.ler, agora=lambda: self.tempo)
+        bloqueio.esquecer_pane("w0:p1")
+        bloqueio.formularios(ags, ler=self.ler, agora=lambda: self.tempo + 1)
+        self.assertEqual(self.lidos, ["w0:p1", "w0:p1"])
 
 
 class TesteAtual(unittest.TestCase):
@@ -540,6 +576,77 @@ class TesteResponder(unittest.TestCase):
             ler=lambda p, linhas=50: CLAUDE, teclas=self.enviar(ok=False))
         self.assertFalse(ok)
         self.assertEqual(self.teclas, [["Down", "Down"]])
+
+
+ACENTOS = ("│ As mudanças estão no diretório de trabalho?\n"
+           "│ ❯ 1. Não commitar ainda\n"
+           "│   2. Sim — com o túnel\n"
+           "  Enter to confirm\n")
+
+
+class TesteAcentos(unittest.TestCase):
+    """O monitor no navegador (/panes) recebe a tela com acento, a placa
+    (/status) segue em ASCII, e o /responder aceita o rotulo dos dois."""
+
+    def setUp(self):
+        bloqueio.esquecer()
+        bloqueio._forms.clear()
+        self.teclas = []
+
+    def enviar(self, pane_id, teclas):
+        self.teclas.append(list(teclas))
+        return True
+
+    def tela(self, texto):
+        return lambda pane_id, linhas=50: texto
+
+    def test_panes_mantem_o_acento(self):
+        f = bloqueio.formularios([agente("a", "blocked")], ler=self.tela(ACENTOS),
+                                 agora=lambda: 1000.0)["w0:p1"]
+        self.assertEqual(f["pergunta"], "As mudanças estão no diretório de trabalho?")
+        self.assertEqual([o["rotulo"] for o in f["opcoes"]],
+                         ["Não commitar ainda", "Sim — com o túnel"])
+
+    def test_status_da_placa_segue_em_ascii(self):
+        b = bloqueio.atual([agente("a", "blocked")], ler=self.tela(ACENTOS),
+                           agora=lambda: 1000.0)
+        self.assertEqual(b["pergunta"], "As mudancas estao no diretorio de trabalho?")
+        self.assertEqual([o["rotulo"] for o in b["opcoes"]],
+                         ["Nao commitar ainda", "Sim - com o tunel"])
+
+    def test_cauda_sem_formulario_segue_a_mesma_regra(self):
+        texto = "posso apagar a pasta de saída?\n"
+        f = bloqueio.formularios([agente("a", "blocked")], ler=self.tela(texto),
+                                 agora=lambda: 1000.0)["w0:p1"]
+        b = bloqueio.atual([agente("a", "blocked")], ler=self.tela(texto),
+                           agora=lambda: 1000.0)
+        self.assertEqual(f["pergunta"], "posso apagar a pasta de saída?")
+        self.assertEqual(b["pergunta"], "posso apagar a pasta de saida?")
+
+    def test_responder_aceita_o_rotulo_com_acento_e_o_ascii(self):
+        for rotulo in ("Não commitar ainda", "Nao commitar ainda"):
+            self.teclas = []
+            self.assertTrue(bloqueio.responder("w0:p1", 1, rotulo, ler=self.tela(ACENTOS),
+                                               teclas=self.enviar), rotulo)
+            self.assertEqual(self.teclas, [["Enter"]])
+
+    def test_responder_recusa_rotulo_que_nao_esta_na_tela(self):
+        for rotulo in ("Não commitar", "Sim — com o túnel", "Nao commitar agora"):
+            self.assertFalse(bloqueio.responder("w0:p1", 1, rotulo, ler=self.tela(ACENTOS),
+                                                teclas=self.enviar), rotulo)
+        self.assertEqual(self.teclas, [])
+
+    def test_rotulo_longo_cortado_num_espaco(self):
+        # O corte da placa caiu num espaco: cortar de novo o rotulo que ela
+        # manda nao devolve o mesmo texto. Por isso o pedido e conferido contra
+        # a tela na forma de cada chamador, e nao normalizado.
+        longo = "Não " + "x" * 63 + " e o resto do rótulo"
+        texto = "│ Prosseguir?\n│ ❯ 1. " + longo + "\n│   2. No\n  Enter to confirm\n"
+        placa = bloqueio.para_a_placa(bloqueio.parse_form(texto))["opcoes"][0]["rotulo"]
+        self.assertNotEqual(bloqueio.para_o_painel(placa, bloqueio.ROTULO_MAX_B), placa)
+        for rotulo in (longo, placa):
+            self.assertTrue(bloqueio.responder("w0:p1", 1, rotulo, ler=self.tela(texto),
+                                               teclas=self.enviar), rotulo)
 
 
 if __name__ == "__main__":

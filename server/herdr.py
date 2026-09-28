@@ -387,8 +387,11 @@ def ler_pane(pane_id, linhas=LER_LINHAS, source="recent", formato="text"):
     return (r.stdout or "") if r.returncode == 0 else ""
 
 
-def enviar_teclas(pane_id, teclas):
+def enviar_teclas(pane_id, teclas, permitidas=TECLAS_OK):
     """Manda teclas da lista branca para o pane. False em qualquer duvida.
+
+    `permitidas` troca a lista so para quem ja provou que o pedido veio desta
+    maquina (o /enviar da API, com o Escape); a rede fica com TECLAS_OK.
 
     TODAS numa chamada so, e nao uma por tecla: entre duas chamadas o agente
     pode redesenhar a tela, e aí as setas seguintes passariam a contar a partir
@@ -400,7 +403,7 @@ def enviar_teclas(pane_id, teclas):
     binario = _binario_ativo or achar_binario()
     if not binario or not pane_id or not teclas:
         return False
-    if not all(t in TECLAS_OK for t in teclas):
+    if not all(t in permitidas for t in teclas):
         return False
     try:
         r = subprocess.run([binario, "pane", "send-keys", pane_id, *teclas],

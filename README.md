@@ -83,6 +83,30 @@ pergunta e as opções aparecem na tela. Você toca na opção, ela fica *armada
 um segundo toque confirma — a resposta volta pelo `POST /responder` e é digitada
 no terminal daquele agente.
 
+**Responder pelo navegador.** O monitor (repositório `monitor`, porta 8765) usa a
+mesma API para agir nos agentes: `GET /panes` lista os agentes do herdr com o
+pane, a sessão e a pergunta de cada bloqueado, com acento (só a placa, que não
+tem a fonte, a recebe em ASCII); `POST /responder` responde uma opção, como a
+placa, com o rótulo em qualquer das duas formas; `POST /enviar` escreve uma
+linha de texto livre (ou manda Escape) e `GET /ler` devolve a tela visível do
+pane, sem mexer no tamanho. As
+duas últimas só atendem esta máquina (`127.0.0.1`), e o `/enviar` ainda exige o
+cabeçalho `X-Monitor` e só escreve em pane que o herdr lista como agente.
+Nenhum `POST` atende página da web: pedido com cabeçalho `Origin` é recusado, e
+`/responder`, `/command`, `/ingest`, `/event`, `/arquivo/pedir` e `/arquivo/ok`
+ainda exigem JSON. É assim que a placa, os hooks, o monitor e as ferramentas de
+PC já chamam; todo `POST` de navegador traz `Origin`, e um site só manda JSON
+depois de um preflight que a API não atende. Um site também não lê a API:
+nenhuma resposta traz `Access-Control-Allow-Origin`, e `/status`, `/panes`,
+`/ler` e `/sessions` recusam GET com `Origin`. Abrir a URL na barra do
+navegador continua funcionando, porque a navegação não manda o cabeçalho. Contra
+o DNS rebinding (um domínio que passa a resolver para `127.0.0.1` e vira "mesma
+origem"), a API só atende quando o `Host` é um IP ou `localhost`: a placa usa o
+IP do `config.json`, e a statusline, os hooks e o monitor usam `127.0.0.1`. Um
+nome no `Host` recebe 403 e fica no `api.log`; por isso as ferramentas de PC
+(`tools/tela.py`, `tools/atualizar_sprite.py`) apontam para outra máquina pelo
+IP dela.
+
 **Sem sair da cadeira:**
 
 - `tools/tela.py` traz um PNG do que está na tela da placa agora;
